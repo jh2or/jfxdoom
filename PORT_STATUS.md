@@ -77,7 +77,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
 | s_sound.c   | `doom.sound.SSound`  | Standard | Pending |                                    |
 | i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
-| sounds.c    | `doom.sound.Sounds`  | Trivial  | Pending | Data tables.                       |
+| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 11). |
 
 ## 6 — Game, menu, HUD, finale
 
@@ -97,9 +97,9 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | am_map.c    | `doom.ui.AmMap`        | Standard | Pending |
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
 | f_wipe.c    | `doom.ui.FWipe`        | Standard | Pending |
-| dstrings.c  | `doom.system.Dstrings` | Trivial  | Pending |
+| dstrings.c  | `doom.system.Dstrings` | Trivial  | Verified | 72 / ~. `endmsg[]` preserves the two missing-comma string concatenations from the C (see deviation 10). d_englsh.h constants ported into callers as they land. |
 | info.c      | `doom.play.Info`       | Trivial  | Pending | Thing/state tables — huge.      |
-| doomdef.c   | `doom.system.Doomdef`  | Trivial  | Pending |
+| doomdef.c   | `doom.system.Doomdef`  | Trivial  | Verified | No executable content in C (just includes). `Doomdef.java` holds the screen/timing constants lower modules need; enums/keys added as callers land. |
 | doomstat.c  | `doom.system.Doomstat` | Trivial  | Partial | Stub: `gamemode`, `demoplayback` only; other cross-module globals added as dependents land. |
 | d_items.c   | `doom.play.DItems`     | Trivial  | Pending |
 
@@ -191,3 +191,25 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
      values being compared or indexed live as `int` in Java.
    - `SCRAMBLE` in the C header is a macro; the Java port exposes it as
      `MCheat.scramble(int)` so tests can round-trip it.
+10. `dstrings.c`:
+    - The C `endmsg[]` initializer is missing commas in two places
+      (after `"...see if i care."` and after `"...for thinking about
+      leaving."`), which the C preprocessor silently concatenates into
+      single strings. CLAUDE.md §2 says preserve bugs — the Java port
+      reproduces both merged entries verbatim.
+    - d_englsh.h is a header full of `#define` UI strings consumed at
+      call sites. Rather than translate it wholesale into a DEnglsh
+      class, each string lands in its eventual caller's class
+      (MMenu, HuStuff, PInter, FFinale, ...) as those modules port.
+      `QUITMSG` lives in `Dstrings` since `endmsg[0]` needs it.
+11. `sounds.c`:
+    - The two C enums `musicenum_t` and `sfxenum_t` become `public
+      static final int` constants rather than Java `enum`, because
+      `S_music[]`/`S_sfx[]` are indexed by them and the C arithmetic
+      (`NUMMUSIC = last + 1`) carries over cleanly as integers.
+    - `S_sfx[sfx_chgun].link` is `&S_sfx[sfx_pistol]` — a self-reference
+      inside one array initializer. Java cannot express that in a
+      literal; the static initializer sets `link` to the already-built
+      `pistol` entry since the `chgun` slot is populated after it.
+    - `data` (void* in C) and `specialdata`-style Object fields are
+      left as `Object` until the sound loader lands.
