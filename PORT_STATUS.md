@@ -88,7 +88,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | d_net.c     | `doom.system.DNet`     | Standard | Pending |
 | m_menu.c    | `doom.ui.MMenu`        | Standard | Pending |
 | m_misc.c    | `doom.system.MMisc`    | Standard | Pending |
-| m_cheat.c   | `doom.play.MCheat`     | Trivial  | Pending |
+| m_cheat.c   | `doom.play.MCheat`     | Trivial  | Verified | 101 / ~. `cheat_xlate_table` is `int[256]`; `cheatseq_t.p` uses sentinel `-1` to express C's NULL "not yet initialized". See deviation 9. |
 | hu_lib.c    | `doom.ui.HuLib`        | Standard | Pending |
 | hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Pending |
 | st_lib.c    | `doom.ui.StLib`        | Standard | Pending |
@@ -181,3 +181,13 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
    - `R_FillBackScreen` / `R_DrawViewBorder` are ported against
      `scaledviewwidth` / `viewheight` globals — functionally correct once
      `R_ExecuteSetViewSize` (in the not-yet-ported `r_main.c`) sets them.
+9. `m_cheat.c`:
+   - `cheatseq_t.p` is translated as an `int` index, with `-1` meaning
+     "pointer not yet initialized" — C detects this via `if (!cht->p)`
+     on a zero-initialized struct. Everywhere the C sets `p = sequence`,
+     the Java sets `p = 0`.
+   - `cheat_xlate_table` is `int[256]` (values already masked to `[0,255]`)
+     instead of `unsigned char[256]`; per CLAUDE.md §3, `unsigned char`
+     values being compared or indexed live as `int` in Java.
+   - `SCRAMBLE` in the C header is a macro; the Java port exposes it as
+     `MCheat.scramble(int)` so tests can round-trip it.
