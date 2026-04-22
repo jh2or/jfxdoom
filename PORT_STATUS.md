@@ -51,7 +51,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 
 | C file      | Java class            | Tier     | Status  | Notes                                          |
 | ----------- | --------------------- | -------- | ------- | ---------------------------------------------- |
-| p_tick.c    | `doom.play.PTick`     | Standard | Pending |                                                |
+| p_tick.c    | `doom.play.PTick`     | Standard | Partial | 158 / ~. Thinker list ops (`P_InitThinkers`/`P_AddThinker`/`P_RemoveThinker`/`P_AllocateThinker`/`P_RunThinkers`) + `leveltime`/`thinkercap` globals. `P_Ticker` deferred — it calls `P_PlayerThink`/`P_UpdateSpecials`/`P_RespawnSpecials` and reads `paused`/`menuactive`/`players[]`, none ported yet. Thinker.java upgraded from stub to full `actionf_t` union (see deviation 14). |
 | p_setup.c   | `doom.play.PSetup`    | Standard | Pending |                                                |
 | p_mobj.c    | `doom.play.PMobj`     | Standard | Pending |                                                |
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Pending |                                                |
@@ -77,7 +77,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
 | s_sound.c   | `doom.sound.SSound`  | Standard | Pending |                                    |
 | i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
-| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 13). |
+| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 15). |
 
 ## 6 — Game, menu, HUD, finale
 
@@ -218,7 +218,26 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
     - `I_ReadScreen` is the only i_video.c entry the wipe references;
       it lands in a new `doom.ui.IVideo` as `iReadScreen(byte[])` so
       the rest of i_video.c can stay deferred.
-13. `sounds.c`:
+14. `d_think.h` / `p_tick.c`:
+    - The C `actionf_t` union holds three same-storage function
+      pointers (`acv`, `acp1`, `acp2`). Java has no unions, so each
+      slot lives in its own typed field inside `Thinker.Actionf`. Only
+      one slot is populated for any given thinker — same contract as
+      the C, just minus the shared storage.
+    - `P_RemoveThinker` stamps `function.acv = (actionf_v)(-1)` as a
+      "marked for removal" sentinel. Java cannot cast an int to a
+      function reference, so the sentinel is a `boolean removed` on
+      `Thinker`. `P_RunThinkers` checks this flag where the C compared
+      against -1. Observable semantics are identical — no C code
+      compares `acv` to any value other than the -1 sentinel.
+    - `P_RunThinkers` calls `Z_Free(currentthinker)` on removed
+      entries; thinkers are Java objects (not zone-allocated byte
+      buffers), so dropping the reference via unlink is enough and the
+      GC reclaims them. Extended thinker subtypes that do own a
+      zone-allocated payload (once ported) will need to release it
+      explicitly before returning from their removal path — same as
+      the C's caller-owned `Z_Malloc` model.
+15. `sounds.c`:
     - The two C enums `musicenum_t` and `sfxenum_t` become `public
       static final int` constants rather than Java `enum`, because
       `S_music[]`/`S_sfx[]` are indexed by them and the C arithmetic
