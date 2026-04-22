@@ -87,7 +87,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | d_main.c    | `doom.system.DMain`    | Standard | Pending |
 | d_net.c     | `doom.system.DNet`     | Standard | Pending |
 | m_menu.c    | `doom.ui.MMenu`        | Standard | Pending |
-| m_misc.c    | `doom.system.MMisc`    | Standard | Pending |
+| m_misc.c    | `doom.system.MMisc`    | Standard | Partial | 57 / ~. Just `M_WriteFile` + `M_ReadFile` — the rest (defaults, screenshot, draw-text) needs unported globals. `mReadFile` returns `byte[]` directly in place of the C's `byte**` out-param + length return; see deviation 18. |
 | m_cheat.c   | `doom.play.MCheat`     | Trivial  | Verified | 101 / ~. `cheat_xlate_table` is `int[256]`; `cheatseq_t.p` uses sentinel `-1` to express C's NULL "not yet initialized". See deviation 9. |
 | hu_lib.c    | `doom.ui.HuLib`        | Standard | Pending |
 | hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Pending |
@@ -265,3 +265,20 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       `pistol` entry since the `chgun` slot is populated after it.
     - `data` (void* in C) and `specialdata`-style Object fields are
       left as `Object` until the sound loader lands.
+18. `m_misc.c`:
+    - `M_ReadFile`'s C signature is `int M_ReadFile(char const*, byte**)`
+      — length via return, buffer via out-param. The Java port collapses
+      both onto one return value (`byte[] mReadFile(String)`), since
+      callers only used the length for bounds-checks that `byte[].length`
+      now provides.
+    - The C `Z_Malloc(length, PU_STATIC, NULL)` buffer becomes a plain
+      `byte[]` (from `Files.readAllBytes`). No existing caller re-tagged
+      or explicitly `Z_Free`d the buffer — they used it once and dropped
+      it — so the zone hook was never load-bearing. Same rationale as
+      deviations 7 and 14 for typed allocations the C tracked only for
+      GC-like cleanup.
+    - Only the two standalone file-I/O helpers are ported. `M_DrawText`
+      needs `hu_font`/`V_DrawPatch`; `M_LoadDefaults`/`M_SaveDefaults`
+      touch ~30 as-yet-unported extern globals (`key_*`, `mouseb*`,
+      `joyb*`, `snd_SfxVolume`, ...); `M_ScreenShot` needs the PCX
+      encoder. All three land when their dependencies do.
