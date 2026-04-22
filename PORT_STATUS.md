@@ -77,7 +77,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
 | s_sound.c   | `doom.sound.SSound`  | Standard | Pending |                                    |
 | i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
-| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 11). |
+| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 13). |
 
 ## 6 — Game, menu, HUD, finale
 
@@ -96,7 +96,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | wi_stuff.c  | `doom.ui.WiStuff`      | Standard | Pending |
 | am_map.c    | `doom.ui.AmMap`        | Standard | Pending |
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
-| f_wipe.c    | `doom.ui.FWipe`        | Standard | Pending |
+| f_wipe.c    | `doom.ui.FWipe`        | Standard | Verified | 302 / ~. Melt+ColorXForm screen wipes. `short*` aliasing of the `byte[]` framebuffers is translated as 2-byte-pair copies (see deviation 12); `I_ReadScreen` lands in a new `doom.ui.IVideo` stub. |
 | dstrings.c  | `doom.system.Dstrings` | Trivial  | Verified | 72 / ~. `endmsg[]` preserves the two missing-comma string concatenations from the C (see deviation 10). d_englsh.h constants ported into callers as they land. |
 | info.c      | `doom.play.Info`       | Trivial  | Pending | Thing/state tables — huge.      |
 | doomdef.c   | `doom.system.Doomdef`  | Trivial  | Verified | No executable content in C (just includes). `Doomdef.java` holds the screen/timing constants lower modules need; enums/keys added as callers land. |
@@ -202,7 +202,23 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       class, each string lands in its eventual caller's class
       (MMenu, HuStuff, PInter, FFinale, ...) as those modules port.
       `QUITMSG` lives in `Dstrings` since `endmsg[0]` needs it.
-11. `sounds.c`:
+12. `f_wipe.c`:
+    - The melt path casts `byte* wipe_scr_{start,end,mid}` to `short*`
+      so it can move two palette pixels per array cell. Java cannot
+      reinterpret a `byte[]` as `short[]` without copying, so each
+      `short` access becomes a paired `(b[i], b[i+1])` byte copy at
+      the equivalent byte offset. The observable framebuffer state is
+      bit-identical to the C.
+    - Per-column melt offsets `static int* y` land as a plain `int[]`
+      because the C allocates it through `Z_Malloc(width*sizeof(int),
+      PU_STATIC, 0)` — the same rationale as `r_data.c` deviation #7.
+    - The function-pointer table `wipes[wipeno*3 + n]` is flattened to
+      three small dispatch helpers (`wipeInit`/`wipeDo`/`wipeExit`)
+      that switch on `wipeno`. Call sequence is identical.
+    - `I_ReadScreen` is the only i_video.c entry the wipe references;
+      it lands in a new `doom.ui.IVideo` as `iReadScreen(byte[])` so
+      the rest of i_video.c can stay deferred.
+13. `sounds.c`:
     - The two C enums `musicenum_t` and `sfxenum_t` become `public
       static final int` constants rather than Java `enum`, because
       `S_music[]`/`S_sfx[]` are indexed by them and the C arithmetic
