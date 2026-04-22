@@ -52,7 +52,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file      | Java class            | Tier     | Status  | Notes                                          |
 | ----------- | --------------------- | -------- | ------- | ---------------------------------------------- |
 | p_tick.c    | `doom.play.PTick`     | Standard | Partial | 158 / ~. Thinker list ops (`P_InitThinkers`/`P_AddThinker`/`P_RemoveThinker`/`P_AllocateThinker`/`P_RunThinkers`) + `leveltime`/`thinkercap` globals. `P_Ticker` deferred — it calls `P_PlayerThink`/`P_UpdateSpecials`/`P_RespawnSpecials` and reads `paused`/`menuactive`/`players[]`, none ported yet. Thinker.java upgraded from stub to full `actionf_t` union (see deviation 14). |
-| p_setup.c   | `doom.play.PSetup`    | Standard | Pending |                                                |
+| p_setup.c   | `doom.play.PSetup`    | Standard | Partial | Stub carrying only `sectors[]`/`numsectors`/`lines[]`/`numlines` globals so dependents (PLights, PSpec) compile and can be tested. Actual level-load parser still ahead. |
 | p_mobj.c    | `doom.play.PMobj`     | Standard | Pending |                                                |
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Pending |                                                |
 | p_map.c     | `doom.play.PMap`      | Standard | Pending |                                                |
@@ -61,11 +61,11 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
 | p_inter.c   | `doom.play.PInter`    | Standard | Pending |                                                |
 | p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
-| p_spec.c    | `doom.play.PSpec`     | Standard | Pending |                                                |
+| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Three sector-graph walkers only: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`. The rest (animated textures, EV_ triggers, P_UpdateSpecials, button timers) lands with its companion modules. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Pending |                                                |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Pending |                                                |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Pending |                                                |
-| p_lights.c  | `doom.play.PLights`   | Standard | Pending |                                                |
+| p_lights.c  | `doom.play.PLights`   | Standard | Verified | 357 / ~. Five sector-lighting thinker subtypes (`FireFlicker`/`LightFlash`/`Strobe`/`Glow`) subclass `Thinker`; `acp1` bound via method reference. Z_Malloc elided for extended thinkers — they're Java objects (deviation 16). |
 | p_plats.c   | `doom.play.PPlats`    | Standard | Pending |                                                |
 | p_switch.c  | `doom.play.PSwitch`   | Standard | Pending |                                                |
 | p_telept.c  | `doom.play.PTelept`   | Standard | Pending |                                                |
@@ -77,7 +77,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
 | s_sound.c   | `doom.sound.SSound`  | Standard | Pending |                                    |
 | i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
-| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 15). |
+| sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 17). |
 
 ## 6 — Game, menu, HUD, finale
 
@@ -237,7 +237,24 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       zone-allocated payload (once ported) will need to release it
       explicitly before returning from their removal path — same as
       the C's caller-owned `Z_Malloc` model.
-15. `sounds.c`:
+16. `p_lights.c` + extended thinkers:
+    - The C casts spawn-time function pointers via
+      `(actionf_p1) T_FireFlicker`, relying on
+      `fireflicker_t*`/`thinker_t*` being pointer-compatible (the C
+      struct embeds `thinker_t` as its first member). The Java port
+      makes the extended types (`FireFlicker`, `LightFlash`, `Strobe`,
+      `Glow`) subclass `Thinker`, binds `acp1` to a `Consumer<Thinker>`
+      method reference, and casts back inside the tick function — same
+      pattern the C implicitly relies on.
+    - The C allocates every extended thinker via
+      `Z_Malloc(sizeof(*t), PU_LEVSPEC, 0)` so the level-teardown
+      `Z_FreeTags(PU_LEVSPEC)` sweep can release them. Java extended
+      thinkers are plain objects, not zone-tracked byte buffers, so
+      the GC reclaims them once `P_RunThinkers` unlinks a removed
+      thinker. The `PU_LEVSPEC` sweep no longer needs to find them,
+      so the zMalloc call is elided. Same rationale as deviation 14
+      for the core `Thinker` class.
+17. `sounds.c`:
     - The two C enums `musicenum_t` and `sfxenum_t` become `public
       static final int` constants rather than Java `enum`, because
       `S_music[]`/`S_sfx[]` are indexed by them and the C arithmetic

@@ -4,6 +4,17 @@ package doom.render;
 
 public final class Line {
 
+    // doomdata.h lines 100–135 — linedef `flags` bit values.
+    public static final int ML_BLOCKING       = 1;
+    public static final int ML_BLOCKMONSTERS  = 2;
+    public static final int ML_TWOSIDED       = 4;
+    public static final int ML_DONTPEGTOP     = 8;
+    public static final int ML_DONTPEGBOTTOM  = 16;
+    public static final int ML_SECRET         = 32;
+    public static final int ML_SOUNDBLOCK     = 64;
+    public static final int ML_DONTDRAW       = 128;
+    public static final int ML_MAPPED         = 256;
+
     // Vertices, from v1 to v2.
     public Vertex v1;
     public Vertex v2;
