@@ -73,6 +73,137 @@ public final class PSpec {
         return min;
     }
 
+    // p_spec.c lines 270–289 — P_FindLowestFloorSurrounding.
+    // Lowest floor height among two-sided neighbours, seeded with
+    // `sec`'s own floor — so the result is at most `sec->floorheight`.
+    public static int pFindLowestFloorSurrounding(Sector sec) {
+        int floor = sec.floorheight;
+        for (int i = 0; i < sec.linecount; i++) {
+            Line check = sec.lines[i];
+            Sector other = getNextSector(check, sec);
+
+            if (other == null) {
+                continue;
+            }
+
+            if (other.floorheight < floor) {
+                floor = other.floorheight;
+            }
+        }
+        return floor;
+    }
+
+    // p_spec.c lines 297–316 — P_FindHighestFloorSurrounding.
+    // Highest floor height among two-sided neighbours. The seed is
+    // -500 * FRACUNIT (well below any legal map floor), so isolated
+    // sectors report that sentinel back to the caller. Callers
+    // (e.g. EV_DoFloor lowerFloor) treat the sentinel specially.
+    public static int pFindHighestFloorSurrounding(Sector sec) {
+        int floor = -500 * Fixed.FRACUNIT;
+        for (int i = 0; i < sec.linecount; i++) {
+            Line check = sec.lines[i];
+            Sector other = getNextSector(check, sec);
+
+            if (other == null) {
+                continue;
+            }
+
+            if (other.floorheight > floor) {
+                floor = other.floorheight;
+            }
+        }
+        return floor;
+    }
+
+    // p_spec.c line 326 — MAX_ADJOINING_SECTORS.
+    public static final int MAX_ADJOINING_SECTORS = 20;
+
+    // p_spec.c lines 328–375 — P_FindNextHighestFloor.
+    // Next floor height strictly above `currentheight` among
+    // two-sided neighbours. The C collects candidates into a local
+    // fixed array, caps at MAX_ADJOINING_SECTORS with a stderr
+    // warning, and returns the min of the list (or `currentheight`
+    // when empty — note the C returns the unchanged seed, not -1).
+    public static int pFindNextHighestFloor(Sector sec, int currentheight) {
+        int[] heightlist = new int[MAX_ADJOINING_SECTORS];
+        int h = 0;
+
+        for (int i = 0; i < sec.linecount; i++) {
+            Line check = sec.lines[i];
+            Sector other = getNextSector(check, sec);
+
+            if (other == null) {
+                continue;
+            }
+
+            if (other.floorheight > currentheight) {
+                heightlist[h++] = other.floorheight;
+            }
+
+            // Check for overflow. Exit.
+            if (h >= MAX_ADJOINING_SECTORS) {
+                System.err.println("Sector with more than 20 adjoining sectors");
+                break;
+            }
+        }
+
+        // Find lowest height in list
+        if (h == 0) {
+            return currentheight;
+        }
+
+        int min = heightlist[0];
+
+        // Range checking?
+        for (int i = 1; i < h; i++) {
+            if (heightlist[i] < min) {
+                min = heightlist[i];
+            }
+        }
+
+        return min;
+    }
+
+    // p_spec.c lines 381–401 — P_FindLowestCeilingSurrounding.
+    // Lowest ceiling among two-sided neighbours. Seeded with MAXINT
+    // so that isolated sectors return the sentinel — callers check.
+    public static int pFindLowestCeilingSurrounding(Sector sec) {
+        int height = Integer.MAX_VALUE;
+        for (int i = 0; i < sec.linecount; i++) {
+            Line check = sec.lines[i];
+            Sector other = getNextSector(check, sec);
+
+            if (other == null) {
+                continue;
+            }
+
+            if (other.ceilingheight < height) {
+                height = other.ceilingheight;
+            }
+        }
+        return height;
+    }
+
+    // p_spec.c lines 407–426 — P_FindHighestCeilingSurrounding.
+    // Highest ceiling among two-sided neighbours. Seeded with 0 —
+    // isolated sectors return 0 (floor of the map).
+    public static int pFindHighestCeilingSurrounding(Sector sec) {
+        int height = 0;
+        for (int i = 0; i < sec.linecount; i++) {
+            Line check = sec.lines[i];
+            Sector other = getNextSector(check, sec);
+
+            if (other == null) {
+                continue;
+            }
+
+            if (other.ceilingheight > height) {
+                height = other.ceilingheight;
+            }
+        }
+        return height;
+    }
+
     private PSpec() {
     }
 }

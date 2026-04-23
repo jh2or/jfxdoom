@@ -61,7 +61,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
 | p_inter.c   | `doom.play.PInter`    | Standard | Pending |                                                |
 | p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
-| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Three sector-graph walkers only: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`. The rest (animated textures, EV_ triggers, P_UpdateSpecials, button timers) lands with its companion modules. |
+| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`, `pFindLowest`/`pFindHighestFloorSurrounding`, `pFindNextHighestFloor`, `pFindLowest`/`pFindHighestCeilingSurrounding`. Plus `Result` enum + `FLOORSPEED` from p_spec.h. Animated textures, EV_ triggers, `P_UpdateSpecials`, button timers still ahead. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Pending |                                                |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Pending |                                                |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Partial | 162 / ~. Just `T_MovePlane` (generic floor/ceiling mover). T_MoveFloor / EV_DoFloor / EV_BuildStairs need P_Find{Highest,Lowest,...}, twoSided/getSide/getSector, S_StartSound, floormove_t, floor_e/stair_e — all still ahead. |
