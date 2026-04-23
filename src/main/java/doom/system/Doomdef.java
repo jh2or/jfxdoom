@@ -23,6 +23,12 @@ public final class Doomdef {
     // doomdef.h line 122 — game tick rate.
     public static final int TICRATE = 35;
 
+    // doomdef.h lines 253–271 — key codes. More land as their
+    // consumers port (m_menu, hu_stuff, g_game). Only the keys already
+    // referenced by ported modules live here.
+    public static final int KEY_ENTER = 13;
+    public static final int KEY_BACKSPACE = 127;
+
     private Doomdef() {
     }
 }

@@ -89,12 +89,12 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | m_menu.c    | `doom.ui.MMenu`        | Standard | Pending |
 | m_misc.c    | `doom.system.MMisc`    | Standard | Partial | 57 / ~. Just `M_WriteFile` + `M_ReadFile` — the rest (defaults, screenshot, draw-text) needs unported globals. `mReadFile` returns `byte[]` directly in place of the C's `byte**` out-param + length return; see deviation 18. |
 | m_cheat.c   | `doom.play.MCheat`     | Trivial  | Verified | 101 / ~. `cheat_xlate_table` is `int[256]`; `cheatseq_t.p` uses sentinel `-1` to express C's NULL "not yet initialized". See deviation 9. |
-| hu_lib.c    | `doom.ui.HuLib`        | Standard | Pending |
+| hu_lib.c    | `doom.ui.HuLib`        | Standard | Verified | 294 / ~. Text-line / scrolling / input widgets. `boolean*` "on" pointers translate as `boolean[]` holders (see deviation 19). `SHORT()` is a no-op since `Patch.width/height` are already parsed int. |
 | hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Pending |
 | st_lib.c    | `doom.ui.StLib`        | Standard | Pending |
 | st_stuff.c  | `doom.ui.StStuff`      | Standard | Pending |
 | wi_stuff.c  | `doom.ui.WiStuff`      | Standard | Pending |
-| am_map.c    | `doom.ui.AmMap`        | Standard | Pending |
+| am_map.c    | `doom.ui.AmMap`        | Standard | Partial | Stub only: `automapactive` flag for hu_lib's erase path. Full automap lands later. |
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
 | f_wipe.c    | `doom.ui.FWipe`        | Standard | Verified | 302 / ~. Melt+ColorXForm screen wipes. `short*` aliasing of the `byte[]` framebuffers is translated as 2-byte-pair copies (see deviation 12); `I_ReadScreen` lands in a new `doom.ui.IVideo` stub. |
 | dstrings.c  | `doom.system.Dstrings` | Trivial  | Verified | 72 / ~. `endmsg[]` preserves the two missing-comma string concatenations from the C (see deviation 10). d_englsh.h constants ported into callers as they land. |
@@ -282,3 +282,26 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       touch ~30 as-yet-unported extern globals (`key_*`, `mouseb*`,
       `joyb*`, `snd_SfxVolume`, ...); `M_ScreenShot` needs the PCX
       encoder. All three land when their dependencies do.
+19. `hu_lib.c`:
+    - Widgets carry a `boolean*` pointer to the caller's on/off flag
+      (`hu_stext_t.on`, `hu_itext_t.on`). Java has no way to take the
+      address of a `boolean`, so the pointer is translated as a
+      1-element `boolean[]` the caller supplies and mutates in place.
+      Same rationale as any pointer-to-mutable-scalar translation;
+      observable read/write semantics match the C.
+    - `static boolean lastautomapactive = true;` inside
+      `HUlib_eraseTextLine` is assigned at the end of the function but
+      never read anywhere — dead code in the C. Lifted to a
+      package-private field on `HuLib` so the write still happens
+      (CLAUDE.md §2: preserve bugs/quirks verbatim).
+    - `SHORT(patch->width/height)` is a no-op in the Java port because
+      `Patch.fromLump` already byte-swaps the lump header during parse
+      (see deviation 6). Direct field reads are equivalent.
+    - `noterased` is a `#define` alias for `viewwindowx` in the C; it
+      has no presence in the Java port — the erase path reads
+      `RDraw.viewwindowx` directly.
+20. `am_map.c`:
+    - Stub only: `automapactive` is live, the rest of the automap is
+      deferred. `hu_lib` reads the flag in its erase path; a fuller
+      port replaces this class in place without changing the public
+      surface.
