@@ -9,10 +9,20 @@
 // helpers in particular.
 package doom.play;
 
+import doom.fixed.Fixed;
 import doom.render.Line;
 import doom.render.Sector;
 
 public final class PSpec {
+
+    // p_spec.h lines 602–608 — result_e.
+    // Return code for T_MovePlane and its callers. `ok` = move
+    // completed normally, `crushed` = move blocked by a mobj, `pastdest`
+    // = destination reached this tic.
+    public enum Result { ok, crushed, pastdest }
+
+    // p_spec.h line 600 — FLOORSPEED.
+    public static final int FLOORSPEED = Fixed.FRACUNIT;
 
     // p_spec.c lines 250–262 — getNextSector.
     // Return the sector on the other side of a two-sided line.

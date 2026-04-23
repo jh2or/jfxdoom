@@ -55,7 +55,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_setup.c   | `doom.play.PSetup`    | Standard | Partial | Stub carrying only `sectors[]`/`numsectors`/`lines[]`/`numlines` globals so dependents (PLights, PSpec) compile and can be tested. Actual level-load parser still ahead. |
 | p_mobj.c    | `doom.play.PMobj`     | Standard | Pending |                                                |
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Pending |                                                |
-| p_map.c     | `doom.play.PMap`      | Standard | Pending |                                                |
+| p_map.c     | `doom.play.PMap`      | Standard | Partial | Stub: `pChangeSector` returns false (no blocking mobj) until the mobj/blockmap iteration lands. T_MovePlane reads it (see deviation 21). |
 | p_user.c    | `doom.play.PUser`     | Standard | Pending |                                                |
 | p_pspr.c    | `doom.play.PPspr`     | Standard | Pending |                                                |
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
@@ -64,7 +64,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Three sector-graph walkers only: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`. The rest (animated textures, EV_ triggers, P_UpdateSpecials, button timers) lands with its companion modules. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Pending |                                                |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Pending |                                                |
-| p_floor.c   | `doom.play.PFloor`    | Standard | Pending |                                                |
+| p_floor.c   | `doom.play.PFloor`    | Standard | Partial | 162 / ~. Just `T_MovePlane` (generic floor/ceiling mover). T_MoveFloor / EV_DoFloor / EV_BuildStairs need P_Find{Highest,Lowest,...}, twoSided/getSide/getSector, S_StartSound, floormove_t, floor_e/stair_e — all still ahead. |
 | p_lights.c  | `doom.play.PLights`   | Standard | Verified | 357 / ~. Five sector-lighting thinker subtypes (`FireFlicker`/`LightFlash`/`Strobe`/`Glow`) subclass `Thinker`; `acp1` bound via method reference. Z_Malloc elided for extended thinkers — they're Java objects (deviation 16). |
 | p_plats.c   | `doom.play.PPlats`    | Standard | Pending |                                                |
 | p_switch.c  | `doom.play.PSwitch`   | Standard | Pending |                                                |
@@ -305,3 +305,18 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       deferred. `hu_lib` reads the flag in its erase path; a fuller
       port replaces this class in place without changing the public
       surface.
+21. `p_map.c` + `p_floor.c`:
+    - `P_ChangeSector` is stubbed on `PMap` to return `false` by default
+      — i.e. "no mobj in the way". T_MovePlane reads this value to
+      decide between the normal and crush paths. In an unfurnished
+      level (no mobjs spawned yet) this is the only answer the C code
+      could return anyway; tests that need the crush path flip
+      `PMap.changeSectorResult` before invoking T_MovePlane. The
+      override field disappears once `P_ChangeSector`'s mobj-blockmap
+      iteration lands.
+    - `result_e` (`ok`/`crushed`/`pastdest`) lives on `PSpec` as a Java
+      enum — ordinals match the C enum (0/1/2). `FLOORSPEED` also lives
+      there since the relevant #defines are in p_spec.h.
+    - Only T_MovePlane is ported from p_floor.c; T_MoveFloor,
+      EV_DoFloor, and EV_BuildStairs reach into yet-to-port helpers
+      and land with the fuller p_spec port.
