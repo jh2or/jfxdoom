@@ -91,8 +91,8 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | m_cheat.c   | `doom.play.MCheat`     | Trivial  | Verified | 101 / ~. `cheat_xlate_table` is `int[256]`; `cheatseq_t.p` uses sentinel `-1` to express C's NULL "not yet initialized". See deviation 9. |
 | hu_lib.c    | `doom.ui.HuLib`        | Standard | Verified | 294 / ~. Text-line / scrolling / input widgets. `boolean*` "on" pointers translate as `boolean[]` holders (see deviation 19). `SHORT()` is a no-op since `Patch.width/height` are already parsed int. |
 | hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Pending |
-| st_lib.c    | `doom.ui.StLib`        | Standard | Pending |
-| st_stuff.c  | `doom.ui.StStuff`      | Standard | Pending |
+| st_lib.c    | `doom.ui.StLib`        | Standard | Verified | 262 / ~. Number/Percent/MultIcon/BinIcon widgets. `int*`/`boolean*` caller-owned holders translate as `int[1]`/`boolean[1]` (deviation 19). `SHORT()` is a no-op since Patch fields are pre-parsed int. BG=4 (status-bar layer) distinct from HuLib's BG=1. |
+| st_stuff.c  | `doom.ui.StStuff`      | Standard | Partial | Stub: `ST_HEIGHT`/`ST_WIDTH`/`ST_Y` constants for st_lib. Status-bar logic lands when its player/sound deps arrive. |
 | wi_stuff.c  | `doom.ui.WiStuff`      | Standard | Pending |
 | am_map.c    | `doom.ui.AmMap`        | Standard | Partial | Stub only: `automapactive` flag for hu_lib's erase path. Full automap lands later. |
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
