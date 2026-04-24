@@ -11,7 +11,12 @@ package doom.play;
 
 import doom.fixed.Fixed;
 import doom.render.Line;
+import doom.render.RData;
 import doom.render.Sector;
+import doom.sound.SSound;
+import doom.sound.Sounds;
+import doom.system.ISystem;
+import doom.wad.WWad;
 
 public final class PSpec {
 
@@ -202,6 +207,209 @@ public final class PSpec {
             }
         }
         return height;
+    }
+
+    // p_spec.c lines 60–68 — anim_t.
+    // Runtime state for one animated flat / texture cycle.
+    public static final class Anim {
+        public boolean istexture;
+        public int picnum;
+        public int basepic;
+        public int numpics;
+        public int speed;
+    }
+
+    // p_spec.c lines 73–79 — animdef_t.
+    // Source animation definition. `endname` / `startname` land as
+    // `String`. The C data table includes a trailing `{-1}` sentinel
+    // (istexture == -1); Java doesn't have a tri-state boolean, so
+    // the sentinel lives as a null AnimDef past the last real entry.
+    public static final class AnimDef {
+        public final boolean istexture; // false = flat
+        public final String endname;
+        public final String startname;
+        public final int speed;
+
+        public AnimDef(boolean istexture, String endname, String startname, int speed) {
+            this.istexture = istexture;
+            this.endname = endname;
+            this.startname = startname;
+            this.speed = speed;
+        }
+    }
+
+    // p_spec.c line 83.
+    public static final int MAXANIMS = 32;
+
+    // p_spec.c lines 101–132 — animdefs[].
+    // The final `{-1}` sentinel lives here as `null` — the init loop
+    // stops at either null or MAXANIMS, whichever comes first.
+    public static final AnimDef[] animdefs = {
+            new AnimDef(false, "NUKAGE3",  "NUKAGE1",  8),
+            new AnimDef(false, "FWATER4",  "FWATER1",  8),
+            new AnimDef(false, "SWATER4",  "SWATER1",  8),
+            new AnimDef(false, "LAVA4",    "LAVA1",    8),
+            new AnimDef(false, "BLOOD3",   "BLOOD1",   8),
+
+            // DOOM II flat animations.
+            new AnimDef(false, "RROCK08",  "RROCK05",  8),
+            new AnimDef(false, "SLIME04",  "SLIME01",  8),
+            new AnimDef(false, "SLIME08",  "SLIME05",  8),
+            new AnimDef(false, "SLIME12",  "SLIME09",  8),
+
+            new AnimDef(true,  "BLODGR4",  "BLODGR1",  8),
+            new AnimDef(true,  "SLADRIP3", "SLADRIP1", 8),
+
+            new AnimDef(true,  "BLODRIP4", "BLODRIP1", 8),
+            new AnimDef(true,  "FIREWALL", "FIREWALA", 8),
+            new AnimDef(true,  "GSTFONT3", "GSTFONT1", 8),
+            new AnimDef(true,  "FIRELAVA", "FIRELAV3", 8),
+            new AnimDef(true,  "FIREMAG3", "FIREMAG1", 8),
+            new AnimDef(true,  "FIREBLU2", "FIREBLU1", 8),
+            new AnimDef(true,  "ROCKRED3", "ROCKRED1", 8),
+
+            new AnimDef(true,  "BFALL4",   "BFALL1",   8),
+            new AnimDef(true,  "SFALL4",   "SFALL1",   8),
+            new AnimDef(true,  "WFALL4",   "WFALL1",   8),
+            new AnimDef(true,  "DBRAIN4",  "DBRAIN1",  8),
+
+            // C sentinel {-1} → null.
+    };
+
+    // p_spec.c lines 134–135 — runtime state.
+    // The C's `anim_t* lastanim` is translated as an `int lastanimIdx`
+    // bounded by `numanims` — no pointer arithmetic, just an index.
+    public static final Anim[] anims = new Anim[MAXANIMS];
+    public static int numanims;
+
+    static {
+        for (int i = 0; i < MAXANIMS; i++) {
+            anims[i] = new Anim();
+        }
+    }
+
+    // p_spec.c lines 141–144 — line-scroll state.
+    public static final int MAXLINEANIMS = 64;
+    public static int numlinespecials;
+    public static final Line[] linespeciallist = new Line[MAXLINEANIMS];
+
+    // p_spec.c lines 148–187 — P_InitPicAnims.
+    // Walks `animdefs[]` up to the null sentinel, looking up each
+    // start/end lump via R_CheckTextureNumForName (for textures) or
+    // W_CheckNumForName (for flats) and recording the range into
+    // `anims[numanims++]`.
+    public static void pInitPicAnims() {
+        numanims = 0;
+
+        for (int i = 0; i < animdefs.length && i < MAXANIMS; i++) {
+            AnimDef def = animdefs[i];
+            if (def == null) {
+                break;
+            }
+
+            Anim a = anims[numanims];
+
+            if (def.istexture) {
+                // different episode ?
+                if (RData.rCheckTextureNumForName(def.startname) == -1) {
+                    continue;
+                }
+
+                a.picnum = RData.rTextureNumForName(def.endname);
+                a.basepic = RData.rTextureNumForName(def.startname);
+            } else {
+                if (WWad.wCheckNumForName(def.startname) == -1) {
+                    continue;
+                }
+
+                a.picnum = RData.rFlatNumForName(def.endname);
+                a.basepic = RData.rFlatNumForName(def.startname);
+            }
+
+            a.istexture = def.istexture;
+            a.numpics = a.picnum - a.basepic + 1;
+
+            if (a.numpics < 2) {
+                throw ISystem.iError("P_InitPicAnims: bad cycle from %s to %s",
+                        def.startname, def.endname);
+            }
+
+            a.speed = def.speed;
+            numanims++;
+        }
+    }
+
+    // p_spec.c lines 1080–1081 — level-timer globals.
+    public static boolean levelTimer;
+    public static int levelTimeCount;
+
+    // p_spec.c lines 1083–1156 — P_UpdateSpecials (partial).
+    // The level-timer block at the top of the C routine calls
+    // G_ExitLevel on timeout; we skip it here (see deviation 23)
+    // until g_game.c ports. The three remaining blocks — flat /
+    // texture animation, line-scroll animation (special 48), and
+    // button countdown — are ported verbatim.
+    public static void pUpdateSpecials() {
+        // --- LEVEL TIMER (deferred; see deviation 23) ---
+        if (levelTimer) {
+            levelTimeCount--;
+            // if (levelTimeCount == 0) GGame.gExitLevel();
+        }
+
+        // --- ANIMATE FLATS AND TEXTURES GLOBALLY ---
+        for (int n = 0; n < numanims; n++) {
+            Anim anim = anims[n];
+            for (int i = anim.basepic; i < anim.basepic + anim.numpics; i++) {
+                int pic = anim.basepic
+                        + ((PTick.leveltime / anim.speed + i) % anim.numpics);
+                if (anim.istexture) {
+                    RData.texturetranslation[i] = pic;
+                } else {
+                    RData.flattranslation[i] = pic;
+                }
+            }
+        }
+
+        // --- ANIMATE LINE SPECIALS ---
+        for (int i = 0; i < numlinespecials; i++) {
+            Line line = linespeciallist[i];
+            switch (line.special) {
+                case 48:
+                    // EFFECT FIRSTCOL SCROLL +
+                    PSetup.sides[line.sidenum[0]].textureoffset += Fixed.FRACUNIT;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // --- DO BUTTONS ---
+        for (int i = 0; i < PSwitch.MAXBUTTONS; i++) {
+            PSwitch.Button b = PSwitch.buttonlist[i];
+            if (b.btimer != 0) {
+                b.btimer--;
+                if (b.btimer == 0) {
+                    switch (b.where) {
+                        case PSwitch.top:
+                            PSetup.sides[b.line.sidenum[0]].toptexture = b.btexture;
+                            break;
+                        case PSwitch.middle:
+                            PSetup.sides[b.line.sidenum[0]].midtexture = b.btexture;
+                            break;
+                        case PSwitch.bottom:
+                            PSetup.sides[b.line.sidenum[0]].bottomtexture = b.btexture;
+                            break;
+                    }
+                    SSound.sStartSound(b.soundorg, Sounds.sfx_swtchn);
+                    // C: memset(&buttonlist[i], 0, sizeof(button_t));
+                    b.line = null;
+                    b.where = 0;
+                    b.btexture = 0;
+                    b.btimer = 0;
+                    b.soundorg = null;
+                }
+            }
+        }
     }
 
     private PSpec() {

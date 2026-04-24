@@ -61,7 +61,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
 | p_inter.c   | `doom.play.PInter`    | Standard | Pending |                                                |
 | p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
-| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`, `pFindLowest`/`pFindHighestFloorSurrounding`, `pFindNextHighestFloor`, `pFindLowest`/`pFindHighestCeilingSurrounding`. Plus `Result` enum + `FLOORSPEED` from p_spec.h. Animated textures, EV_ triggers, `P_UpdateSpecials`, button timers still ahead. |
+| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers (`getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`, `pFind{Lowest,Highest}FloorSurrounding`, `pFindNextHighestFloor`, `pFind{Lowest,Highest}CeilingSurrounding`) + `Result` enum + `FLOORSPEED`. Plus animated textures (`Anim`/`AnimDef`, `animdefs[22]`, `P_InitPicAnims`) and per-tic `P_UpdateSpecials` (animation, line-scroll 48, button countdown — level timer deferred, see deviation 23). EV_ triggers and `P_SpawnSpecials` still ahead. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Partial | 278 / ~. T_VerticalDoor + EV_DoDoor + P_SpawnDoorCloseIn30 + P_SpawnDoorRaiseIn5Mins. EV_DoLockedDoor + EV_VerticalDoor land with Player.cards[] inventory. vldoor_e (8 values) as int constants. The `#if 0` sliding-door block is skipped (dead C code). |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Verified | 279 / ~. Full port: T_MoveCeiling + EV_DoCeiling + active-ceiling slot table (MAXCEILINGS=30) + EV_CeilingCrushStop + P_ActivateInStasisCeiling. Sound calls go through SSound stub; `acv=NULL` pause sentinel maps to `acp1=null` (deviation 14). |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Partial | 162 / ~. Just `T_MovePlane` (generic floor/ceiling mover). T_MoveFloor / EV_DoFloor / EV_BuildStairs need P_Find{Highest,Lowest,...}, twoSided/getSide/getSector, S_StartSound, floormove_t, floor_e/stair_e — all still ahead. |
@@ -305,6 +305,24 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       deferred. `hu_lib` reads the flag in its erase path; a fuller
       port replaces this class in place without changing the public
       surface.
+23. `p_spec.c` P_UpdateSpecials level timer:
+    - The `if (levelTimer) { levelTimeCount--; if (!levelTimeCount)
+      G_ExitLevel(); }` block at the top of the C routine is ported
+      with the `G_ExitLevel()` call commented out — g_game.c is
+      unported. The countdown still happens; only the timeout exit
+      action is skipped. Tests assert the decrement behavior.
+    - The `{-1}` istexture sentinel at the end of `animdefs[]` in the
+      C maps to a null gap in the Java `AnimDef[]` (Java has no
+      tri-state boolean). `P_InitPicAnims` stops on the first null —
+      same loop shape as the C.
+    - `anim_t* lastanim` (pointer) becomes `int numanims` (count).
+      The C iterates `for (anim = anims; anim < lastanim; anim++)` —
+      we iterate `for (int n = 0; n < numanims; n++)`. Observable
+      identical.
+    - C's `memset(&buttonlist[i], 0, sizeof(button_t))` at button
+      timeout is replaced with explicit field clears. The Button
+      slot object stays in the table (see PSwitch deviation); only
+      its contents reset.
 22. `p_ceilng.c` + `s_sound.c`:
     - `ceiling_e` (6 values) lands as `public static final int` constants
       on PCeilng rather than a Java enum, since the switch-on-ordinal +

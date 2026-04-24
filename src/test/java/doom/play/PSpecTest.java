@@ -1,11 +1,15 @@
 package doom.play;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import doom.render.Line;
+import doom.render.RData;
 import doom.render.Sector;
+import doom.render.Side;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +22,20 @@ class PSpecTest {
         PSetup.sectors = null;
         PSetup.numlines = 0;
         PSetup.lines = null;
+        PSetup.numsides = 0;
+        PSetup.sides = null;
+        PTick.leveltime = 0;
+        PSpec.numanims = 0;
+        PSpec.numlinespecials = 0;
+        PSpec.levelTimer = false;
+        PSpec.levelTimeCount = 0;
+        for (int i = 0; i < PSwitch.MAXBUTTONS; i++) {
+            PSwitch.buttonlist[i].line = null;
+            PSwitch.buttonlist[i].where = 0;
+            PSwitch.buttonlist[i].btexture = 0;
+            PSwitch.buttonlist[i].btimer = 0;
+            PSwitch.buttonlist[i].soundorg = null;
+        }
     }
 
     // getNextSector: one-sided line (ML_TWOSIDED not set) returns null.
@@ -316,5 +334,239 @@ class PSpecTest {
         center.linecount = 0;
 
         assertEquals(0, PSpec.pFindHighestCeilingSurrounding(center));
+    }
+
+    // --- P_UpdateSpecials ---
+
+    // Seeds a single-side Side array with a given set of textures.
+    private static void seedOneSide(int topTex, int midTex, int botTex) {
+        Side side = new Side();
+        side.toptexture = topTex;
+        side.midtexture = midTex;
+        side.bottomtexture = botTex;
+        PSetup.sides = new Side[] { side };
+        PSetup.numsides = 1;
+    }
+
+    // Button countdown: btimer > 1 just decrements.
+    @Test
+    void updateSpecialsButtonTimerJustDecrements() {
+        seedOneSide(0, 0, 0);
+        Line line = new Line();
+        line.sidenum[0] = 0;
+
+        PSwitch.Button b = PSwitch.buttonlist[0];
+        b.line = line;
+        b.where = PSwitch.top;
+        b.btexture = 7;
+        b.btimer = 10;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(9, b.btimer);
+        assertEquals(0, PSetup.sides[0].toptexture); // not yet reverted
+    }
+
+    // Button countdown: hitting 0 reverts the texture back to btexture,
+    // then memsets the slot.
+    @Test
+    void updateSpecialsButtonTimerRestoresTopTexture() {
+        seedOneSide(99, 0, 0);           // "pressed" texture
+        Line line = new Line();
+        line.sidenum[0] = 0;
+
+        PSwitch.Button b = PSwitch.buttonlist[0];
+        b.line = line;
+        b.where = PSwitch.top;
+        b.btexture = 42;                 // original "off" texture
+        b.btimer = 1;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(42, PSetup.sides[0].toptexture);
+        // Slot cleared (memset).
+        assertEquals(0, b.btimer);
+        assertNull(b.line);
+        assertEquals(0, b.btexture);
+    }
+
+    @Test
+    void updateSpecialsButtonTimerRestoresMidTexture() {
+        seedOneSide(0, 99, 0);
+        Line line = new Line();
+        line.sidenum[0] = 0;
+
+        PSwitch.Button b = PSwitch.buttonlist[0];
+        b.line = line;
+        b.where = PSwitch.middle;
+        b.btexture = 55;
+        b.btimer = 1;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(55, PSetup.sides[0].midtexture);
+    }
+
+    @Test
+    void updateSpecialsButtonTimerRestoresBottomTexture() {
+        seedOneSide(0, 0, 99);
+        Line line = new Line();
+        line.sidenum[0] = 0;
+
+        PSwitch.Button b = PSwitch.buttonlist[0];
+        b.line = line;
+        b.where = PSwitch.bottom;
+        b.btexture = 77;
+        b.btimer = 1;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(77, PSetup.sides[0].bottomtexture);
+    }
+
+    // Line-scroll special 48 increments textureoffset by FRACUNIT each tic.
+    @Test
+    void updateSpecialsLineScroll48IncrementsTextureOffset() {
+        seedOneSide(0, 0, 0);
+        PSetup.sides[0].textureoffset = 100;
+
+        Line line = new Line();
+        line.sidenum[0] = 0;
+        line.special = 48;
+
+        PSpec.linespeciallist[0] = line;
+        PSpec.numlinespecials = 1;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(100 + doom.fixed.Fixed.FRACUNIT, PSetup.sides[0].textureoffset);
+    }
+
+    // Non-scrolling special lines are left alone.
+    @Test
+    void updateSpecialsIgnoresNonScrollSpecials() {
+        seedOneSide(0, 0, 0);
+        PSetup.sides[0].textureoffset = 77;
+
+        Line line = new Line();
+        line.sidenum[0] = 0;
+        line.special = 99;
+
+        PSpec.linespeciallist[0] = line;
+        PSpec.numlinespecials = 1;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(77, PSetup.sides[0].textureoffset);
+    }
+
+    // Level timer: counts down when active.
+    @Test
+    void updateSpecialsLevelTimerDecrementsWhenActive() {
+        PSpec.levelTimer = true;
+        PSpec.levelTimeCount = 10;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(9, PSpec.levelTimeCount);
+    }
+
+    // Level timer: inactive → not decremented.
+    @Test
+    void updateSpecialsLevelTimerIgnoredWhenOff() {
+        PSpec.levelTimer = false;
+        PSpec.levelTimeCount = 10;
+
+        PSpec.pUpdateSpecials();
+
+        assertEquals(10, PSpec.levelTimeCount);
+    }
+
+    // Flat/texture animation cycles texturetranslation[] for each
+    // entry in `anims[]`.
+    @Test
+    void updateSpecialsAnimatesTextureIndicesWhenInstalled() {
+        // Save + stub the RData translation arrays.
+        int[] savedTex = RData.texturetranslation;
+        int[] savedFlat = RData.flattranslation;
+        try {
+            RData.texturetranslation = new int[16];
+            RData.flattranslation = new int[16];
+
+            // Install one texture anim: basepic=5, numpics=3, speed=2.
+            PSpec.Anim a = PSpec.anims[0];
+            a.istexture = true;
+            a.basepic = 5;
+            a.numpics = 3;
+            a.picnum = 7;
+            a.speed = 2;
+            PSpec.numanims = 1;
+
+            PTick.leveltime = 4;
+
+            PSpec.pUpdateSpecials();
+
+            // For each i in [basepic, basepic+numpics):
+            //   pic = basepic + ((leveltime / speed + i) % numpics)
+            // leveltime/speed = 2. i=5: (2+5)%3 = 1 → pic=6. i=6: 2%3 → pic=7.
+            // i=7: (2+7)%3 = 0 → pic=5.
+            assertEquals(6, RData.texturetranslation[5]);
+            assertEquals(7, RData.texturetranslation[6]);
+            assertEquals(5, RData.texturetranslation[7]);
+        } finally {
+            RData.texturetranslation = savedTex;
+            RData.flattranslation = savedFlat;
+        }
+    }
+
+    // Flat animation: same logic, writes flattranslation[] when istexture = false.
+    @Test
+    void updateSpecialsAnimatesFlatIndices() {
+        int[] savedTex = RData.texturetranslation;
+        int[] savedFlat = RData.flattranslation;
+        try {
+            RData.texturetranslation = new int[16];
+            RData.flattranslation = new int[16];
+
+            PSpec.Anim a = PSpec.anims[0];
+            a.istexture = false;
+            a.basepic = 2;
+            a.numpics = 2;
+            a.picnum = 3;
+            a.speed = 1;
+            PSpec.numanims = 1;
+
+            PTick.leveltime = 1;
+
+            PSpec.pUpdateSpecials();
+
+            // leveltime/speed = 1. i=2: (1+2)%2 = 1 → 2+1 = 3.
+            //                    i=3: (1+3)%2 = 0 → 2+0 = 2.
+            assertEquals(3, RData.flattranslation[2]);
+            assertEquals(2, RData.flattranslation[3]);
+            // texturetranslation untouched.
+            assertEquals(0, RData.texturetranslation[2]);
+        } finally {
+            RData.texturetranslation = savedTex;
+            RData.flattranslation = savedFlat;
+        }
+    }
+
+    // Sanity: animdefs[] carries the expected number of real entries.
+    @Test
+    void animdefsCountMatchesCReference() {
+        int nonNull = 0;
+        for (PSpec.AnimDef d : PSpec.animdefs) {
+            if (d != null) nonNull++;
+        }
+        // Doom 1 + Doom 2 flat animations + texture animations = 22.
+        assertEquals(22, nonNull);
+    }
+
+    // Sizing constants match the C header.
+    @Test
+    void animSizingConstantsMatchHeader() {
+        assertEquals(32, PSpec.MAXANIMS);
+        assertEquals(64, PSpec.MAXLINEANIMS);
     }
 }
