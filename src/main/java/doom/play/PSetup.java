@@ -12,6 +12,7 @@ package doom.play;
 
 import doom.render.Line;
 import doom.render.Sector;
+import doom.render.Side;
 
 public final class PSetup {
 
@@ -21,6 +22,9 @@ public final class PSetup {
 
     public static int numlines;
     public static Line[] lines;
+
+    public static int numsides;
+    public static Side[] sides;
 
     private PSetup() {
     }

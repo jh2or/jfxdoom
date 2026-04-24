@@ -52,7 +52,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file      | Java class            | Tier     | Status  | Notes                                          |
 | ----------- | --------------------- | -------- | ------- | ---------------------------------------------- |
 | p_tick.c    | `doom.play.PTick`     | Standard | Partial | 158 / ~. Thinker list ops (`P_InitThinkers`/`P_AddThinker`/`P_RemoveThinker`/`P_AllocateThinker`/`P_RunThinkers`) + `leveltime`/`thinkercap` globals. `P_Ticker` deferred — it calls `P_PlayerThink`/`P_UpdateSpecials`/`P_RespawnSpecials` and reads `paused`/`menuactive`/`players[]`, none ported yet. Thinker.java upgraded from stub to full `actionf_t` union (see deviation 14). |
-| p_setup.c   | `doom.play.PSetup`    | Standard | Partial | Stub carrying only `sectors[]`/`numsectors`/`lines[]`/`numlines` globals so dependents (PLights, PSpec) compile and can be tested. Actual level-load parser still ahead. |
+| p_setup.c   | `doom.play.PSetup`    | Standard | Partial | Stub carrying only `sectors[]`/`numsectors`/`lines[]`/`numlines`/`sides[]`/`numsides` globals so dependents (PLights, PSpec, PPlats) compile and can be tested. Actual level-load parser still ahead. |
 | p_mobj.c    | `doom.play.PMobj`     | Standard | Pending |                                                |
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Pending |                                                |
 | p_map.c     | `doom.play.PMap`      | Standard | Partial | Stub: `pChangeSector` returns false (no blocking mobj) until the mobj/blockmap iteration lands. T_MovePlane reads it (see deviation 21). |
@@ -66,7 +66,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Verified | 279 / ~. Full port: T_MoveCeiling + EV_DoCeiling + active-ceiling slot table (MAXCEILINGS=30) + EV_CeilingCrushStop + P_ActivateInStasisCeiling. Sound calls go through SSound stub; `acv=NULL` pause sentinel maps to `acp1=null` (deviation 14). |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Partial | 162 / ~. Just `T_MovePlane` (generic floor/ceiling mover). T_MoveFloor / EV_DoFloor / EV_BuildStairs need P_Find{Highest,Lowest,...}, twoSided/getSide/getSector, S_StartSound, floormove_t, floor_e/stair_e — all still ahead. |
 | p_lights.c  | `doom.play.PLights`   | Standard | Verified | 357 / ~. Five sector-lighting thinker subtypes (`FireFlicker`/`LightFlash`/`Strobe`/`Glow`) subclass `Thinker`; `acp1` bound via method reference. Z_Malloc elided for extended thinkers — they're Java objects (deviation 16). |
-| p_plats.c   | `doom.play.PPlats`    | Standard | Pending |                                                |
+| p_plats.c   | `doom.play.PPlats`    | Standard | Verified | 295 / ~. Full port: T_PlatRaise + EV_DoPlat + activeplats[MAXPLATS] slot table + EV_StopPlat + P_ActivateInStasis + add/remove. plat_e and plattype_e as int constants (same rationale as PCeilng's ceiling_e). raise{AndChange,ToNearestAndChange} reads Side.sector.floorpic. |
 | p_switch.c  | `doom.play.PSwitch`   | Standard | Pending |                                                |
 | p_telept.c  | `doom.play.PTelept`   | Standard | Pending |                                                |
 | p_saveg.c   | `doom.play.PSaveg`    | Standard | Pending |                                                |
