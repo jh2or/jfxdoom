@@ -63,7 +63,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
 | p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers: `getNextSector`, `pFindSectorFromLineTag`, `pFindMinSurroundingLight`, `pFindLowest`/`pFindHighestFloorSurrounding`, `pFindNextHighestFloor`, `pFindLowest`/`pFindHighestCeilingSurrounding`. Plus `Result` enum + `FLOORSPEED` from p_spec.h. Animated textures, EV_ triggers, `P_UpdateSpecials`, button timers still ahead. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Pending |                                                |
-| p_ceilng.c  | `doom.play.PCeilng`   | Standard | Pending |                                                |
+| p_ceilng.c  | `doom.play.PCeilng`   | Standard | Verified | 279 / ~. Full port: T_MoveCeiling + EV_DoCeiling + active-ceiling slot table (MAXCEILINGS=30) + EV_CeilingCrushStop + P_ActivateInStasisCeiling. Sound calls go through SSound stub; `acv=NULL` pause sentinel maps to `acp1=null` (deviation 14). |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Partial | 162 / ~. Just `T_MovePlane` (generic floor/ceiling mover). T_MoveFloor / EV_DoFloor / EV_BuildStairs need P_Find{Highest,Lowest,...}, twoSided/getSide/getSector, S_StartSound, floormove_t, floor_e/stair_e — all still ahead. |
 | p_lights.c  | `doom.play.PLights`   | Standard | Verified | 357 / ~. Five sector-lighting thinker subtypes (`FireFlicker`/`LightFlash`/`Strobe`/`Glow`) subclass `Thinker`; `acp1` bound via method reference. Z_Malloc elided for extended thinkers — they're Java objects (deviation 16). |
 | p_plats.c   | `doom.play.PPlats`    | Standard | Pending |                                                |
@@ -75,7 +75,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 
 | C file      | Java class           | Tier     | Status  | Notes                              |
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
-| s_sound.c   | `doom.sound.SSound`  | Standard | Pending |                                    |
+| s_sound.c   | `doom.sound.SSound`  | Standard | Partial | Stub: `sStartSound(Object, int)` as no-op so plane-movers (PCeilng, PDoors, PPlats, ...) can call it. Full mixer/attenuation/channel bookkeeping lands with i_sound. |
 | i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
 | sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 17). |
 
@@ -305,6 +305,19 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       deferred. `hu_lib` reads the flag in its erase path; a fuller
       port replaces this class in place without changing the public
       surface.
+22. `p_ceilng.c` + `s_sound.c`:
+    - `ceiling_e` (6 values) lands as `public static final int` constants
+      on PCeilng rather than a Java enum, since the switch-on-ordinal +
+      fall-through labels in T_MoveCeiling / EV_DoCeiling translate
+      literally from the C when the values stay as ints.
+    - The pause-ceiling sentinel `thinker.function.acv = (actionf_v)NULL`
+      maps to `acp1 = null` in Java (deviation 14). PTick's pRunThinkers
+      already gates on `acp1 != null`, so a paused ceiling stays parked
+      in the thinker list exactly like the C does — and restoring
+      `acp1 = PCeilng::tMoveCeiling` resumes it.
+    - Sound callbacks run through a no-op `SSound.sStartSound` stub
+      (`origin` is `Object` until Mobj/Degenmobj share a listener-origin
+      type — see SSound javadoc). The call-site shape is unchanged.
 21. `p_map.c` + `p_floor.c`:
     - `P_ChangeSector` is stubbed on `PMap` to return `false` by default
       — i.e. "no mobj in the way". T_MovePlane reads this value to
