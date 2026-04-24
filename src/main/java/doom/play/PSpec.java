@@ -15,7 +15,9 @@ import doom.render.RData;
 import doom.render.Sector;
 import doom.sound.SSound;
 import doom.sound.Sounds;
+import doom.system.Doomstat;
 import doom.system.ISystem;
+import doom.system.MArgv;
 import doom.wad.WWad;
 
 public final class PSpec {
@@ -410,6 +412,152 @@ public final class PSpec {
                 }
             }
         }
+    }
+
+    // p_spec.c lines 1239–1362 — P_SpawnSpecials.
+    // Called once per level after p_setup populates the world. Two
+    // passes: one over `sectors[]` spawning light/door thinkers based
+    // on `sector->special`, one over `lines[]` recording scroll-line
+    // indices into `linespeciallist[]`. Then zero the plat / ceiling /
+    // button active tables and check the -avg / -timer dm args.
+    public static void pSpawnSpecials() {
+        // episode is computed but never read inside the function in
+        // the C (the `episode = 2` dead-store is preserved for parity).
+        @SuppressWarnings("unused")
+        int episode = 1;
+        if (WWad.wCheckNumForName("texture2") >= 0) {
+            episode = 2;
+        }
+
+        // See if -TIMER needs to be used.
+        levelTimer = false;
+
+        int i = MArgv.checkParm("-avg");
+        if (i != 0 && Doomstat.deathmatch != 0) {
+            levelTimer = true;
+            levelTimeCount = 20 * 60 * 35;
+        }
+
+        i = MArgv.checkParm("-timer");
+        if (i != 0 && Doomstat.deathmatch != 0) {
+            // C: time = atoi(myargv[i+1]) * 60 * 35;
+            // atoi accepts leading digits and returns 0 on any
+            // failure; Integer.parseInt is stricter. We match the C
+            // lenient-on-junk behavior by trying parseInt and
+            // falling back to 0 on NumberFormatException (covers the
+            // "-timer foo" case).
+            int minutes = 0;
+            try {
+                minutes = Integer.parseInt(MArgv.myargv[i + 1]);
+            } catch (NumberFormatException | ArrayIndexOutOfBoundsException ignored) {
+                // atoi returns 0; missing arg would crash in C, but
+                // tests shouldn't faceplant either.
+            }
+            levelTimer = true;
+            levelTimeCount = minutes * 60 * 35;
+        }
+
+        // Init special SECTORs.
+        for (int s = 0; s < PSetup.numsectors; s++) {
+            Sector sector = PSetup.sectors[s];
+            if (sector.special == 0) {
+                continue;
+            }
+
+            switch (sector.special) {
+                case 1:
+                    // FLICKERING LIGHTS
+                    PLights.pSpawnLightFlash(sector);
+                    break;
+
+                case 2:
+                    // STROBE FAST
+                    PLights.pSpawnStrobeFlash(sector, PLights.FASTDARK, 0);
+                    break;
+
+                case 3:
+                    // STROBE SLOW
+                    PLights.pSpawnStrobeFlash(sector, PLights.SLOWDARK, 0);
+                    break;
+
+                case 4:
+                    // STROBE FAST/DEATH SLIME
+                    PLights.pSpawnStrobeFlash(sector, PLights.FASTDARK, 0);
+                    sector.special = 4;
+                    break;
+
+                case 8:
+                    // GLOWING LIGHT
+                    PLights.pSpawnGlowingLight(sector);
+                    break;
+
+                case 9:
+                    // SECRET SECTOR
+                    Doomstat.totalsecret++;
+                    break;
+
+                case 10:
+                    // DOOR CLOSE IN 30 SECONDS
+                    PDoors.pSpawnDoorCloseIn30(sector);
+                    break;
+
+                case 12:
+                    // SYNC STROBE SLOW
+                    PLights.pSpawnStrobeFlash(sector, PLights.SLOWDARK, 1);
+                    break;
+
+                case 13:
+                    // SYNC STROBE FAST
+                    PLights.pSpawnStrobeFlash(sector, PLights.FASTDARK, 1);
+                    break;
+
+                case 14:
+                    // DOOR RAISE IN 5 MINUTES
+                    PDoors.pSpawnDoorRaiseIn5Mins(sector, s);
+                    break;
+
+                case 17:
+                    PLights.pSpawnFireFlicker(sector);
+                    break;
+            }
+        }
+
+        // Init line EFFECTs
+        numlinespecials = 0;
+        for (int n = 0; n < PSetup.numlines; n++) {
+            switch (PSetup.lines[n].special) {
+                case 48:
+                    // EFFECT FIRSTCOL SCROLL+
+                    linespeciallist[numlinespecials] = PSetup.lines[n];
+                    numlinespecials++;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Init other misc stuff
+        for (int n = 0; n < PCeilng.MAXCEILINGS; n++) {
+            PCeilng.activeceilings[n] = null;
+        }
+
+        for (int n = 0; n < PPlats.MAXPLATS; n++) {
+            PPlats.activeplats[n] = null;
+        }
+
+        for (int n = 0; n < PSwitch.MAXBUTTONS; n++) {
+            // C: memset(&buttonlist[n], 0, sizeof(button_t)); keep slot
+            // non-null (see PSwitch static initializer) and clear fields.
+            PSwitch.Button b = PSwitch.buttonlist[n];
+            b.line = null;
+            b.where = 0;
+            b.btexture = 0;
+            b.btimer = 0;
+            b.soundorg = null;
+        }
+
+        // UNUSED: no horizontal sliders.
+        //  P_InitSlidingDoorFrames();
     }
 
     private PSpec() {

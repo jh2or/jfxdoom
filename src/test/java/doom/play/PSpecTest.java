@@ -1,6 +1,7 @@
 package doom.play;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -10,6 +11,8 @@ import doom.render.Line;
 import doom.render.RData;
 import doom.render.Sector;
 import doom.render.Side;
+import doom.system.Doomstat;
+import doom.system.MArgv;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,16 +28,27 @@ class PSpecTest {
         PSetup.numsides = 0;
         PSetup.sides = null;
         PTick.leveltime = 0;
+        PTick.pInitThinkers();
         PSpec.numanims = 0;
         PSpec.numlinespecials = 0;
         PSpec.levelTimer = false;
         PSpec.levelTimeCount = 0;
+        Doomstat.deathmatch = 0;
+        Doomstat.totalsecret = 0;
+        MArgv.myargc = 0;
+        MArgv.myargv = new String[0];
         for (int i = 0; i < PSwitch.MAXBUTTONS; i++) {
             PSwitch.buttonlist[i].line = null;
             PSwitch.buttonlist[i].where = 0;
             PSwitch.buttonlist[i].btexture = 0;
             PSwitch.buttonlist[i].btimer = 0;
             PSwitch.buttonlist[i].soundorg = null;
+        }
+        for (int i = 0; i < PCeilng.MAXCEILINGS; i++) {
+            PCeilng.activeceilings[i] = null;
+        }
+        for (int i = 0; i < PPlats.MAXPLATS; i++) {
+            PPlats.activeplats[i] = null;
         }
     }
 
@@ -568,5 +582,290 @@ class PSpecTest {
     void animSizingConstantsMatchHeader() {
         assertEquals(32, PSpec.MAXANIMS);
         assertEquals(64, PSpec.MAXLINEANIMS);
+    }
+
+    // --- P_SpawnSpecials ---
+
+    // Sector with special == 9 → increments totalsecret but doesn't
+    // spawn a thinker.
+    @Test
+    void spawnSpecialsSecretSectorIncrementsCounter() {
+        Sector sec = new Sector();
+        sec.special = 9;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertEquals(1, Doomstat.totalsecret);
+        assertNull(sec.specialdata); // no thinker
+    }
+
+    // Sector special 1 → spawns a LightFlash thinker.
+    @Test
+    void spawnSpecialsLightFlashesOnSpecial1() {
+        Sector sec = new Sector();
+        sec.special = 1;
+        sec.lightlevel = 200;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        // Walk the thinker list for a LightFlash.
+        boolean found = false;
+        for (Thinker t = PTick.thinkercap.next; t != PTick.thinkercap; t = t.next) {
+            if (t instanceof PLights.LightFlash) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found);
+    }
+
+    // Sector special 4 → strobe AND preserves special (restored to 4
+    // after P_SpawnStrobeFlash, which the C clears on spawn).
+    @Test
+    void spawnSpecialsSpecial4RestoresSpecialAfterStrobe() {
+        Sector sec = new Sector();
+        sec.special = 4;
+        sec.lightlevel = 200;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        // P_SpawnStrobeFlash clears special → 0; then the C re-assigns
+        // special = 4. The Java port preserves this verbatim.
+        assertEquals(4, sec.special);
+    }
+
+    // Sector special 10 → door-close-in-30 door. Verify type + direction.
+    @Test
+    void spawnSpecialsDoorCloseIn30SpawnsWaitingDoor() {
+        Sector sec = new Sector();
+        sec.special = 10;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        PDoors.VLDoor d = (PDoors.VLDoor) sec.specialdata;
+        assertNotNull(d);
+        assertEquals(PDoors.normal, d.type);
+        assertEquals(0, d.direction);         // waiting
+        assertEquals(30 * 35, d.topcountdown); // 30s
+    }
+
+    // Sector special 14 → raise-in-5-minutes door.
+    @Test
+    void spawnSpecialsRaiseIn5MinsSpawnsInitialWaitDoor() {
+        Sector sec = new Sector();
+        sec.special = 14;
+        sec.ceilingheight = 200;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        PDoors.VLDoor d = (PDoors.VLDoor) sec.specialdata;
+        assertNotNull(d);
+        assertEquals(PDoors.raiseIn5Mins, d.type);
+        assertEquals(2, d.direction);              // INITIAL WAIT
+        assertEquals(5 * 60 * 35, d.topcountdown); // 5min
+    }
+
+    // Sector special 17 → fire-flicker thinker.
+    @Test
+    void spawnSpecialsFireFlickerOnSpecial17() {
+        Sector sec = new Sector();
+        sec.special = 17;
+        sec.lightlevel = 200;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        boolean found = false;
+        for (Thinker t = PTick.thinkercap.next; t != PTick.thinkercap; t = t.next) {
+            if (t instanceof PLights.FireFlicker) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found);
+    }
+
+    // Sector special 0 → untouched.
+    @Test
+    void spawnSpecialsIgnoresZeroSpecials() {
+        Sector sec = new Sector();
+        sec.special = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertNull(sec.specialdata);
+    }
+
+    // Unknown special (not in switch) is a no-op.
+    @Test
+    void spawnSpecialsSkipsUnknownSectorSpecials() {
+        Sector sec = new Sector();
+        sec.special = 999;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertNull(sec.specialdata);
+    }
+
+    // Line special 48 → appended to linespeciallist.
+    @Test
+    void spawnSpecialsRegistersScrollingLines() {
+        Line scroll1 = new Line(); scroll1.special = 48;
+        Line other   = new Line(); other.special   = 7;   // not tracked
+        Line scroll2 = new Line(); scroll2.special = 48;
+        PSetup.lines = new Line[] { scroll1, other, scroll2 };
+        PSetup.numlines = 3;
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertEquals(2, PSpec.numlinespecials);
+        assertSame(scroll1, PSpec.linespeciallist[0]);
+        assertSame(scroll2, PSpec.linespeciallist[1]);
+    }
+
+    // -avg needs deathmatch > 0 to activate.
+    @Test
+    void spawnSpecialsAvgTimerNeedsDeathmatch() {
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+        MArgv.myargv = new String[] { "jfxdoom", "-avg" };
+        MArgv.myargc = 2;
+        Doomstat.deathmatch = 0; // NOT deathmatch
+
+        PSpec.pSpawnSpecials();
+
+        assertFalse(PSpec.levelTimer);
+        assertEquals(0, PSpec.levelTimeCount);
+    }
+
+    // -avg + deathmatch → 20-minute timer.
+    @Test
+    void spawnSpecialsAvgTimerInDeathmatchSetsTwentyMinutes() {
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+        MArgv.myargv = new String[] { "jfxdoom", "-avg" };
+        MArgv.myargc = 2;
+        Doomstat.deathmatch = 1;
+
+        PSpec.pSpawnSpecials();
+
+        assertTrue(PSpec.levelTimer);
+        assertEquals(20 * 60 * 35, PSpec.levelTimeCount);
+    }
+
+    // -timer N + deathmatch → N-minute timer.
+    @Test
+    void spawnSpecialsTimerArgSetsMinutes() {
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+        MArgv.myargv = new String[] { "jfxdoom", "-timer", "7" };
+        MArgv.myargc = 3;
+        Doomstat.deathmatch = 1;
+
+        PSpec.pSpawnSpecials();
+
+        assertTrue(PSpec.levelTimer);
+        assertEquals(7 * 60 * 35, PSpec.levelTimeCount);
+    }
+
+    // -timer N without deathmatch → inactive.
+    @Test
+    void spawnSpecialsTimerArgNeedsDeathmatch() {
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+        MArgv.myargv = new String[] { "jfxdoom", "-timer", "5" };
+        MArgv.myargc = 3;
+        Doomstat.deathmatch = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertFalse(PSpec.levelTimer);
+    }
+
+    // Malformed -timer argument → levelTimeCount ends up 0 (atoi parity).
+    @Test
+    void spawnSpecialsTimerArgLenientOnBadNumber() {
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+        MArgv.myargv = new String[] { "jfxdoom", "-timer", "notanumber" };
+        MArgv.myargc = 3;
+        Doomstat.deathmatch = 2;
+
+        PSpec.pSpawnSpecials();
+
+        assertTrue(PSpec.levelTimer);
+        assertEquals(0, PSpec.levelTimeCount);
+    }
+
+    // Spawn clears the plat / ceiling / button tables even when empty of
+    // game-specials.
+    @Test
+    void spawnSpecialsClearsActiveTables() {
+        // Pre-fill with garbage to make sure spawn wipes them.
+        PCeilng.activeceilings[0] = new PCeilng.Ceiling();
+        PPlats.activeplats[0] = new PPlats.Plat();
+        PSwitch.buttonlist[0].btimer = 99;
+
+        PSetup.sectors = new Sector[0];
+        PSetup.numsectors = 0;
+        PSetup.lines = new Line[0];
+        PSetup.numlines = 0;
+
+        PSpec.pSpawnSpecials();
+
+        assertNull(PCeilng.activeceilings[0]);
+        assertNull(PPlats.activeplats[0]);
+        assertEquals(0, PSwitch.buttonlist[0].btimer);
     }
 }

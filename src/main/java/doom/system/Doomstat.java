@@ -22,6 +22,15 @@ public final class Doomstat {
     // doomstat.h — true while replaying a demo (set by G_DoPlayDemo).
     public static boolean demoplayback;
 
+    // doomstat.h — 0 = co-op, 1 = old deathmatch, 2 = altdeath.
+    // Set from the -deathmatch / -altdeath command-line switches.
+    public static int deathmatch;
+
+    // doomstat.h — secret-sector counter, incremented by P_SpawnSpecials
+    // for each sector with special == 9; decremented by P_PlayerInSpecialSector
+    // when a player first enters one.
+    public static int totalsecret;
+
     private Doomstat() {
     }
 }
