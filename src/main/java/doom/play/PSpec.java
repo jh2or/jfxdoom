@@ -31,6 +31,26 @@ public final class PSpec {
     // p_spec.h line 600 — FLOORSPEED.
     public static final int FLOORSPEED = Fixed.FRACUNIT;
 
+    // p_spec.c lines 198–210 — getSide.
+    // Returns a side_t* given the current sector index, the line index
+    // within that sector, and the side (0/1) you want.
+    public static doom.render.Side getSide(int currentSector, int line, int side) {
+        return PSetup.sides[PSetup.sectors[currentSector].lines[line].sidenum[side]];
+    }
+
+    // p_spec.c lines 213–226 — getSector.
+    // Returns sector_t* of the sector facing the chosen side of the
+    // chosen line within the chosen sector.
+    public static Sector getSector(int currentSector, int line, int side) {
+        return PSetup.sides[PSetup.sectors[currentSector].lines[line].sidenum[side]].sector;
+    }
+
+    // p_spec.c lines 229–240 — twoSided.
+    // 0/non-zero (the C returns the bit literally, not 0/1).
+    public static int twoSided(int sector, int line) {
+        return PSetup.sectors[sector].lines[line].flags & Line.ML_TWOSIDED;
+    }
+
     // p_spec.c lines 250–262 — getNextSector.
     // Return the sector on the other side of a two-sided line.
     // Null for one-sided lines (ML_TWOSIDED not set).
