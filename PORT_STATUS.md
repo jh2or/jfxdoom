@@ -98,10 +98,10 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
 | f_wipe.c    | `doom.ui.FWipe`        | Standard | Verified | 302 / ~. Melt+ColorXForm screen wipes. `short*` aliasing of the `byte[]` framebuffers is translated as 2-byte-pair copies (see deviation 12); `I_ReadScreen` lands in a new `doom.ui.IVideo` stub. |
 | dstrings.c  | `doom.system.Dstrings` | Trivial  | Verified | 72 / ~. `endmsg[]` preserves the two missing-comma string concatenations from the C (see deviation 10). d_englsh.h constants ported into callers as they land. |
-| info.c      | `doom.play.Info`       | Trivial  | Pending | Thing/state tables — huge.      |
+| info.c      | `doom.play.Info`       | Trivial  | Partial | Three enums from info.h ported as `public static final int` constants (deviation 17): `spritenum_t` (138 entries), `statenum_t` (967), `mobjtype_t` (137). The `state_t` / `mobjinfo_t` structs and the corresponding 4670-line data tables in info.c land with p_mobj.c. |
 | doomdef.c   | `doom.system.Doomdef`  | Trivial  | Verified | No executable content in C (just includes). `Doomdef.java` holds the screen/timing constants lower modules need; enums/keys added as callers land. |
 | doomstat.c  | `doom.system.Doomstat` | Trivial  | Partial | Stub: `gamemode`, `demoplayback` only; other cross-module globals added as dependents land. |
-| d_items.c   | `doom.play.DItems`     | Trivial  | Pending |
+| d_items.c   | `doom.play.DItems`     | Trivial  | Verified | 138 / ~. `weaponinfo[NUMWEAPONS]` static table indexed by `weapontype_t`. `weapontype_t` and `ammotype_t` (doomdef.h) lifted as `public static final int` constants on Doomdef. Each `WeaponInfo` is an immutable nested record; state IDs come from `Info`. |
 
 ## 7 — Platform adapters (last — JavaFX shell)
 
