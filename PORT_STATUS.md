@@ -61,13 +61,13 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
 | p_inter.c   | `doom.play.PInter`    | Standard | Pending |                                                |
 | p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
-| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers (`getSide`/`getSector`/`twoSided`/`getNextSector`/`pFind{Lowest,Highest,Next}{Floor,Ceiling}Surrounding`/`pFindMinSurroundingLight`/`pFindSectorFromLineTag`) + `Result` enum + `FLOORSPEED` + animated textures (`Anim`/`AnimDef`, `animdefs[22]`, `P_InitPicAnims`) + per-tic `P_UpdateSpecials` (animation, line-scroll 48, button countdown — level timer `G_ExitLevel` deferred, deviation 23) + level-start `P_SpawnSpecials` (sector specials 1/2/3/4/8/9/10/12/13/14/17 + line 48 scrolls + -avg/-timer parsing). EV_ trigger dispatchers (`P_CrossSpecialLine`, `P_ShootSpecialLine`, `P_UseSpecialLine`) still ahead. |
+| p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers (`getSide`/`getSector`/`twoSided`/`getNextSector`/`pFind{Lowest,Highest,Next}{Floor,Ceiling}Surrounding`/`pFindMinSurroundingLight`/`pFindSectorFromLineTag`) + `Result` enum + `FLOORSPEED` + animated textures (`Anim`/`AnimDef`, `animdefs[22]`, `P_InitPicAnims`) + per-tic `P_UpdateSpecials` (animation, line-scroll 48, button countdown — level timer `G_ExitLevel` deferred, deviation 23) + level-start `P_SpawnSpecials` (sector specials 1/2/3/4/8/9/10/12/13/14/17 + line 48 scrolls + -avg/-timer parsing) + `EV_DoDonut` (with the famous `(!flags & ML_TWOSIDED)` precedence-bug branch preserved verbatim — see deviation 24). `P_CrossSpecialLine` and `P_ShootSpecialLine` still ahead. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Verified | 717 / ~. T_VerticalDoor + EV_DoDoor + EV_DoLockedDoor + EV_VerticalDoor + P_SpawnDoorCloseIn30 + P_SpawnDoorRaiseIn5Mins. vldoor_e (8 values) as int constants. EV_VerticalDoor / EV_DoLockedDoor read `Mobj.player.cards[]` for keycard locks (Player + Mobj.player added in this round); the message strings (PD_BLUEK / PD_REDK / PD_YELLOWK / PD_BLUEO / PD_REDO / PD_YELLOWO from d_englsh.h) live on Dstrings. The `#if 0` sliding-door block is skipped (dead C code). The C's redundant `if (!p) return 0;` checks inside switch cases and the unused `secnum` local in EV_VerticalDoor are preserved verbatim (CLAUDE.md §2). |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Verified | 279 / ~. Full port: T_MoveCeiling + EV_DoCeiling + active-ceiling slot table (MAXCEILINGS=30) + EV_CeilingCrushStop + P_ActivateInStasisCeiling. Sound calls go through SSound stub; `acv=NULL` pause sentinel maps to `acp1=null` (deviation 14). |
 | p_floor.c   | `doom.play.PFloor`    | Standard | Verified | 555 / ~. Full port: `T_MovePlane` (generic floor/ceiling mover), `T_MoveFloor` (per-tic floor thinker), `EV_DoFloor` (13-way `floor_e` dispatch), `EV_BuildStairs` (`build8`/`turbo16`). `floormove_t` is the `FloorMove extends Thinker` inner class. Sector-pointer-difference (`tsec - sectors`) becomes a linear-scan `sectorIndex(Sector)` helper. The donutRaise dispatch lives in p_spec.c (deferred — only the per-tic completion path lives here). |
 | p_lights.c  | `doom.play.PLights`   | Standard | Verified | 357 / ~. Five sector-lighting thinker subtypes (`FireFlicker`/`LightFlash`/`Strobe`/`Glow`) subclass `Thinker`; `acp1` bound via method reference. Z_Malloc elided for extended thinkers — they're Java objects (deviation 16). |
 | p_plats.c   | `doom.play.PPlats`    | Standard | Verified | 295 / ~. Full port: T_PlatRaise + EV_DoPlat + activeplats[MAXPLATS] slot table + EV_StopPlat + P_ActivateInStasis + add/remove. plat_e and plattype_e as int constants (same rationale as PCeilng's ceiling_e). raise{AndChange,ToNearestAndChange} reads Side.sector.floorpic. |
-| p_switch.c  | `doom.play.PSwitch`   | Standard | Partial | 238 / ~. Button/switch infrastructure: `alphSwitchList[]`, `P_InitSwitchList`, `P_StartButton`, `P_ChangeSwitchTexture`. `P_UseSpecialLine` waits for `EV_VerticalDoor` + the floor EV_* helpers + `G_ExitLevel`. Preserves the C quirk `buttonlist->soundorg` (always slot-0 for switch SFX). |
+| p_switch.c  | `doom.play.PSwitch`   | Standard | Verified | 655 / ~. Button/switch infrastructure (`alphSwitchList[]`, `P_InitSwitchList`, `P_StartButton`, `P_ChangeSwitchTexture`) plus the full `P_UseSpecialLine` line-special "use" dispatcher (50+ case labels routing to EV_VerticalDoor / EV_DoLockedDoor / EV_DoFloor / EV_DoCeiling / EV_DoDoor / EV_DoPlat / EV_BuildStairs / EV_DoDonut / EV_LightTurnOn / G_ExitLevel / G_SecretExitLevel). Preserves the C quirk `buttonlist->soundorg` (always slot-0 for switch SFX). |
 | p_telept.c  | `doom.play.PTelept`   | Standard | Pending |                                                |
 | p_saveg.c   | `doom.play.PSaveg`    | Standard | Pending |                                                |
 
@@ -336,6 +336,23 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
     - Sound callbacks run through a no-op `SSound.sStartSound` stub
       (`origin` is `Object` until Mobj/Degenmobj share a listener-origin
       type — see SSound javadoc). The call-site shape is unchanged.
+24. `p_spec.c` EV_DoDonut + `g_game.c` exit hooks:
+    - The C inner-loop guard at p_spec.c line 1187 reads
+      `(!s2->lines[i]->flags & ML_TWOSIDED)`. The C `!` operator
+      binds tighter than `&`, so the LHS is `(!flags) & ML_TWOSIDED`
+      — which is always 0 (since `!x` is 0 or 1, and `1 & 4 == 0`).
+      The intent was clearly `!(flags & ML_TWOSIDED)`, but the bug
+      means EV_DoDonut accepts the *first* line of s2 whose
+      backsector is not s1, even one-sided lines. Per CLAUDE.md §2,
+      faithfully preserved as a `(flags == 0 ? 1 : 0) & ML_TWOSIDED`
+      Java expression with an explanatory comment.
+    - `G_ExitLevel` and `G_SecretExitLevel` land as no-op stubs on
+      `doom.system.GGame` that just flip `gameaction = ga_completed`
+      and (for the secret variant) latch `secretexit = 1`. The full
+      G_DoCompleted intermission flow lives with d_main / wi_stuff;
+      the EV_ trigger callers in p_switch / p_spec only need the
+      latch to fire. Same pattern as SSound's no-op stub.
+
 21. `p_map.c` + `p_floor.c`:
     - `P_ChangeSector` is stubbed on `PMap` to return `false` by default
       — i.e. "no mobj in the way". T_MovePlane reads this value to

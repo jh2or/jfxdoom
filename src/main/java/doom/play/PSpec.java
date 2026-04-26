@@ -580,6 +580,90 @@ public final class PSpec {
         //  P_InitSlidingDoorFrames();
     }
 
+    //
+    // Special Stuff that can not be categorized
+    //
+    // p_spec.c lines 1163–1221 — EV_DoDonut.
+    // Spawns a "donut": the inner sector (s1) lowers to the outer
+    // ring's floor height, and the ring sector (s2) rises to meet it,
+    // adopting the outer sector (s3)'s pic + special.
+    //
+    // PRESERVED C BUG (CLAUDE.md §2): the inner-loop guard at
+    // p_spec.c line 1187 reads `(!s2->lines[i]->flags & ML_TWOSIDED)`
+    // — `!` binds tighter than `&` in C, so the LHS is `(!flags) &
+    // ML_TWOSIDED` which is always 0 (since `!x` is 0 or 1, and
+    // `1 & 4 == 0`). The guard collapses to `backsector == s1`. The
+    // intent was clearly `!(flags & ML_TWOSIDED)`, but the bug means
+    // EV_DoDonut accepts the *first* line of s2 whose backsector is
+    // not s1 — even one-sided lines. Faithfully preserved.
+    public static int evDoDonut(Line line) {
+        Sector s1;
+        Sector s2;
+        Sector s3;
+        int secnum;
+        int rtn;
+        int i;
+        PFloor.FloorMove floor;
+
+        secnum = -1;
+        rtn = 0;
+        while ((secnum = pFindSectorFromLineTag(line, secnum)) >= 0) {
+            s1 = PSetup.sectors[secnum];
+
+            // ALREADY MOVING?  IF SO, KEEP GOING...
+            if (s1.specialdata != null) {
+                continue;
+            }
+
+            rtn = 1;
+            s2 = getNextSector(s1.lines[0], s1);
+            if (s2 == null) {
+                // The C dereferences s2 unconditionally; in a clean WAD
+                // s1.lines[0] is two-sided so getNextSector never returns
+                // null. Defensive null-check here only because Java would
+                // throw NPE; the C would crash equivalently.
+                continue;
+            }
+            for (i = 0; i < s2.linecount; i++) {
+                // Faithful translation of the precedence bug — see header.
+                int notFlags = (s2.lines[i].flags == 0) ? 1 : 0;
+                if (((notFlags & Line.ML_TWOSIDED) != 0)
+                        || (s2.lines[i].backsector == s1)) {
+                    continue;
+                }
+                s3 = s2.lines[i].backsector;
+
+                // Spawn rising slime
+                floor = new PFloor.FloorMove();
+                PTick.pAddThinker(floor);
+                s2.specialdata = floor;
+                floor.function.acp1 = PFloor::tMoveFloor;
+                floor.type = PFloor.donutRaise;
+                floor.crush = false;
+                floor.direction = 1;
+                floor.sector = s2;
+                floor.speed = FLOORSPEED / 2;
+                floor.texture = s3.floorpic;
+                floor.newspecial = 0;
+                floor.floordestheight = s3.floorheight;
+
+                // Spawn lowering donut-hole
+                floor = new PFloor.FloorMove();
+                PTick.pAddThinker(floor);
+                s1.specialdata = floor;
+                floor.function.acp1 = PFloor::tMoveFloor;
+                floor.type = PFloor.lowerFloor;
+                floor.crush = false;
+                floor.direction = -1;
+                floor.sector = s1;
+                floor.speed = FLOORSPEED / 2;
+                floor.floordestheight = s3.floorheight;
+                break;
+            }
+        }
+        return rtn;
+    }
+
     private PSpec() {
     }
 }

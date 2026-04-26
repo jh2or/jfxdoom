@@ -233,6 +233,426 @@ public final class PSwitch {
         }
     }
 
+    //
+    // P_UseSpecialLine
+    // Called when a thing uses a special line.
+    // Only the front sides of lines are usable.
+    //
+    // p_switch.c lines 274–653 — line-special "use" dispatcher.
+    // Returns true on dispatch, false when the side/special combo is
+    // a no-op for this caller. The C structure is preserved verbatim
+    // — three guard switches (back-side, monster-allowed, then the
+    // big dispatch) followed by a flat `return true`.
+    public static boolean pUseSpecialLine(Mobj thing, Line line, int side) {
+        // Err...
+        // Use the back sides of VERY SPECIAL lines...
+        if (side != 0) {
+            switch (line.special) {
+                case 124:
+                    // Sliding door open&close
+                    // UNUSED?
+                    break;
+
+                default:
+                    return false;
+            }
+        }
+
+        // Switches that other things can activate.
+        if (thing.player == null) {
+            // never open secret doors
+            if ((line.flags & Line.ML_SECRET) != 0) {
+                return false;
+            }
+
+            switch (line.special) {
+                case 1:   // MANUAL DOOR RAISE
+                case 32:  // MANUAL BLUE
+                case 33:  // MANUAL RED
+                case 34:  // MANUAL YELLOW
+                    break;
+
+                default:
+                    return false;
+            }
+        }
+
+        // do something
+        switch (line.special) {
+            // MANUALS
+            case 1:    // Vertical Door
+            case 26:   // Blue Door/Locked
+            case 27:   // Yellow Door /Locked
+            case 28:   // Red Door /Locked
+
+            case 31:   // Manual door open
+            case 32:   // Blue locked door open
+            case 33:   // Red locked door open
+            case 34:   // Yellow locked door open
+
+            case 117:  // Blazing door raise
+            case 118:  // Blazing door open
+                PDoors.evVerticalDoor(line, thing);
+                break;
+
+            //UNUSED - Door Slide Open&Close
+            // case 124:
+            // EV_SlidingDoor (line, thing);
+            // break;
+
+            // SWITCHES
+            case 7:
+                // Build Stairs
+                if (PFloor.evBuildStairs(line, PFloor.build8) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 9:
+                // Change Donut
+                if (PSpec.evDoDonut(line) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 11:
+                // Exit level
+                pChangeSwitchTexture(line, 0);
+                doom.system.GGame.gExitLevel();
+                break;
+
+            case 14:
+                // Raise Floor 32 and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseAndChange, 32) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 15:
+                // Raise Floor 24 and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseAndChange, 24) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 18:
+                // Raise Floor to next highest floor
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorToNearest) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 20:
+                // Raise Plat next highest floor and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseToNearestAndChange, 0) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 21:
+                // PlatDownWaitUpStay
+                if (PPlats.evDoPlat(line, PPlats.downWaitUpStay, 0) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 23:
+                // Lower Floor to Lowest
+                if (PFloor.evDoFloor(line, PFloor.lowerFloorToLowest) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 29:
+                // Raise Door
+                if (PDoors.evDoDoor(line, PDoors.normal) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 41:
+                // Lower Ceiling to Floor
+                if (PCeilng.evDoCeiling(line, PCeilng.lowerToFloor) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 71:
+                // Turbo Lower Floor
+                if (PFloor.evDoFloor(line, PFloor.turboLower) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 49:
+                // Ceiling Crush And Raise
+                if (PCeilng.evDoCeiling(line, PCeilng.crushAndRaise) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 50:
+                // Close Door
+                if (PDoors.evDoDoor(line, PDoors.close) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 51:
+                // Secret EXIT
+                pChangeSwitchTexture(line, 0);
+                doom.system.GGame.gSecretExitLevel();
+                break;
+
+            case 55:
+                // Raise Floor Crush
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorCrush) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 101:
+                // Raise Floor
+                if (PFloor.evDoFloor(line, PFloor.raiseFloor) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 102:
+                // Lower Floor to Surrounding floor height
+                if (PFloor.evDoFloor(line, PFloor.lowerFloor) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 103:
+                // Open Door
+                if (PDoors.evDoDoor(line, PDoors.open) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 111:
+                // Blazing Door Raise (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeRaise) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 112:
+                // Blazing Door Open (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeOpen) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 113:
+                // Blazing Door Close (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeClose) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 122:
+                // Blazing PlatDownWaitUpStay
+                if (PPlats.evDoPlat(line, PPlats.blazeDWUS, 0) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 127:
+                // Build Stairs Turbo 16
+                if (PFloor.evBuildStairs(line, PFloor.turbo16) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 131:
+                // Raise Floor Turbo
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorTurbo) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 133:
+                // BlzOpenDoor BLUE
+            case 135:
+                // BlzOpenDoor RED
+            case 137:
+                // BlzOpenDoor YELLOW
+                if (PDoors.evDoLockedDoor(line, PDoors.blazeOpen, thing) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            case 140:
+                // Raise Floor 512
+                if (PFloor.evDoFloor(line, PFloor.raiseFloor512) != 0) {
+                    pChangeSwitchTexture(line, 0);
+                }
+                break;
+
+            // BUTTONS
+            case 42:
+                // Close Door
+                if (PDoors.evDoDoor(line, PDoors.close) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 43:
+                // Lower Ceiling to Floor
+                if (PCeilng.evDoCeiling(line, PCeilng.lowerToFloor) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 45:
+                // Lower Floor to Surrounding floor height
+                if (PFloor.evDoFloor(line, PFloor.lowerFloor) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 60:
+                // Lower Floor to Lowest
+                if (PFloor.evDoFloor(line, PFloor.lowerFloorToLowest) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 61:
+                // Open Door
+                if (PDoors.evDoDoor(line, PDoors.open) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 62:
+                // PlatDownWaitUpStay
+                if (PPlats.evDoPlat(line, PPlats.downWaitUpStay, 1) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 63:
+                // Raise Door
+                if (PDoors.evDoDoor(line, PDoors.normal) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 64:
+                // Raise Floor to ceiling
+                if (PFloor.evDoFloor(line, PFloor.raiseFloor) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 66:
+                // Raise Floor 24 and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseAndChange, 24) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 67:
+                // Raise Floor 32 and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseAndChange, 32) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 65:
+                // Raise Floor Crush
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorCrush) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 68:
+                // Raise Plat to next highest floor and change texture
+                if (PPlats.evDoPlat(line, PPlats.raiseToNearestAndChange, 0) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 69:
+                // Raise Floor to next highest floor
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorToNearest) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 70:
+                // Turbo Lower Floor
+                if (PFloor.evDoFloor(line, PFloor.turboLower) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 114:
+                // Blazing Door Raise (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeRaise) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 115:
+                // Blazing Door Open (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeOpen) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 116:
+                // Blazing Door Close (faster than TURBO!)
+                if (PDoors.evDoDoor(line, PDoors.blazeClose) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 123:
+                // Blazing PlatDownWaitUpStay
+                if (PPlats.evDoPlat(line, PPlats.blazeDWUS, 0) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 132:
+                // Raise Floor Turbo
+                if (PFloor.evDoFloor(line, PFloor.raiseFloorTurbo) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 99:
+                // BlzOpenDoor BLUE
+            case 134:
+                // BlzOpenDoor RED
+            case 136:
+                // BlzOpenDoor YELLOW
+                if (PDoors.evDoLockedDoor(line, PDoors.blazeOpen, thing) != 0) {
+                    pChangeSwitchTexture(line, 1);
+                }
+                break;
+
+            case 138:
+                // Light Turn On
+                PLights.evLightTurnOn(line, 255);
+                pChangeSwitchTexture(line, 1);
+                break;
+
+            case 139:
+                // Light Turn Off
+                PLights.evLightTurnOn(line, 35);
+                pChangeSwitchTexture(line, 1);
+                break;
+        }
+
+        return true;
+    }
+
     private PSwitch() {
     }
 }
