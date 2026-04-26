@@ -33,4 +33,12 @@ public class Mobj extends Thinker {
     // P_BlockThingsIterator reads bnext to traverse.
     public Mobj bnext;
     public Mobj bprev;
+
+    // p_mobj.h lines 238–239 — bounding cylinder. radius is half the
+    // mobj's footprint; height is its vertical extent (z..z+height).
+    // PIT_AddThingIntercepts builds a corner-to-corner crossection
+    // around (x±radius, y±radius); P_TryMove reads height for vertical
+    // clipping.
+    public int radius; // fixed_t
+    public int height; // fixed_t
 }

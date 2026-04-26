@@ -2,6 +2,7 @@ package doom.play;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import doom.fixed.Fixed;
@@ -29,9 +30,18 @@ class PMaputlTest {
         PSetup.lines = null;
         PSetup.bmapwidth = 0;
         PSetup.bmapheight = 0;
+        PSetup.bmaporgx = 0;
+        PSetup.bmaporgy = 0;
         PSetup.blockmap = null;
         PSetup.blockmaplump = null;
         PSetup.blocklinks = null;
+        PMaputl.intercept_p = 0;
+        PMaputl.earlyout = false;
+        PMaputl.ptflags = 0;
+        PMaputl.trace.x = 0;
+        PMaputl.trace.y = 0;
+        PMaputl.trace.dx = 0;
+        PMaputl.trace.dy = 0;
         // Bumping past whatever any earlier test left behind keeps
         // each iterator pass starting with "fresh" lines.
         RMain.validcount++;
@@ -534,5 +544,270 @@ class PMaputlTest {
 
         assertFalse(rtn);
         assertEquals(2, count[0]);  // visited a, then b returned false
+    }
+
+    // ----- PIT_AddLineIntercepts -----
+
+    // Build a horizontal line ld going right from (0, FRACUNIT) to
+    // (FRACUNIT, FRACUNIT) on the y=FRACUNIT row.
+    private static Line horizLine() {
+        Line ld = new Line();
+        ld.v1 = new Vertex(); ld.v1.x = 0;              ld.v1.y = Fixed.FRACUNIT;
+        ld.v2 = new Vertex(); ld.v2.x = Fixed.FRACUNIT; ld.v2.y = Fixed.FRACUNIT;
+        ld.dx = ld.v2.x - ld.v1.x;
+        ld.dy = 0;
+        ld.slopetype = Slopetype.ST_HORIZONTAL;
+        ld.sidenum[0] = 0;
+        ld.sidenum[1] = -1; // single-sided by default
+        return ld;
+    }
+
+    // Trace from (FRACUNIT/2, 0) going +y for distance FRACUNIT*2 will
+    // cross the y=FRACUNIT horizontal line at frac = 1/2.
+    @Test
+    void pitAddLineInterceptsAddsCrossingLine() {
+        Line ld = horizLine();
+
+        PMaputl.trace.x = Fixed.FRACUNIT / 2;
+        PMaputl.trace.y = 0;
+        PMaputl.trace.dx = 0;
+        PMaputl.trace.dy = Fixed.FRACUNIT * 2;
+        PMaputl.intercept_p = 0;
+
+        boolean rtn = PMaputl.pitAddLineIntercepts(ld);
+
+        assertTrue(rtn);
+        assertEquals(1, PMaputl.intercept_p);
+        Intercept hit = PMaputl.intercepts[0];
+        assertTrue(hit.isaline);
+        assertSame(ld, hit.line);
+        assertEquals(Fixed.FRACUNIT / 2, hit.frac, "frac should be 0.5");
+    }
+
+    // Trace that is parallel to the line (also +x, same direction)
+    // never crosses → nothing added, returns true.
+    @Test
+    void pitAddLineInterceptsParallelTraceAddsNothing() {
+        Line ld = horizLine();
+
+        PMaputl.trace.x = 0;
+        PMaputl.trace.y = 0;          // below the line
+        PMaputl.trace.dx = Fixed.FRACUNIT;
+        PMaputl.trace.dy = 0;
+        PMaputl.intercept_p = 0;
+
+        boolean rtn = PMaputl.pitAddLineIntercepts(ld);
+
+        assertTrue(rtn);
+        assertEquals(0, PMaputl.intercept_p);
+    }
+
+    // EARLYOUT with frac < 1 and a single-sided line stops checking
+    // (returns false).
+    @Test
+    void pitAddLineInterceptsEarlyoutStopsOnSolidWall() {
+        Line ld = horizLine();
+        ld.sidenum[1] = -1;
+        ld.backsector = null; // solid wall
+
+        PMaputl.trace.x = Fixed.FRACUNIT / 2;
+        PMaputl.trace.y = 0;
+        PMaputl.trace.dx = 0;
+        PMaputl.trace.dy = Fixed.FRACUNIT * 2;
+        PMaputl.intercept_p = 0;
+        PMaputl.earlyout = true;
+
+        boolean rtn = PMaputl.pitAddLineIntercepts(ld);
+
+        assertFalse(rtn);
+        // No intercept appended either — we early-return before the push.
+        assertEquals(0, PMaputl.intercept_p);
+    }
+
+    // Trace starts past the line (frac would be negative) → continue
+    // without adding.
+    @Test
+    void pitAddLineInterceptsBehindSourceSkips() {
+        Line ld = horizLine();
+
+        // Trace starts above the line going further up.
+        PMaputl.trace.x = Fixed.FRACUNIT / 2;
+        PMaputl.trace.y = Fixed.FRACUNIT * 2;
+        PMaputl.trace.dx = 0;
+        PMaputl.trace.dy = Fixed.FRACUNIT * 2;
+        PMaputl.intercept_p = 0;
+
+        // The trace points away from the line, so endpoints are on the
+        // same side → returns true with nothing added.
+        boolean rtn = PMaputl.pitAddLineIntercepts(ld);
+
+        assertTrue(rtn);
+        assertEquals(0, PMaputl.intercept_p);
+    }
+
+    // ----- PIT_AddThingIntercepts -----
+
+    // Trace from (0,0) going +x, distance large; thing at (FRACUNIT,
+    // 0) with radius FRACUNIT/2 should be hit at frac = ~0.5.
+    @Test
+    void pitAddThingInterceptsHitOnTrace() {
+        PMaputl.trace.x = 0;
+        PMaputl.trace.y = 0;
+        PMaputl.trace.dx = Fixed.FRACUNIT * 4;
+        PMaputl.trace.dy = 0;
+        PMaputl.intercept_p = 0;
+
+        Mobj m = new Mobj();
+        m.x = Fixed.FRACUNIT * 2;
+        m.y = 0;
+        m.radius = Fixed.FRACUNIT / 2;
+
+        boolean rtn = PMaputl.pitAddThingIntercepts(m);
+
+        assertTrue(rtn);
+        assertEquals(1, PMaputl.intercept_p);
+        Intercept hit = PMaputl.intercepts[0];
+        assertFalse(hit.isaline);
+        assertSame(m, hit.thing);
+        // Hit frac is somewhere under 1 (along the trace within reach).
+        assertTrue(hit.frac > 0);
+        assertTrue(hit.frac < Fixed.FRACUNIT);
+    }
+
+    // Thing far off the trace line → not hit.
+    @Test
+    void pitAddThingInterceptsMissAddsNothing() {
+        PMaputl.trace.x = 0;
+        PMaputl.trace.y = 0;
+        PMaputl.trace.dx = Fixed.FRACUNIT * 4;
+        PMaputl.trace.dy = 0;
+        PMaputl.intercept_p = 0;
+
+        Mobj m = new Mobj();
+        m.x = Fixed.FRACUNIT * 2;
+        m.y = Fixed.FRACUNIT * 100; // miles to the side
+        m.radius = Fixed.FRACUNIT / 2;
+
+        boolean rtn = PMaputl.pitAddThingIntercepts(m);
+
+        assertTrue(rtn);
+        assertEquals(0, PMaputl.intercept_p);
+    }
+
+    // ----- P_TraverseIntercepts -----
+
+    // Iterates intercepts in ascending frac order. Implementation
+    // detail: the C bumps each visited slot's frac to MAXINT to mark
+    // it consumed — observe via the final values.
+    @Test
+    void traverseInterceptsVisitsInAscendingFracOrder() {
+        // Seed three intercepts out of order.
+        PMaputl.intercepts[0].frac = 30; PMaputl.intercepts[0].isaline = true;
+        PMaputl.intercepts[1].frac = 10; PMaputl.intercepts[1].isaline = true;
+        PMaputl.intercepts[2].frac = 20; PMaputl.intercepts[2].isaline = true;
+        PMaputl.intercept_p = 3;
+
+        List<Integer> order = new ArrayList<>();
+        // Snapshot frac at visit time, before pTraverseIntercepts
+        // bumps it to MAXINT.
+        boolean rtn = PMaputl.pTraverseIntercepts(in -> {
+            order.add(in.frac);
+            return true;
+        }, Integer.MAX_VALUE);
+
+        assertTrue(rtn);
+        assertEquals(List.of(10, 20, 30), order);
+    }
+
+    // maxfrac cap stops iteration when next-min frac exceeds it.
+    @Test
+    void traverseInterceptsStopsAtMaxFrac() {
+        PMaputl.intercepts[0].frac = 10;
+        PMaputl.intercepts[1].frac = 50;
+        PMaputl.intercepts[2].frac = 100;
+        PMaputl.intercept_p = 3;
+
+        List<Integer> order = new ArrayList<>();
+        boolean rtn = PMaputl.pTraverseIntercepts(in -> {
+            order.add(in.frac);
+            return true;
+        }, /*maxfrac*/ 60);
+
+        assertTrue(rtn);
+        // Visits 10 and 50; stops because next dist=100 > maxfrac=60.
+        assertEquals(List.of(10, 50), order);
+    }
+
+    // Callback returning false halts the walk and propagates false.
+    @Test
+    void traverseInterceptsCallbackFalseStops() {
+        PMaputl.intercepts[0].frac = 10;
+        PMaputl.intercepts[1].frac = 20;
+        PMaputl.intercepts[2].frac = 30;
+        PMaputl.intercept_p = 3;
+
+        int[] hits = { 0 };
+        boolean rtn = PMaputl.pTraverseIntercepts(in -> {
+            hits[0]++;
+            return in.frac < 20; // stop when frac >= 20
+        }, Integer.MAX_VALUE);
+
+        assertFalse(rtn);
+        assertEquals(2, hits[0]);
+    }
+
+    // ----- P_PathTraverse -----
+    //
+    // End-to-end: trace through a synthetic 2x1 blockmap with one
+    // horizontal line in the middle. Trace going +y from below the
+    // line should hit it.
+    @Test
+    void pPathTraverseFindsLineAcrossBlocks() {
+        // 1x1 blockmap with one block at origin (0,0), block size 128*FRACUNIT.
+        PSetup.bmaporgx = 0;
+        PSetup.bmaporgy = 0;
+        PSetup.bmapwidth = 1;
+        PSetup.bmapheight = 1;
+        PSetup.blocklinks = new Mobj[1];
+        // Block contains line index 0; lump layout:
+        //   [0..3]  header (origin x, y, w=1, h=1)
+        //   [4]     per-block offset for block 0 → 5
+        //   [5..7]  list = [0, -1]
+        PSetup.blockmaplump = new int[] { 0, 0, 1, 1, /*offset*/ 5, /*line*/ 0, /*term*/ -1 };
+        PSetup.blockmap = PSetup.blockmaplump;
+
+        Line ld = horizLine();
+        // Place inside the single block: line at y=FRACUNIT, x in [0, FRACUNIT].
+        PSetup.lines = new Line[] { ld };
+        PSetup.numlines = 1;
+
+        List<Intercept> hits = new ArrayList<>();
+
+        boolean rtn = PMaputl.pPathTraverse(
+                Fixed.FRACUNIT / 2,        // x1
+                0,                         // y1 (below line)
+                Fixed.FRACUNIT / 2,        // x2 (same column)
+                Fixed.FRACUNIT * 2,        // y2 (above line)
+                PMaputl.PT_ADDLINES,
+                in -> { hits.add(in); return true; });
+
+        assertTrue(rtn);
+        assertEquals(1, hits.size());
+        assertSame(ld, hits.get(0).line);
+    }
+
+    // PT_ flag values match the C macros.
+    @Test
+    void pathTraverseFlagsMatchCMacros() {
+        assertEquals(1, PMaputl.PT_ADDLINES);
+        assertEquals(2, PMaputl.PT_ADDTHINGS);
+        assertEquals(4, PMaputl.PT_EARLYOUT);
+    }
+
+    // MAXINTERCEPTS sizing matches the C constant.
+    @Test
+    void maxInterceptsMatchesCHeader() {
+        assertEquals(128, PMaputl.MAXINTERCEPTS);
+        assertEquals(128, PMaputl.intercepts.length);
     }
 }

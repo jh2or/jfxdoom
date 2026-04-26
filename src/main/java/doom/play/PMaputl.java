@@ -314,4 +314,326 @@ public final class PMaputl {
 
         openrange = opentop - openbottom;
     }
+
+    //
+    // INTERCEPT ROUTINES
+    //
+    // p_local.h MAXINTERCEPTS = 128.
+    public static final int MAXINTERCEPTS = 128;
+
+    // p_local.h PT_* path-traverse flag bits.
+    public static final int PT_ADDLINES   = 1;
+    public static final int PT_ADDTHINGS  = 2;
+    public static final int PT_EARLYOUT   = 4;
+
+    // p_maputl.c lines 544–549.
+    // Pre-allocated to avoid per-call array churn; reused across
+    // PathTraverse calls. intercept_p tracks the next free slot
+    // (insertion index, in C the next-free pointer).
+    public static final Intercept[] intercepts = new Intercept[MAXINTERCEPTS];
+    static {
+        for (int i = 0; i < MAXINTERCEPTS; i++) {
+            intercepts[i] = new Intercept();
+        }
+    }
+    public static int intercept_p;
+
+    // p_maputl.c lines 547–549 — PathTraverse globals.
+    public static final Divline trace = new Divline();
+    public static boolean earlyout;
+    public static int ptflags;
+
+    //
+    // PIT_AddLineIntercepts.
+    // Looks for lines in the given block that intercept the given
+    // trace, adding them to the intercepts list. A line is crossed if
+    // its endpoints are on opposite sides of the trace. Returns true
+    // if earlyout and a solid line hit.
+    //
+    // p_maputl.c lines 561–609.
+    public static boolean pitAddLineIntercepts(Line ld) {
+        int s1;
+        int s2;
+        int frac;
+        Divline dl = new Divline();
+
+        // avoid precision problems with two routines
+        if (trace.dx > Fixed.FRACUNIT * 16
+                || trace.dy > Fixed.FRACUNIT * 16
+                || trace.dx < -Fixed.FRACUNIT * 16
+                || trace.dy < -Fixed.FRACUNIT * 16) {
+            s1 = pPointOnDivlineSide(ld.v1.x, ld.v1.y, trace);
+            s2 = pPointOnDivlineSide(ld.v2.x, ld.v2.y, trace);
+        } else {
+            s1 = pPointOnLineSide(trace.x, trace.y, ld);
+            s2 = pPointOnLineSide(trace.x + trace.dx, trace.y + trace.dy, ld);
+        }
+
+        if (s1 == s2) {
+            return true; // line isn't crossed
+        }
+
+        // hit the line
+        pMakeDivline(ld, dl);
+        frac = pInterceptVector(trace, dl);
+
+        if (frac < 0) {
+            return true; // behind source
+        }
+
+        // try to early out the check
+        if (earlyout
+                && frac < Fixed.FRACUNIT
+                && ld.backsector == null) {
+            return false; // stop checking
+        }
+
+        Intercept slot = intercepts[intercept_p];
+        slot.frac = frac;
+        slot.isaline = true;
+        slot.line = ld;
+        slot.thing = null;
+        intercept_p++;
+
+        return true; // continue
+    }
+
+    //
+    // PIT_AddThingIntercepts
+    //
+    // p_maputl.c lines 616–674.
+    public static boolean pitAddThingIntercepts(Mobj thing) {
+        int x1;
+        int y1;
+        int x2;
+        int y2;
+
+        int s1;
+        int s2;
+
+        boolean tracepositive;
+
+        Divline dl = new Divline();
+
+        int frac;
+
+        tracepositive = (trace.dx ^ trace.dy) > 0;
+
+        // check a corner to corner crossection for hit
+        if (tracepositive) {
+            x1 = thing.x - thing.radius;
+            y1 = thing.y + thing.radius;
+
+            x2 = thing.x + thing.radius;
+            y2 = thing.y - thing.radius;
+        } else {
+            x1 = thing.x - thing.radius;
+            y1 = thing.y - thing.radius;
+
+            x2 = thing.x + thing.radius;
+            y2 = thing.y + thing.radius;
+        }
+
+        s1 = pPointOnDivlineSide(x1, y1, trace);
+        s2 = pPointOnDivlineSide(x2, y2, trace);
+
+        if (s1 == s2) {
+            return true; // line isn't crossed
+        }
+
+        dl.x = x1;
+        dl.y = y1;
+        dl.dx = x2 - x1;
+        dl.dy = y2 - y1;
+
+        frac = pInterceptVector(trace, dl);
+
+        if (frac < 0) {
+            return true; // behind source
+        }
+
+        Intercept slot = intercepts[intercept_p];
+        slot.frac = frac;
+        slot.isaline = false;
+        slot.thing = thing;
+        slot.line = null;
+        intercept_p++;
+
+        return true; // keep going
+    }
+
+    //
+    // P_TraverseIntercepts
+    // Returns true if the traverser function returns true for all
+    // intercepts in range.
+    //
+    // p_maputl.c lines 682–730.
+    public static boolean pTraverseIntercepts(Predicate<Intercept> func, int maxfrac) {
+        int count;
+        int dist;
+        Intercept in;
+
+        count = intercept_p;
+
+        in = null; // shut up compiler warning
+
+        while (count-- > 0) {
+            dist = Integer.MAX_VALUE;
+            for (int s = 0; s < intercept_p; s++) {
+                Intercept scan = intercepts[s];
+                if (scan.frac < dist) {
+                    dist = scan.frac;
+                    in = scan;
+                }
+            }
+
+            if (dist > maxfrac) {
+                return true; // checked everything in range
+            }
+
+            // #if 0  // UNUSED
+            //   {
+            //     // don't check these yet, there may be others inserted
+            //     ...
+            //   }
+            // #endif
+
+            if (!func.test(in)) {
+                return false; // don't bother going farther
+            }
+
+            in.frac = Integer.MAX_VALUE;
+        }
+
+        return true; // everything was traversed
+    }
+
+    //
+    // P_PathTraverse
+    // Traces a line from x1,y1 to x2,y2, calling the traverser
+    // function for each intercept. Returns true if the traverser
+    // function returns true for all lines.
+    //
+    // p_maputl.c lines 742–880.
+    public static boolean pPathTraverse(int x1, int y1, int x2, int y2,
+                                        int flags, Predicate<Intercept> trav) {
+        int xt1;
+        int yt1;
+        int xt2;
+        int yt2;
+
+        int xstep;
+        int ystep;
+
+        int partial;
+
+        int xintercept;
+        int yintercept;
+
+        int mapx;
+        int mapy;
+
+        int mapxstep;
+        int mapystep;
+
+        int count;
+
+        // p_local.h: MAPBLOCKSIZE = MAPBLOCKUNITS<<FRACBITS = 128<<16,
+        // MAPBLOCKSHIFT = FRACBITS+7, MAPBTOFRAC = MAPBLOCKSHIFT-FRACBITS.
+        final int MAPBLOCKSIZE = 128 << Fixed.FRACBITS;
+        final int MAPBLOCKSHIFT = Fixed.FRACBITS + 7;
+        final int MAPBTOFRAC = MAPBLOCKSHIFT - Fixed.FRACBITS;
+
+        earlyout = (flags & PT_EARLYOUT) != 0;
+
+        doom.render.RMain.validcount++;
+        intercept_p = 0;
+
+        if (((x1 - PSetup.bmaporgx) & (MAPBLOCKSIZE - 1)) == 0) {
+            x1 += Fixed.FRACUNIT; // don't side exactly on a line
+        }
+
+        if (((y1 - PSetup.bmaporgy) & (MAPBLOCKSIZE - 1)) == 0) {
+            y1 += Fixed.FRACUNIT; // don't side exactly on a line
+        }
+
+        trace.x = x1;
+        trace.y = y1;
+        trace.dx = x2 - x1;
+        trace.dy = y2 - y1;
+
+        x1 -= PSetup.bmaporgx;
+        y1 -= PSetup.bmaporgy;
+        xt1 = x1 >> MAPBLOCKSHIFT;
+        yt1 = y1 >> MAPBLOCKSHIFT;
+
+        x2 -= PSetup.bmaporgx;
+        y2 -= PSetup.bmaporgy;
+        xt2 = x2 >> MAPBLOCKSHIFT;
+        yt2 = y2 >> MAPBLOCKSHIFT;
+
+        if (xt2 > xt1) {
+            mapxstep = 1;
+            partial = Fixed.FRACUNIT - ((x1 >> MAPBTOFRAC) & (Fixed.FRACUNIT - 1));
+            ystep = Fixed.div(y2 - y1, Math.abs(x2 - x1));
+        } else if (xt2 < xt1) {
+            mapxstep = -1;
+            partial = (x1 >> MAPBTOFRAC) & (Fixed.FRACUNIT - 1);
+            ystep = Fixed.div(y2 - y1, Math.abs(x2 - x1));
+        } else {
+            mapxstep = 0;
+            partial = Fixed.FRACUNIT;
+            ystep = 256 * Fixed.FRACUNIT;
+        }
+
+        yintercept = (y1 >> MAPBTOFRAC) + Fixed.mul(partial, ystep);
+
+        if (yt2 > yt1) {
+            mapystep = 1;
+            partial = Fixed.FRACUNIT - ((y1 >> MAPBTOFRAC) & (Fixed.FRACUNIT - 1));
+            xstep = Fixed.div(x2 - x1, Math.abs(y2 - y1));
+        } else if (yt2 < yt1) {
+            mapystep = -1;
+            partial = (y1 >> MAPBTOFRAC) & (Fixed.FRACUNIT - 1);
+            xstep = Fixed.div(x2 - x1, Math.abs(y2 - y1));
+        } else {
+            mapystep = 0;
+            partial = Fixed.FRACUNIT;
+            xstep = 256 * Fixed.FRACUNIT;
+        }
+        xintercept = (x1 >> MAPBTOFRAC) + Fixed.mul(partial, xstep);
+
+        // Step through map blocks. Count is present to prevent a
+        // round-off error from skipping the break.
+        mapx = xt1;
+        mapy = yt1;
+
+        for (count = 0; count < 64; count++) {
+            if ((flags & PT_ADDLINES) != 0) {
+                if (!pBlockLinesIterator(mapx, mapy, PMaputl::pitAddLineIntercepts)) {
+                    return false; // early out
+                }
+            }
+
+            if ((flags & PT_ADDTHINGS) != 0) {
+                if (!pBlockThingsIterator(mapx, mapy, PMaputl::pitAddThingIntercepts)) {
+                    return false; // early out
+                }
+            }
+
+            if (mapx == xt2 && mapy == yt2) {
+                break;
+            }
+
+            if ((yintercept >> Fixed.FRACBITS) == mapy) {
+                yintercept += ystep;
+                mapx += mapxstep;
+            } else if ((xintercept >> Fixed.FRACBITS) == mapx) {
+                xintercept += xstep;
+                mapy += mapystep;
+            }
+        }
+        // go through the sorted list
+        return pTraverseIntercepts(trav, Fixed.FRACUNIT);
+    }
 }
