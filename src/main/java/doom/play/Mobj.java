@@ -20,4 +20,10 @@ public class Mobj extends Thinker {
     // null otherwise. EV_VerticalDoor / EV_DoLockedDoor / many AI paths
     // gate on this to distinguish player triggers from monster triggers.
     public Player player;
+
+    // p_mobj.h line 249 — mobjtype_t (an Info.MT_* constant). The
+    // missile-class checks in P_CrossSpecialLine read this; the rest
+    // of the mobj_t lifecycle (state machine, sprite, AI) lands with
+    // p_mobj.c.
+    public int type;
 }

@@ -581,6 +581,507 @@ public final class PSpec {
     }
 
     //
+    // P_CrossSpecialLine - TRIGGER
+    // Called every time a thing origin is about to cross a line with
+    // a non-0 special.
+    //
+    // p_spec.c lines 491–950.
+    public static void pCrossSpecialLine(int linenum, int side, Mobj thing) {
+        Line line;
+        int ok;
+
+        line = PSetup.lines[linenum];
+
+        // Triggers that other things can activate
+        if (thing.player == null) {
+            // Things that should NOT trigger specials...
+            switch (thing.type) {
+                case Info.MT_ROCKET:
+                case Info.MT_PLASMA:
+                case Info.MT_BFG:
+                case Info.MT_TROOPSHOT:
+                case Info.MT_HEADSHOT:
+                case Info.MT_BRUISERSHOT:
+                    return;
+
+                default:
+                    break;
+            }
+
+            ok = 0;
+            switch (line.special) {
+                case 39:  // TELEPORT TRIGGER
+                case 97:  // TELEPORT RETRIGGER
+                case 125: // TELEPORT MONSTERONLY TRIGGER
+                case 126: // TELEPORT MONSTERONLY RETRIGGER
+                case 4:   // RAISE DOOR
+                case 10:  // PLAT DOWN-WAIT-UP-STAY TRIGGER
+                case 88:  // PLAT DOWN-WAIT-UP-STAY RETRIGGER
+                    ok = 1;
+                    break;
+            }
+            if (ok == 0) {
+                return;
+            }
+        }
+
+        // Note: could use some const's here.
+        switch (line.special) {
+            // TRIGGERS.
+            // All from here to RETRIGGERS.
+            case 2:
+                // Open Door
+                PDoors.evDoDoor(line, PDoors.open);
+                line.special = 0;
+                break;
+
+            case 3:
+                // Close Door
+                PDoors.evDoDoor(line, PDoors.close);
+                line.special = 0;
+                break;
+
+            case 4:
+                // Raise Door
+                PDoors.evDoDoor(line, PDoors.normal);
+                line.special = 0;
+                break;
+
+            case 5:
+                // Raise Floor
+                PFloor.evDoFloor(line, PFloor.raiseFloor);
+                line.special = 0;
+                break;
+
+            case 6:
+                // Fast Ceiling Crush & Raise
+                PCeilng.evDoCeiling(line, PCeilng.fastCrushAndRaise);
+                line.special = 0;
+                break;
+
+            case 8:
+                // Build Stairs
+                PFloor.evBuildStairs(line, PFloor.build8);
+                line.special = 0;
+                break;
+
+            case 10:
+                // PlatDownWaitUp
+                PPlats.evDoPlat(line, PPlats.downWaitUpStay, 0);
+                line.special = 0;
+                break;
+
+            case 12:
+                // Light Turn On - brightest near
+                PLights.evLightTurnOn(line, 0);
+                line.special = 0;
+                break;
+
+            case 13:
+                // Light Turn On 255
+                PLights.evLightTurnOn(line, 255);
+                line.special = 0;
+                break;
+
+            case 16:
+                // Close Door 30
+                PDoors.evDoDoor(line, PDoors.close30ThenOpen);
+                line.special = 0;
+                break;
+
+            case 17:
+                // Start Light Strobing
+                PLights.evStartLightStrobing(line);
+                line.special = 0;
+                break;
+
+            case 19:
+                // Lower Floor
+                PFloor.evDoFloor(line, PFloor.lowerFloor);
+                line.special = 0;
+                break;
+
+            case 22:
+                // Raise floor to nearest height and change texture
+                PPlats.evDoPlat(line, PPlats.raiseToNearestAndChange, 0);
+                line.special = 0;
+                break;
+
+            case 25:
+                // Ceiling Crush and Raise
+                PCeilng.evDoCeiling(line, PCeilng.crushAndRaise);
+                line.special = 0;
+                break;
+
+            case 30:
+                // Raise floor to shortest texture height
+                //  on either side of lines.
+                PFloor.evDoFloor(line, PFloor.raiseToTexture);
+                line.special = 0;
+                break;
+
+            case 35:
+                // Lights Very Dark
+                PLights.evLightTurnOn(line, 35);
+                line.special = 0;
+                break;
+
+            case 36:
+                // Lower Floor (TURBO)
+                PFloor.evDoFloor(line, PFloor.turboLower);
+                line.special = 0;
+                break;
+
+            case 37:
+                // LowerAndChange
+                PFloor.evDoFloor(line, PFloor.lowerAndChange);
+                line.special = 0;
+                break;
+
+            case 38:
+                // Lower Floor To Lowest
+                PFloor.evDoFloor(line, PFloor.lowerFloorToLowest);
+                line.special = 0;
+                break;
+
+            case 39:
+                // TELEPORT!
+                PTelept.evTeleport(line, side, thing);
+                line.special = 0;
+                break;
+
+            case 40:
+                // RaiseCeilingLowerFloor
+                PCeilng.evDoCeiling(line, PCeilng.raiseToHighest);
+                PFloor.evDoFloor(line, PFloor.lowerFloorToLowest);
+                line.special = 0;
+                break;
+
+            case 44:
+                // Ceiling Crush
+                PCeilng.evDoCeiling(line, PCeilng.lowerAndCrush);
+                line.special = 0;
+                break;
+
+            case 52:
+                // EXIT!
+                doom.system.GGame.gExitLevel();
+                break;
+
+            case 53:
+                // Perpetual Platform Raise
+                PPlats.evDoPlat(line, PPlats.perpetualRaise, 0);
+                line.special = 0;
+                break;
+
+            case 54:
+                // Platform Stop
+                PPlats.evStopPlat(line);
+                line.special = 0;
+                break;
+
+            case 56:
+                // Raise Floor Crush
+                PFloor.evDoFloor(line, PFloor.raiseFloorCrush);
+                line.special = 0;
+                break;
+
+            case 57:
+                // Ceiling Crush Stop
+                PCeilng.evCeilingCrushStop(line);
+                line.special = 0;
+                break;
+
+            case 58:
+                // Raise Floor 24
+                PFloor.evDoFloor(line, PFloor.raiseFloor24);
+                line.special = 0;
+                break;
+
+            case 59:
+                // Raise Floor 24 And Change
+                PFloor.evDoFloor(line, PFloor.raiseFloor24AndChange);
+                line.special = 0;
+                break;
+
+            case 104:
+                // Turn lights off in sector(tag)
+                PLights.evTurnTagLightsOff(line);
+                line.special = 0;
+                break;
+
+            case 108:
+                // Blazing Door Raise (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeRaise);
+                line.special = 0;
+                break;
+
+            case 109:
+                // Blazing Door Open (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeOpen);
+                line.special = 0;
+                break;
+
+            case 100:
+                // Build Stairs Turbo 16
+                PFloor.evBuildStairs(line, PFloor.turbo16);
+                line.special = 0;
+                break;
+
+            case 110:
+                // Blazing Door Close (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeClose);
+                line.special = 0;
+                break;
+
+            case 119:
+                // Raise floor to nearest surr. floor
+                PFloor.evDoFloor(line, PFloor.raiseFloorToNearest);
+                line.special = 0;
+                break;
+
+            case 121:
+                // Blazing PlatDownWaitUpStay
+                PPlats.evDoPlat(line, PPlats.blazeDWUS, 0);
+                line.special = 0;
+                break;
+
+            case 124:
+                // Secret EXIT
+                doom.system.GGame.gSecretExitLevel();
+                break;
+
+            case 125:
+                // TELEPORT MonsterONLY
+                if (thing.player == null) {
+                    PTelept.evTeleport(line, side, thing);
+                    line.special = 0;
+                }
+                break;
+
+            case 130:
+                // Raise Floor Turbo
+                PFloor.evDoFloor(line, PFloor.raiseFloorTurbo);
+                line.special = 0;
+                break;
+
+            case 141:
+                // Silent Ceiling Crush & Raise
+                PCeilng.evDoCeiling(line, PCeilng.silentCrushAndRaise);
+                line.special = 0;
+                break;
+
+            // RETRIGGERS.  All from here till end.
+            case 72:
+                // Ceiling Crush
+                PCeilng.evDoCeiling(line, PCeilng.lowerAndCrush);
+                break;
+
+            case 73:
+                // Ceiling Crush and Raise
+                PCeilng.evDoCeiling(line, PCeilng.crushAndRaise);
+                break;
+
+            case 74:
+                // Ceiling Crush Stop
+                PCeilng.evCeilingCrushStop(line);
+                break;
+
+            case 75:
+                // Close Door
+                PDoors.evDoDoor(line, PDoors.close);
+                break;
+
+            case 76:
+                // Close Door 30
+                PDoors.evDoDoor(line, PDoors.close30ThenOpen);
+                break;
+
+            case 77:
+                // Fast Ceiling Crush & Raise
+                PCeilng.evDoCeiling(line, PCeilng.fastCrushAndRaise);
+                break;
+
+            case 79:
+                // Lights Very Dark
+                PLights.evLightTurnOn(line, 35);
+                break;
+
+            case 80:
+                // Light Turn On - brightest near
+                PLights.evLightTurnOn(line, 0);
+                break;
+
+            case 81:
+                // Light Turn On 255
+                PLights.evLightTurnOn(line, 255);
+                break;
+
+            case 82:
+                // Lower Floor To Lowest
+                PFloor.evDoFloor(line, PFloor.lowerFloorToLowest);
+                break;
+
+            case 83:
+                // Lower Floor
+                PFloor.evDoFloor(line, PFloor.lowerFloor);
+                break;
+
+            case 84:
+                // LowerAndChange
+                PFloor.evDoFloor(line, PFloor.lowerAndChange);
+                break;
+
+            case 86:
+                // Open Door
+                PDoors.evDoDoor(line, PDoors.open);
+                break;
+
+            case 87:
+                // Perpetual Platform Raise
+                PPlats.evDoPlat(line, PPlats.perpetualRaise, 0);
+                break;
+
+            case 88:
+                // PlatDownWaitUp
+                PPlats.evDoPlat(line, PPlats.downWaitUpStay, 0);
+                break;
+
+            case 89:
+                // Platform Stop
+                PPlats.evStopPlat(line);
+                break;
+
+            case 90:
+                // Raise Door
+                PDoors.evDoDoor(line, PDoors.normal);
+                break;
+
+            case 91:
+                // Raise Floor
+                PFloor.evDoFloor(line, PFloor.raiseFloor);
+                break;
+
+            case 92:
+                // Raise Floor 24
+                PFloor.evDoFloor(line, PFloor.raiseFloor24);
+                break;
+
+            case 93:
+                // Raise Floor 24 And Change
+                PFloor.evDoFloor(line, PFloor.raiseFloor24AndChange);
+                break;
+
+            case 94:
+                // Raise Floor Crush
+                PFloor.evDoFloor(line, PFloor.raiseFloorCrush);
+                break;
+
+            case 95:
+                // Raise floor to nearest height
+                // and change texture.
+                PPlats.evDoPlat(line, PPlats.raiseToNearestAndChange, 0);
+                break;
+
+            case 96:
+                // Raise floor to shortest texture height
+                // on either side of lines.
+                PFloor.evDoFloor(line, PFloor.raiseToTexture);
+                break;
+
+            case 97:
+                // TELEPORT!
+                PTelept.evTeleport(line, side, thing);
+                break;
+
+            case 98:
+                // Lower Floor (TURBO)
+                PFloor.evDoFloor(line, PFloor.turboLower);
+                break;
+
+            case 105:
+                // Blazing Door Raise (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeRaise);
+                break;
+
+            case 106:
+                // Blazing Door Open (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeOpen);
+                break;
+
+            case 107:
+                // Blazing Door Close (faster than TURBO!)
+                PDoors.evDoDoor(line, PDoors.blazeClose);
+                break;
+
+            case 120:
+                // Blazing PlatDownWaitUpStay.
+                PPlats.evDoPlat(line, PPlats.blazeDWUS, 0);
+                break;
+
+            case 126:
+                // TELEPORT MonsterONLY.
+                if (thing.player == null) {
+                    PTelept.evTeleport(line, side, thing);
+                }
+                break;
+
+            case 128:
+                // Raise To Nearest Floor
+                PFloor.evDoFloor(line, PFloor.raiseFloorToNearest);
+                break;
+
+            case 129:
+                // Raise Floor Turbo
+                PFloor.evDoFloor(line, PFloor.raiseFloorTurbo);
+                break;
+        }
+    }
+
+    //
+    // P_ShootSpecialLine - IMPACT SPECIALS
+    // Called when a thing shoots a special line.
+    //
+    // p_spec.c lines 958–1000.
+    public static void pShootSpecialLine(Mobj thing, Line line) {
+        int ok;
+
+        // Impacts that other things can activate.
+        if (thing.player == null) {
+            ok = 0;
+            switch (line.special) {
+                case 46:
+                    // OPEN DOOR IMPACT
+                    ok = 1;
+                    break;
+            }
+            if (ok == 0) {
+                return;
+            }
+        }
+
+        switch (line.special) {
+            case 24:
+                // RAISE FLOOR
+                PFloor.evDoFloor(line, PFloor.raiseFloor);
+                PSwitch.pChangeSwitchTexture(line, 0);
+                break;
+
+            case 46:
+                // OPEN DOOR
+                PDoors.evDoDoor(line, PDoors.open);
+                PSwitch.pChangeSwitchTexture(line, 1);
+                break;
+
+            case 47:
+                // RAISE FLOOR NEAR AND CHANGE
+                PPlats.evDoPlat(line, PPlats.raiseToNearestAndChange, 0);
+                PSwitch.pChangeSwitchTexture(line, 0);
+                break;
+        }
+    }
+
+    //
     // Special Stuff that can not be categorized
     //
     // p_spec.c lines 1163–1221 — EV_DoDonut.

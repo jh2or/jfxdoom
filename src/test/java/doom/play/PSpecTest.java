@@ -7,11 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import doom.fixed.Fixed;
 import doom.render.Line;
 import doom.render.RData;
 import doom.render.Sector;
 import doom.render.Side;
 import doom.system.Doomstat;
+import doom.system.GGame;
 import doom.system.MArgv;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +52,10 @@ class PSpecTest {
         for (int i = 0; i < PPlats.MAXPLATS; i++) {
             PPlats.activeplats[i] = null;
         }
+        GGame.gameaction = GGame.ga_nothing;
+        GGame.secretexit = 0;
+        PTelept.teleportResult = 0;
+        PMap.changeSectorResult = false;
     }
 
     // getNextSector: one-sided line (ML_TWOSIDED not set) returns null.
@@ -867,5 +873,269 @@ class PSpecTest {
         assertNull(PCeilng.activeceilings[0]);
         assertNull(PPlats.activeplats[0]);
         assertEquals(0, PSwitch.buttonlist[0].btimer);
+    }
+
+    // ----- P_CrossSpecialLine -----
+
+    // Helper: 1-line, 1-tagged-sector world. Line[linenum] is the trigger.
+    private static int crossWorld(int special, int tag) {
+        Sector sec = new Sector();
+        sec.floorheight = 0;
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.tag = tag;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Line line = new Line();
+        line.special = special;
+        line.tag = tag;
+        line.sidenum[0] = -1;
+        line.sidenum[1] = -1;
+        PSetup.lines = new Line[] { line };
+        PSetup.numlines = 1;
+        return 0; // line index
+    }
+
+    private static Mobj playerMobj() {
+        Mobj m = new Mobj();
+        m.player = new Player();
+        return m;
+    }
+
+    private static Mobj missileMobj(int type) {
+        Mobj m = new Mobj();
+        m.type = type;   // no .player
+        return m;
+    }
+
+    private static Mobj monsterMobj() {
+        Mobj m = new Mobj();
+        m.type = Info.MT_TROOP;
+        return m;
+    }
+
+    // Missile mobjs (rocket / plasma / BFG / fireballs) get the early
+    // return — no special is dispatched.
+    @Test
+    void crossSpecialLineMissileNeverDispatches() {
+        int idx = crossWorld(/*special*/2 /*Open Door*/, 7);
+
+        PSpec.pCrossSpecialLine(idx, /*side*/0, missileMobj(Info.MT_ROCKET));
+
+        // Door not spawned, special intact (the dispatch never fires).
+        assertNull(PSetup.sectors[0].specialdata);
+        assertEquals(2, PSetup.lines[idx].special);
+    }
+
+    // Monster on a non-allow-listed special (e.g. case 5: Raise Floor) → return.
+    @Test
+    void crossSpecialLineMonsterFiltersToAllowList() {
+        int idx = crossWorld(5 /*Raise Floor*/, 7);
+
+        PSpec.pCrossSpecialLine(idx, 0, monsterMobj());
+
+        assertNull(PSetup.sectors[0].specialdata);
+        assertEquals(5, PSetup.lines[idx].special);  // not cleared
+    }
+
+    // Monster on case 4 (RAISE DOOR) is allow-listed → dispatch fires.
+    @Test
+    void crossSpecialLineMonsterCanRaiseDoor() {
+        int idx = crossWorld(4 /*Raise Door*/, 7);
+
+        PSpec.pCrossSpecialLine(idx, 0, monsterMobj());
+
+        assertNotNull(PSetup.sectors[0].specialdata);
+        assertEquals(0, PSetup.lines[idx].special); // cleared (one-shot)
+    }
+
+    // Player on case 2 (Open Door) → door spawned + special cleared.
+    @Test
+    void crossSpecialLineOpenDoorTrigger() {
+        int idx = crossWorld(2, 7);
+
+        PSpec.pCrossSpecialLine(idx, 0, playerMobj());
+
+        assertNotNull(PSetup.sectors[0].specialdata);
+        assertEquals(0, PSetup.lines[idx].special);
+    }
+
+    // Player on case 86 (Open Door RETRIGGER) → spawned + special NOT cleared.
+    @Test
+    void crossSpecialLineOpenDoorRetriggerKeepsSpecial() {
+        int idx = crossWorld(86, 7);
+
+        PSpec.pCrossSpecialLine(idx, 0, playerMobj());
+
+        assertNotNull(PSetup.sectors[0].specialdata);
+        assertEquals(86, PSetup.lines[idx].special);
+    }
+
+    // Case 52 (EXIT!) → flips GGame.gameaction without clearing special.
+    @Test
+    void crossSpecialLineExitTrigger() {
+        int idx = crossWorld(52, 0);
+
+        PSpec.pCrossSpecialLine(idx, 0, playerMobj());
+
+        assertEquals(GGame.ga_completed, GGame.gameaction);
+        assertEquals(0, GGame.secretexit);
+        // C never clears line.special for case 52 (no `line->special = 0`).
+        assertEquals(52, PSetup.lines[idx].special);
+    }
+
+    // Case 124 (Secret EXIT) → flips secretexit latch.
+    @Test
+    void crossSpecialLineSecretExitTrigger() {
+        int idx = crossWorld(124, 0);
+
+        PSpec.pCrossSpecialLine(idx, 0, playerMobj());
+
+        assertEquals(GGame.ga_completed, GGame.gameaction);
+        assertEquals(1, GGame.secretexit);
+    }
+
+    // Case 40 (RaiseCeilingLowerFloor) — the unusual two-action case.
+    // Both EV_DoCeiling and EV_DoFloor get called.
+    @Test
+    void crossSpecialLine40RaisesCeilingAndLowersFloor() {
+        // Set up a sector that has a higher neighbor and matching tag.
+        Sector target = new Sector();
+        target.floorheight = 50 * Fixed.FRACUNIT;
+        target.ceilingheight = 100 * Fixed.FRACUNIT;
+        target.tag = 7;
+        Sector neighbor = new Sector();
+        neighbor.floorheight = 0;
+        neighbor.ceilingheight = 300 * Fixed.FRACUNIT;
+        neighbor.tag = 0;
+
+        // Two-sided line connects them.
+        Line conn = new Line();
+        conn.flags = Line.ML_TWOSIDED;
+        conn.frontsector = target;
+        conn.backsector = neighbor;
+        target.lines = new Line[] { conn };
+        target.linecount = 1;
+
+        PSetup.sectors = new Sector[] { target, neighbor };
+        PSetup.numsectors = 2;
+
+        Line trigger = new Line();
+        trigger.special = 40;
+        trigger.tag = 7;
+        trigger.sidenum[0] = -1;
+        trigger.sidenum[1] = -1;
+        PSetup.lines = new Line[] { trigger };
+        PSetup.numlines = 1;
+
+        // case 40 fires EV_DoCeiling first (sets specialdata), then
+        // EV_DoFloor — but the second call sees specialdata != null and
+        // skips. So target ends with a Ceiling thinker (the C does
+        // exactly the same thing).
+        PSpec.pCrossSpecialLine(0, 0, playerMobj());
+
+        assertTrue(target.specialdata instanceof PCeilng.Ceiling);
+        assertEquals(0, trigger.special);
+    }
+
+    // Case 125 (TELEPORT MonsterONLY): player calls do nothing.
+    @Test
+    void crossSpecialLine125PlayerIgnored() {
+        int idx = crossWorld(125, 7);
+
+        PSpec.pCrossSpecialLine(idx, 0, playerMobj());
+
+        // The C falls through the player check (player isn't in the
+        // ok-list for non-trigger logic), then enters the dispatch...
+        // wait actually case 125 IS in the player's allow-list because
+        // the outer guard only fires when thing.player == null. With a
+        // player, the outer guard is skipped entirely, dispatch runs,
+        // and case 125's `if (!thing.player)` body returns without
+        // teleporting OR clearing special.
+        assertEquals(125, PSetup.lines[idx].special);
+    }
+
+    // ----- P_ShootSpecialLine -----
+
+    // Player on case 24 (Raise Floor) → spawns a floor-mover. Needs a
+    // valid front side because the post-dispatch call to
+    // pChangeSwitchTexture reads PSetup.sides[line.sidenum[0]].
+    @Test
+    void shootSpecialLineRaiseFloorByPlayer() {
+        Sector sec = new Sector();
+        sec.floorheight = 0;
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.tag = 7;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Side front = new Side();
+        front.sector = sec;
+        PSetup.sides = new Side[] { front };
+        PSetup.numsides = 1;
+
+        Line line = new Line();
+        line.special = 24;
+        line.tag = 7;
+        line.sidenum[0] = 0;
+        line.sidenum[1] = -1;
+        line.frontsector = sec;
+
+        PSpec.pShootSpecialLine(playerMobj(), line);
+
+        assertTrue(sec.specialdata instanceof PFloor.FloorMove);
+    }
+
+    // Monster shooting a non-46 special → no-op.
+    @Test
+    void shootSpecialLineMonsterFiltersToCase46() {
+        Sector sec = new Sector();
+        sec.tag = 7;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Line line = new Line();
+        line.special = 24;  // not in the monster allow-list (only 46 is)
+        line.tag = 7;
+        line.sidenum[0] = -1;
+        line.sidenum[1] = -1;
+
+        PSpec.pShootSpecialLine(monsterMobj(), line);
+
+        assertNull(sec.specialdata);
+    }
+
+    // Monster on case 46 (OPEN DOOR IMPACT) → allowed. Front side
+    // needed for the pChangeSwitchTexture follow-up.
+    @Test
+    void shootSpecialLineMonsterCanOpenCase46() {
+        Sector sec = new Sector();
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.tag = 7;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Side front = new Side();
+        front.sector = sec;
+        PSetup.sides = new Side[] { front };
+        PSetup.numsides = 1;
+
+        Line line = new Line();
+        line.special = 46;
+        line.tag = 7;
+        line.sidenum[0] = 0;
+        line.sidenum[1] = -1;
+
+        PSpec.pShootSpecialLine(monsterMobj(), line);
+
+        assertNotNull(sec.specialdata);
     }
 }
