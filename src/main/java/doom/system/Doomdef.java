@@ -37,6 +37,15 @@ public final class Doomdef {
     // No pending weapon change.
     public static final int wp_nochange      = 10;
 
+    // doomdef.h lines 162–173 — card_t (key cards).
+    public static final int it_bluecard    = 0;
+    public static final int it_yellowcard  = 1;
+    public static final int it_redcard     = 2;
+    public static final int it_blueskull   = 3;
+    public static final int it_yellowskull = 4;
+    public static final int it_redskull    = 5;
+    public static final int NUMCARDS       = 6;
+
     // doomdef.h lines 200–210 — ammotype_t.
     public static final int am_clip   = 0; // Pistol / chaingun ammo.
     public static final int am_shell  = 1; // Shotgun / double barreled shotgun.

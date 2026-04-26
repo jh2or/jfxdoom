@@ -15,4 +15,9 @@ public class Mobj extends Thinker {
 
     // Orientation (p_mobj.h line 222).
     public int angle; // angle_t
+
+    // p_mobj.h line 275 — back-pointer to Player when type == MT_PLAYER,
+    // null otherwise. EV_VerticalDoor / EV_DoLockedDoor / many AI paths
+    // gate on this to distinguish player triggers from monster triggers.
+    public Player player;
 }

@@ -1,13 +1,15 @@
-// Port of linuxdoom-1.10/p_doors.c — partial.
+// Port of linuxdoom-1.10/p_doors.c.
 //
 // Carries T_VerticalDoor (the door thinker), EV_DoDoor (tag-matched
-// door spawn), and the two deferred-spawn helpers P_SpawnDoorCloseIn30
-// and P_SpawnDoorRaiseIn5Mins.
+// door spawn), EV_DoLockedDoor (keycard-gated EV_DoDoor), EV_VerticalDoor
+// (manual "use" door — handles re-press toggling and lock checks), and
+// the two deferred-spawn helpers P_SpawnDoorCloseIn30 and
+// P_SpawnDoorRaiseIn5Mins.
 //
-// EV_DoLockedDoor and EV_VerticalDoor both reach into `mobj->player`
-// and `player->cards[]` (+ PD_BLUEO/PD_REDO/... message strings) to
-// enforce keycard locks — Player.cards is still a stub, so those two
-// land when the player inventory does.
+// Locked-door checks: the C uses a NULL-origin S_StartSound for
+// "wrong key" oof — the Java port passes null through SSound.sStartSound
+// (which is a no-op stub anyway). When SSound is fleshed out, a null
+// origin maps to "no positional source" — global play.
 //
 // The abandoned `#if 0` sliding-door block at the bottom of p_doors.c
 // is intentionally skipped (CLAUDE.md §2 — dead code stays dead).
@@ -18,6 +20,8 @@ import doom.render.Line;
 import doom.render.Sector;
 import doom.sound.SSound;
 import doom.sound.Sounds;
+import doom.system.Doomdef;
+import doom.system.Dstrings;
 
 public final class PDoors {
 
@@ -236,6 +240,206 @@ public final class PDoors {
             }
         }
         return rtn;
+    }
+
+    //
+    // EV_DoLockedDoor — Move a locked door up/down.
+    //
+    // p_doors.c lines 206–260.
+    public static int evDoLockedDoor(Line line, int type, Mobj thing) {
+        Player p;
+
+        p = thing.player;
+
+        if (p == null) {
+            return 0;
+        }
+
+        switch (line.special) {
+            case 99:  // Blue Lock
+            case 133:
+                if (p == null) {
+                    return 0;
+                }
+                if (!p.cards[Doomdef.it_bluecard] && !p.cards[Doomdef.it_blueskull]) {
+                    p.message = Dstrings.PD_BLUEO;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return 0;
+                }
+                break;
+
+            case 134: // Red Lock
+            case 135:
+                if (p == null) {
+                    return 0;
+                }
+                if (!p.cards[Doomdef.it_redcard] && !p.cards[Doomdef.it_redskull]) {
+                    p.message = Dstrings.PD_REDO;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return 0;
+                }
+                break;
+
+            case 136: // Yellow Lock
+            case 137:
+                if (p == null) {
+                    return 0;
+                }
+                if (!p.cards[Doomdef.it_yellowcard]
+                        && !p.cards[Doomdef.it_yellowskull]) {
+                    p.message = Dstrings.PD_YELLOWO;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return 0;
+                }
+                break;
+        }
+
+        return evDoDoor(line, type);
+    }
+
+    //
+    // EV_VerticalDoor — open a door manually, no tag value.
+    //
+    // p_doors.c lines 353–499.
+    public static void evVerticalDoor(Line line, Mobj thing) {
+        Player player;
+        int secnum;
+        Sector sec;
+        VLDoor door;
+        int side;
+
+        side = 0; // only front sides can be used
+
+        // Check for locks.
+        player = thing.player;
+
+        switch (line.special) {
+            case 26: // Blue Lock
+            case 32:
+                if (player == null) {
+                    return;
+                }
+                if (!player.cards[Doomdef.it_bluecard]
+                        && !player.cards[Doomdef.it_blueskull]) {
+                    player.message = Dstrings.PD_BLUEK;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return;
+                }
+                break;
+
+            case 27: // Yellow Lock
+            case 34:
+                if (player == null) {
+                    return;
+                }
+                if (!player.cards[Doomdef.it_yellowcard]
+                        && !player.cards[Doomdef.it_yellowskull]) {
+                    player.message = Dstrings.PD_YELLOWK;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return;
+                }
+                break;
+
+            case 28: // Red Lock
+            case 33:
+                if (player == null) {
+                    return;
+                }
+                if (!player.cards[Doomdef.it_redcard]
+                        && !player.cards[Doomdef.it_redskull]) {
+                    player.message = Dstrings.PD_REDK;
+                    SSound.sStartSound(null, Sounds.sfx_oof);
+                    return;
+                }
+                break;
+        }
+
+        // if the sector has an active thinker, use it
+        sec = PSetup.sides[line.sidenum[side ^ 1]].sector;
+        secnum = -1; // C: secnum = sec - sectors. Only used to compute door
+                      // ownership/sector lookup; unused after this point.
+        // The C declares secnum but only assigns it; nothing reads it
+        // after this line either. We preserve the assignment to mirror
+        // the C dead-store (CLAUDE.md §2: bug-faithful translation).
+
+        if (sec.specialdata != null) {
+            door = (VLDoor) sec.specialdata;
+            switch (line.special) {
+                case 1:  // ONLY FOR "RAISE" DOORS, NOT "OPEN"s
+                case 26:
+                case 27:
+                case 28:
+                case 117:
+                    if (door.direction == -1) {
+                        door.direction = 1; // go back up
+                    } else {
+                        if (thing.player == null) {
+                            return; // JDC: bad guys never close doors
+                        }
+
+                        door.direction = -1; // start going down immediately
+                    }
+                    return;
+            }
+        }
+
+        // for proper sound
+        switch (line.special) {
+            case 117: // BLAZING DOOR RAISE
+            case 118: // BLAZING DOOR OPEN
+                SSound.sStartSound(sec.soundorg, Sounds.sfx_bdopn);
+                break;
+
+            case 1:  // NORMAL DOOR SOUND
+            case 31:
+                SSound.sStartSound(sec.soundorg, Sounds.sfx_doropn);
+                break;
+
+            default: // LOCKED DOOR SOUND
+                SSound.sStartSound(sec.soundorg, Sounds.sfx_doropn);
+                break;
+        }
+
+        // new door thinker
+        door = new VLDoor();
+        PTick.pAddThinker(door);
+        sec.specialdata = door;
+        door.function.acp1 = PDoors::tVerticalDoor;
+        door.sector = sec;
+        door.direction = 1;
+        door.speed = VDOORSPEED;
+        door.topwait = VDOORWAIT;
+
+        switch (line.special) {
+            case 1:
+            case 26:
+            case 27:
+            case 28:
+                door.type = normal;
+                break;
+
+            case 31:
+            case 32:
+            case 33:
+            case 34:
+                door.type = open;
+                line.special = 0;
+                break;
+
+            case 117: // blazing door raise
+                door.type = blazeRaise;
+                door.speed = VDOORSPEED * 4;
+                break;
+            case 118: // blazing door open
+                door.type = blazeOpen;
+                line.special = 0;
+                door.speed = VDOORSPEED * 4;
+                break;
+        }
+
+        // find the top and bottom of the movement range
+        door.topheight = PSpec.pFindLowestCeilingSurrounding(sec);
+        door.topheight -= 4 * Fixed.FRACUNIT;
     }
 
     // p_doors.c lines 505–522 — P_SpawnDoorCloseIn30.

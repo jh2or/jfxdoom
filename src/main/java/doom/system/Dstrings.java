@@ -29,6 +29,15 @@ public final class Dstrings {
     // d_englsh.h line 41 — referenced by endmsg[0].
     public static final String QUITMSG = "are you sure you want to\nquit this great game?";
 
+    // d_englsh.h lines 125–130 — locked-door denial messages
+    // (consumed by EV_VerticalDoor / EV_DoLockedDoor in p_doors.c).
+    public static final String PD_BLUEO   = "You need a blue key to activate this object";
+    public static final String PD_REDO    = "You need a red key to activate this object";
+    public static final String PD_YELLOWO = "You need a yellow key to activate this object";
+    public static final String PD_BLUEK   = "You need a blue key to open this door";
+    public static final String PD_REDK    = "You need a red key to open this door";
+    public static final String PD_YELLOWK = "You need a yellow key to open this door";
+
     // dstrings.c lines 35–67 — endmsg[NUM_QUITMESSAGES+1].
     //
     // The C source is missing two commas in the initializer. In C,

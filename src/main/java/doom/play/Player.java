@@ -1,10 +1,11 @@
-// Port of linuxdoom-1.10/d_player.h player_t — stub placeholder.
-// The renderer only reads `player->mo`, `player->viewz`, `player->extralight`,
-// `player->fixedcolormap`. The full player_t lives alongside the rest of
-// the playsim port. Only the fields R_SetupFrame touches are declared here
-// so RMain can compile cleanly; everything else will be added when
-// d_player.h gets its own port.
+// Port of linuxdoom-1.10/d_player.h player_t — partial.
+// Fields are added as their consumers port. The full player_t carries
+// 30+ fields (powers, ammo inventory, weapon flags, intermission stats,
+// pspr overlays, etc.) — the rest land alongside p_user.c, p_inter.c,
+// and p_pspr.c.
 package doom.play;
+
+import doom.system.Doomdef;
 
 public class Player {
 
@@ -20,4 +21,12 @@ public class Player {
     // d_player.h — -1 = normal, otherwise a fixed colormap index
     // (invulnerability sphere, light amp goggles).
     public int fixedcolormap;
+
+    // d_player.h line 109 — keycard / skull-key inventory.
+    // Indexed by card_t (it_bluecard ... it_redskull).
+    public boolean[] cards = new boolean[Doomdef.NUMCARDS];
+
+    // d_player.h line 140 — short HUD message (locked-door denial,
+    // pickup acknowledgement, etc.). null when no message active.
+    public String message;
 }

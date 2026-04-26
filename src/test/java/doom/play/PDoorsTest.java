@@ -9,6 +9,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import doom.fixed.Fixed;
 import doom.render.Line;
 import doom.render.Sector;
+import doom.render.Side;
+import doom.system.Doomdef;
+import doom.system.Dstrings;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -484,5 +487,291 @@ class PDoorsTest {
         assertEquals(5 * 60 * 35, d.topcountdown); // 5 minutes
         assertEquals(PDoors.VDOORWAIT, d.topwait);
         assertEquals(0, sec.special);             // cleared
+    }
+
+    // ----- EV_DoLockedDoor -----
+
+    // Helper: build a player-owning Mobj with the requested cards set.
+    private static Mobj playerWithCards(int... heldCards) {
+        Mobj m = new Mobj();
+        m.player = new Player();
+        for (int c : heldCards) {
+            m.player.cards[c] = true;
+        }
+        return m;
+    }
+
+    // Helper: 1-sector world, tag-matched.
+    private static Line worldOneSector(int special, int tag) {
+        Sector sec = new Sector();
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.tag = tag;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Line line = new Line();
+        line.special = special;
+        line.tag = tag;
+        return line;
+    }
+
+    // No player on mobj → 0, no message, no door.
+    @Test
+    void evDoLockedDoorWithoutPlayerReturnsZero() {
+        Line line = worldOneSector(99, 7);
+        Mobj nonPlayer = new Mobj();   // no .player
+
+        int rtn = PDoors.evDoLockedDoor(line, PDoors.blazeOpen, nonPlayer);
+
+        assertEquals(0, rtn);
+        assertNull(PSetup.sectors[0].specialdata);
+    }
+
+    // Blue lock, no card → message PD_BLUEO, returns 0, no door spawned.
+    @Test
+    void evDoLockedDoorBlueWithoutCardSetsMessage() {
+        Line line = worldOneSector(99, 7);
+        Mobj p = playerWithCards();   // empty inventory
+
+        int rtn = PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p);
+
+        assertEquals(0, rtn);
+        assertEquals(Dstrings.PD_BLUEO, p.player.message);
+        assertNull(PSetup.sectors[0].specialdata);
+    }
+
+    // Blue lock with bluecard → falls through to EV_DoDoor (returns 1, spawns).
+    @Test
+    void evDoLockedDoorBlueWithCardSpawnsDoor() {
+        Line line = worldOneSector(99, 7);
+        Mobj p = playerWithCards(Doomdef.it_bluecard);
+
+        int rtn = PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p);
+
+        assertEquals(1, rtn);
+        assertNotNull(PSetup.sectors[0].specialdata);
+    }
+
+    // Blueskull also unlocks (either-or).
+    @Test
+    void evDoLockedDoorBlueWithSkullSpawnsDoor() {
+        Line line = worldOneSector(133, 7);
+        Mobj p = playerWithCards(Doomdef.it_blueskull);
+
+        assertEquals(1, PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p));
+    }
+
+    // Red lock paths.
+    @Test
+    void evDoLockedDoorRedNeedsRedKey() {
+        Line line = worldOneSector(134, 8);
+        Mobj p = playerWithCards();
+
+        assertEquals(0, PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p));
+        assertEquals(Dstrings.PD_REDO, p.player.message);
+
+        line.special = 134; // unchanged
+        Mobj p2 = playerWithCards(Doomdef.it_redskull);
+        assertEquals(1, PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p2));
+    }
+
+    // Yellow lock paths.
+    @Test
+    void evDoLockedDoorYellowNeedsYellowKey() {
+        Line line = worldOneSector(136, 9);
+        Mobj p = playerWithCards();
+
+        assertEquals(0, PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p));
+        assertEquals(Dstrings.PD_YELLOWO, p.player.message);
+
+        Mobj p2 = playerWithCards(Doomdef.it_yellowcard);
+        assertEquals(1, PDoors.evDoLockedDoor(line, PDoors.blazeOpen, p2));
+    }
+
+    // ----- EV_VerticalDoor -----
+
+    // Helper: a 1-sector "use" world. The line's side[1^side] sidedef
+    // points to `sec` so EV_VerticalDoor can pick the sector up.
+    private static Line useDoorWorld(int special) {
+        Sector sec = new Sector();
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.lines = new Line[0];
+        sec.linecount = 0;
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+
+        Side back = new Side();
+        back.sector = sec;
+        // side[0]=front (unused here), side[1]=back (the one EV_VerticalDoor reads).
+        PSetup.sides = new Side[] { new Side(), back };
+        PSetup.numsides = 2;
+
+        Line line = new Line();
+        line.special = special;
+        line.sidenum[0] = 0;
+        line.sidenum[1] = 1;
+        return line;
+    }
+
+    // No player + lock → return without spawning.
+    @Test
+    void evVerticalDoorBlueLockNoPlayerNoDoor() {
+        Line line = useDoorWorld(26);
+        Mobj nonPlayer = new Mobj();
+
+        PDoors.evVerticalDoor(line, nonPlayer);
+
+        assertNull(PSetup.sectors[0].specialdata);
+    }
+
+    // Blue lock + no key → message PD_BLUEK, no door.
+    @Test
+    void evVerticalDoorBlueLockNoKeySetsMessage() {
+        Line line = useDoorWorld(26);
+        Mobj p = playerWithCards();
+
+        PDoors.evVerticalDoor(line, p);
+
+        assertEquals(Dstrings.PD_BLUEK, p.player.message);
+        assertNull(PSetup.sectors[0].specialdata);
+    }
+
+    // Blue lock + bluecard → spawns a normal door (type 26 → normal).
+    @Test
+    void evVerticalDoorBlueLockWithKeySpawnsNormalDoor() {
+        Line line = useDoorWorld(26);
+        Mobj p = playerWithCards(Doomdef.it_bluecard);
+
+        PDoors.evVerticalDoor(line, p);
+
+        PDoors.VLDoor d = (PDoors.VLDoor) PSetup.sectors[0].specialdata;
+        assertNotNull(d);
+        assertEquals(PDoors.normal, d.type);
+        assertEquals(1, d.direction);             // going up
+        assertEquals(PDoors.VDOORSPEED, d.speed);
+    }
+
+    // "Open" flavor (line.special=32 with bluecard): door type=open AND
+    // line.special is cleared to 0 (one-shot).
+    @Test
+    void evVerticalDoorOpenFlavorClearsLineSpecial() {
+        Line line = useDoorWorld(32);
+        Mobj p = playerWithCards(Doomdef.it_bluecard);
+
+        PDoors.evVerticalDoor(line, p);
+
+        PDoors.VLDoor d = (PDoors.VLDoor) PSetup.sectors[0].specialdata;
+        assertEquals(PDoors.open, d.type);
+        assertEquals(0, line.special);
+    }
+
+    // line.special=1 (manual raise) — no lock, normal door spawn.
+    @Test
+    void evVerticalDoorSpecial1SpawnsNormalDoor() {
+        Line line = useDoorWorld(1);
+        Mobj p = playerWithCards();   // no key needed for unlocked
+
+        PDoors.evVerticalDoor(line, p);
+
+        PDoors.VLDoor d = (PDoors.VLDoor) PSetup.sectors[0].specialdata;
+        assertNotNull(d);
+        assertEquals(PDoors.normal, d.type);
+    }
+
+    // Re-press while existing door is moving DOWN: flips back to UP.
+    @Test
+    void evVerticalDoorRepressOnClosingDoorReversesUp() {
+        Line line = useDoorWorld(1);
+        // Pre-seed an existing closing door on the sector.
+        PDoors.VLDoor existing = new PDoors.VLDoor();
+        existing.direction = -1;
+        existing.sector = PSetup.sectors[0];
+        PSetup.sectors[0].specialdata = existing;
+
+        Mobj p = playerWithCards();
+
+        PDoors.evVerticalDoor(line, p);
+
+        // Existing door was reversed; no new door created (specialdata
+        // still references the same VLDoor).
+        assertSame(existing, PSetup.sectors[0].specialdata);
+        assertEquals(1, existing.direction);
+    }
+
+    // Re-press while door is going UP / waiting (direction != -1):
+    // player triggers immediate close.
+    @Test
+    void evVerticalDoorRepressOnOpenDoorByPlayerStartsClose() {
+        Line line = useDoorWorld(1);
+        PDoors.VLDoor existing = new PDoors.VLDoor();
+        existing.direction = 1; // going up
+        existing.sector = PSetup.sectors[0];
+        PSetup.sectors[0].specialdata = existing;
+
+        Mobj p = playerWithCards();
+
+        PDoors.evVerticalDoor(line, p);
+
+        assertSame(existing, PSetup.sectors[0].specialdata);
+        assertEquals(-1, existing.direction);
+    }
+
+    // Re-press by NON-PLAYER on a non-closing door: bad guys never close
+    // doors → no change.
+    @Test
+    void evVerticalDoorRepressByMonsterDoesNothing() {
+        Line line = useDoorWorld(1);
+        PDoors.VLDoor existing = new PDoors.VLDoor();
+        existing.direction = 0;  // waiting
+        existing.sector = PSetup.sectors[0];
+        PSetup.sectors[0].specialdata = existing;
+
+        Mobj monster = new Mobj();   // no .player
+
+        PDoors.evVerticalDoor(line, monster);
+
+        // Direction unchanged.
+        assertEquals(0, existing.direction);
+        assertSame(existing, PSetup.sectors[0].specialdata);
+    }
+
+    // Re-press on an "open"-type door (line.special outside the
+    // re-trigger set 1/26/27/28/117) does NOT alter the existing door —
+    // the early-return falls through to the new-door spawn. But because
+    // sec.specialdata is non-null the new spawn would clobber it. The
+    // C C does spawn a second door in that case (no `continue`); we
+    // mirror that.
+    @Test
+    void evVerticalDoorOnOpenStyleClobbersExistingDoor() {
+        Line line = useDoorWorld(31);   // "open" style (clears special)
+        PDoors.VLDoor existing = new PDoors.VLDoor();
+        existing.direction = 0;
+        existing.sector = PSetup.sectors[0];
+        PSetup.sectors[0].specialdata = existing;
+
+        Mobj p = playerWithCards();
+
+        PDoors.evVerticalDoor(line, p);
+
+        // The new door has type=open and replaces the existing reference.
+        PDoors.VLDoor d = (PDoors.VLDoor) PSetup.sectors[0].specialdata;
+        assertNotNull(d);
+        assertEquals(PDoors.open, d.type);
+        assertTrue(d != existing);
+    }
+
+    // Blazing raise (117): speed = 4× VDOORSPEED.
+    @Test
+    void evVerticalDoorBlazeRaiseUsesQuadrupleSpeed() {
+        Line line = useDoorWorld(117);
+        Mobj p = playerWithCards();
+
+        PDoors.evVerticalDoor(line, p);
+
+        PDoors.VLDoor d = (PDoors.VLDoor) PSetup.sectors[0].specialdata;
+        assertEquals(PDoors.blazeRaise, d.type);
+        assertEquals(PDoors.VDOORSPEED * 4, d.speed);
     }
 }
