@@ -9,17 +9,15 @@
 //     and the path-traversal scaffolding (PIT_AddLineIntercepts,
 //     PIT_AddThingIntercepts, P_TraverseIntercepts, P_PathTraverse).
 //
-// Pure-math + blockmap-iterator layers ported. P_SetThingPosition /
-// P_UnsetThingPosition wait on R_PointInSubsector (r_bsp.c) and on
-// Mobj's snext/sprev/subsector/flags fields. The intercept machinery
-// (PIT_*Intercepts, PathTraverse) waits on intercept_t + the trace
-// globals.
+// Full port. Pure-math layer + blockmap iterators + thing-position
+// linkers + intercept machinery + PathTraverse all live here.
 package doom.play;
 
 import doom.fixed.Fixed;
 import doom.render.Line;
 import doom.render.RMain;
 import doom.render.Sector;
+import doom.render.Subsector;
 
 import java.util.function.Predicate;
 
@@ -313,6 +311,116 @@ public final class PMaputl {
         }
 
         openrange = opentop - openbottom;
+    }
+
+    //
+    // THING POSITION SETTING
+    //
+
+    //
+    // P_UnsetThingPosition
+    // Unlinks a thing from block map and sectors. On each position
+    // change, BLOCKMAP and other lookups maintaining lists of things
+    // inside these structures need to be updated.
+    //
+    // p_maputl.c lines 347–386.
+    public static void pUnsetThingPosition(Mobj thing) {
+        int blockx;
+        int blocky;
+
+        if ((thing.flags & Mobj.MF_NOSECTOR) == 0) {
+            // inert things don't need to be in blockmap?
+            // unlink from subsector
+            if (thing.snext != null) {
+                thing.snext.sprev = thing.sprev;
+            }
+
+            if (thing.sprev != null) {
+                thing.sprev.snext = thing.snext;
+            } else {
+                thing.subsector.sector.thinglist = thing.snext;
+            }
+        }
+
+        if ((thing.flags & Mobj.MF_NOBLOCKMAP) == 0) {
+            // inert things don't need to be in blockmap
+            // unlink from block map
+            if (thing.bnext != null) {
+                thing.bnext.bprev = thing.bprev;
+            }
+
+            if (thing.bprev != null) {
+                thing.bprev.bnext = thing.bnext;
+            } else {
+                final int MAPBLOCKSHIFT = Fixed.FRACBITS + 7;
+                blockx = (thing.x - PSetup.bmaporgx) >> MAPBLOCKSHIFT;
+                blocky = (thing.y - PSetup.bmaporgy) >> MAPBLOCKSHIFT;
+
+                if (blockx >= 0 && blockx < PSetup.bmapwidth
+                        && blocky >= 0 && blocky < PSetup.bmapheight) {
+                    PSetup.blocklinks[blocky * PSetup.bmapwidth + blockx]
+                            = thing.bnext;
+                }
+            }
+        }
+    }
+
+    //
+    // P_SetThingPosition
+    // Links a thing into both a block and a subsector based on its
+    // x,y. Sets thing.subsector properly.
+    //
+    // p_maputl.c lines 396–450.
+    public static void pSetThingPosition(Mobj thing) {
+        Subsector ss;
+        Sector sec;
+        int blockx;
+        int blocky;
+
+        // link into subsector
+        ss = doom.render.RMain.rPointInSubsector(thing.x, thing.y);
+        thing.subsector = ss;
+
+        if ((thing.flags & Mobj.MF_NOSECTOR) == 0) {
+            // invisible things don't go into the sector links
+            sec = ss.sector;
+
+            thing.sprev = null;
+            thing.snext = sec.thinglist;
+
+            if (sec.thinglist != null) {
+                sec.thinglist.sprev = thing;
+            }
+
+            sec.thinglist = thing;
+        }
+
+        // link into blockmap
+        if ((thing.flags & Mobj.MF_NOBLOCKMAP) == 0) {
+            // inert things don't need to be in blockmap
+            final int MAPBLOCKSHIFT = Fixed.FRACBITS + 7;
+            blockx = (thing.x - PSetup.bmaporgx) >> MAPBLOCKSHIFT;
+            blocky = (thing.y - PSetup.bmaporgy) >> MAPBLOCKSHIFT;
+
+            if (blockx >= 0
+                    && blockx < PSetup.bmapwidth
+                    && blocky >= 0
+                    && blocky < PSetup.bmapheight) {
+                int linkIdx = blocky * PSetup.bmapwidth + blockx;
+                Mobj head = PSetup.blocklinks[linkIdx];
+                thing.bprev = null;
+                thing.bnext = head;
+                if (head != null) {
+                    head.bprev = thing;
+                }
+
+                PSetup.blocklinks[linkIdx] = thing;
+            } else {
+                // thing is off the map
+                thing.bnext = null;
+                thing.bprev = null;
+            }
+        }
     }
 
     //

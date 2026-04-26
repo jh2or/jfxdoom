@@ -2,6 +2,7 @@ package doom.play;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -809,5 +810,166 @@ class PMaputlTest {
     void maxInterceptsMatchesCHeader() {
         assertEquals(128, PMaputl.MAXINTERCEPTS);
         assertEquals(128, PMaputl.intercepts.length);
+    }
+
+    // ----- P_SetThingPosition / P_UnsetThingPosition -----
+    //
+    // Build a minimal world: one subsector with one sector, one
+    // 1×1 blockmap, no nodes (so R_PointInSubsector returns the
+    // single subsector for any input).
+
+    private static Sector setupOneSectorWorld() {
+        Sector sec = new Sector();
+        sec.floorheight = 0;
+        sec.ceilingheight = 200 * Fixed.FRACUNIT;
+        sec.thinglist = null;
+
+        doom.render.Subsector ss = new doom.render.Subsector();
+        ss.sector = sec;
+
+        PSetup.sectors = new Sector[] { sec };
+        PSetup.numsectors = 1;
+        PSetup.subsectors = new doom.render.Subsector[] { ss };
+        PSetup.numsubsectors = 1;
+        PSetup.numnodes = 0;  // single-subsector special case
+        PSetup.nodes = new doom.render.Node[0];
+
+        PSetup.bmaporgx = 0;
+        PSetup.bmaporgy = 0;
+        PSetup.bmapwidth = 1;
+        PSetup.bmapheight = 1;
+        PSetup.blocklinks = new Mobj[1];
+
+        return sec;
+    }
+
+    @Test
+    void setThingPositionLinksIntoSectorAndBlockmap() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj m = new Mobj();
+        m.x = 64 * Fixed.FRACUNIT;
+        m.y = 64 * Fixed.FRACUNIT;
+        m.flags = 0;
+
+        PMaputl.pSetThingPosition(m);
+
+        // Subsector wired.
+        assertNotNull(m.subsector);
+        // Sector list head is now m.
+        assertSame(m, sec.thinglist);
+        assertEquals(null, m.snext);
+        assertEquals(null, m.sprev);
+        // Blockmap head is now m.
+        assertSame(m, PSetup.blocklinks[0]);
+        assertEquals(null, m.bnext);
+        assertEquals(null, m.bprev);
+    }
+
+    // Two mobjs into the same sector: second prepends, first becomes
+    // m1.snext (LIFO).
+    @Test
+    void setThingPositionPrependsToSectorList() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj a = new Mobj(); a.flags = 0;
+        Mobj b = new Mobj(); b.flags = 0;
+
+        PMaputl.pSetThingPosition(a);
+        PMaputl.pSetThingPosition(b);
+
+        assertSame(b, sec.thinglist);   // newest is head
+        assertSame(a, b.snext);
+        assertSame(b, a.sprev);
+        assertEquals(null, a.snext);
+    }
+
+    // MF_NOSECTOR: subsector is still set, but the sector linked-list
+    // is skipped.
+    @Test
+    void setThingPositionSkipsSectorWhenNoSectorFlag() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj m = new Mobj();
+        m.flags = Mobj.MF_NOSECTOR;
+
+        PMaputl.pSetThingPosition(m);
+
+        assertNotNull(m.subsector);
+        assertEquals(null, sec.thinglist);   // not linked
+        assertSame(m, PSetup.blocklinks[0]); // blockmap still linked
+    }
+
+    // MF_NOBLOCKMAP: sector list yes, blockmap no.
+    @Test
+    void setThingPositionSkipsBlockmapWhenNoBlockmapFlag() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj m = new Mobj();
+        m.flags = Mobj.MF_NOBLOCKMAP;
+
+        PMaputl.pSetThingPosition(m);
+
+        assertSame(m, sec.thinglist);
+        assertEquals(null, PSetup.blocklinks[0]);
+    }
+
+    // Off-map (out of bmap range): subsector + sector links done,
+    // blockmap links nulled out.
+    @Test
+    void setThingPositionOffMapNullsBnextBprev() {
+        setupOneSectorWorld();
+
+        Mobj m = new Mobj();
+        m.x = -1000 * Fixed.FRACUNIT; // outside the 1×1 block at origin
+        m.y = -1000 * Fixed.FRACUNIT;
+        m.flags = 0;
+        // Pre-poison to confirm they get cleared.
+        m.bnext = new Mobj();
+        m.bprev = new Mobj();
+
+        PMaputl.pSetThingPosition(m);
+
+        assertEquals(null, m.bnext);
+        assertEquals(null, m.bprev);
+        assertEquals(null, PSetup.blocklinks[0]);
+    }
+
+    // Round-trip: set then unset removes from both lists.
+    @Test
+    void unsetThingPositionUnlinksFromSectorAndBlockmap() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj m = new Mobj();
+        m.flags = 0;
+        m.x = 64 * Fixed.FRACUNIT;
+        m.y = 64 * Fixed.FRACUNIT;
+        PMaputl.pSetThingPosition(m);
+
+        PMaputl.pUnsetThingPosition(m);
+
+        assertEquals(null, sec.thinglist);
+        assertEquals(null, PSetup.blocklinks[0]);
+    }
+
+    // Unset middle of a sector chain: prev.snext bypasses the removed mobj.
+    @Test
+    void unsetThingPositionUnlinksMiddleOfSectorChain() {
+        Sector sec = setupOneSectorWorld();
+
+        Mobj a = new Mobj(); a.flags = 0;
+        Mobj b = new Mobj(); b.flags = 0;
+        Mobj c = new Mobj(); c.flags = 0;
+
+        PMaputl.pSetThingPosition(a);
+        PMaputl.pSetThingPosition(b);
+        PMaputl.pSetThingPosition(c);
+        // List head: c → b → a (LIFO).
+
+        PMaputl.pUnsetThingPosition(b);
+
+        assertSame(c, sec.thinglist);
+        assertSame(a, c.snext);
+        assertSame(c, a.sprev);
     }
 }
