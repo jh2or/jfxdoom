@@ -26,4 +26,11 @@ public class Mobj extends Thinker {
     // of the mobj_t lifecycle (state machine, sprite, AI) lands with
     // p_mobj.c.
     public int type;
+
+    // p_mobj.h lines 228–229 — blockmap doubly-linked list links.
+    // Each blocklinks[] cell holds the head of a chain of mobjs whose
+    // origin is in that block; bnext/bprev walk the chain.
+    // P_BlockThingsIterator reads bnext to traverse.
+    public Mobj bnext;
+    public Mobj bprev;
 }

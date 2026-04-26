@@ -17,6 +17,13 @@ public final class RMain {
     // so later renderer ports have a home.
     public static int extralight;
 
+    // r_main.c line 55 — frame-and-trace counter. Bumped before each
+    // BSP traversal (R_RenderPlayerView) and before each PathTraverse
+    // (PMaputl). Lines/sectors stamped with the current value have
+    // already been visited in this pass. Initialized to 1 in the C so
+    // the first walk always sees fresh state (validcount == 0).
+    public static int validcount = 1;
+
     private RMain() {
     }
 }

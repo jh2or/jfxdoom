@@ -9,17 +9,19 @@
 //     and the path-traversal scaffolding (PIT_AddLineIntercepts,
 //     PIT_AddThingIntercepts, P_TraverseIntercepts, P_PathTraverse).
 //
-// Only the pure-math layer lands here. The thing-position / blockmap
-// layer needs Mobj.{snext,sprev,bnext,bprev,subsector,flags,radius},
-// the Subsector type, and the blockmap globals (bmaporgx, bmaporgy,
-// bmapwidth, bmapheight, blocklinks, blockmap, blockmaplump) from
-// p_setup.c — none ported yet. Same partial-port pattern as PFloor /
-// PSwitch / PDoors.
+// Pure-math + blockmap-iterator layers ported. P_SetThingPosition /
+// P_UnsetThingPosition wait on R_PointInSubsector (r_bsp.c) and on
+// Mobj's snext/sprev/subsector/flags fields. The intercept machinery
+// (PIT_*Intercepts, PathTraverse) waits on intercept_t + the trace
+// globals.
 package doom.play;
 
 import doom.fixed.Fixed;
 import doom.render.Line;
+import doom.render.RMain;
 import doom.render.Sector;
+
+import java.util.function.Predicate;
 
 public final class PMaputl {
 
@@ -203,6 +205,79 @@ public final class PMaputl {
         frac = Fixed.div(num, den);
 
         return frac;
+    }
+
+    //
+    // BLOCK MAP ITERATORS
+    // For each line/thing in the given mapblock,
+    // call the passed PIT_* function.
+    // If the function returns false,
+    // exit with false without checking anything else.
+    //
+
+    //
+    // P_BlockLinesIterator
+    // The validcount flags are used to avoid checking lines
+    // that are marked in multiple mapblocks,
+    // so increment validcount before the first call
+    // to P_BlockLinesIterator, then make one or more calls
+    // to it.
+    //
+    // p_maputl.c lines 471–506. The C `boolean(*func)(line_t*)`
+    // becomes a `Predicate<Line>`; same return-false-to-stop contract.
+    public static boolean pBlockLinesIterator(int x, int y, Predicate<Line> func) {
+        if (x < 0
+                || y < 0
+                || x >= PSetup.bmapwidth
+                || y >= PSetup.bmapheight) {
+            return true;
+        }
+
+        int offset = y * PSetup.bmapwidth + x;
+
+        // C: `offset = *(blockmap+offset)` — i.e. the per-block list
+        // pointer. blockmap aliases blockmaplump+4, so reading is via
+        // PSetup.blockmaplump[blockmapOffset + offset].
+        offset = PSetup.blockmaplump[PSetup.blockmapOffset + offset];
+
+        // Walk the per-block list. Each entry is a line index, list
+        // is terminated with -1.
+        for (int li = offset; PSetup.blockmaplump[li] != -1; li++) {
+            Line ld = PSetup.lines[PSetup.blockmaplump[li]];
+
+            if (ld.validcount == RMain.validcount) {
+                continue; // line has already been checked
+            }
+
+            ld.validcount = RMain.validcount;
+
+            if (!func.test(ld)) {
+                return false;
+            }
+        }
+        return true; // everything was checked
+    }
+
+    //
+    // P_BlockThingsIterator
+    //
+    // p_maputl.c lines 510–537.
+    public static boolean pBlockThingsIterator(int x, int y, Predicate<Mobj> func) {
+        if (x < 0
+                || y < 0
+                || x >= PSetup.bmapwidth
+                || y >= PSetup.bmapheight) {
+            return true;
+        }
+
+        for (Mobj mobj = PSetup.blocklinks[y * PSetup.bmapwidth + x];
+                mobj != null;
+                mobj = mobj.bnext) {
+            if (!func.test(mobj)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     //

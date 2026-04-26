@@ -1,13 +1,18 @@
 package doom.play;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import doom.fixed.Fixed;
 import doom.render.Line;
+import doom.render.RMain;
 import doom.render.Sector;
 import doom.render.Slopetype;
 import doom.render.Vertex;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +25,16 @@ class PMaputlTest {
         PMaputl.openbottom = 0;
         PMaputl.openrange = 0;
         PMaputl.lowfloor = 0;
+        PSetup.numlines = 0;
+        PSetup.lines = null;
+        PSetup.bmapwidth = 0;
+        PSetup.bmapheight = 0;
+        PSetup.blockmap = null;
+        PSetup.blockmaplump = null;
+        PSetup.blocklinks = null;
+        // Bumping past whatever any earlier test left behind keeps
+        // each iterator pass starting with "fresh" lines.
+        RMain.validcount++;
     }
 
     // Build a Line whose v1=(x1,y1), v2=(x2,y2), with dx/dy precalculated
@@ -315,5 +330,209 @@ class PMaputlTest {
         s.floorheight = floor;
         s.ceilingheight = ceiling;
         return s;
+    }
+
+    // ----- P_BlockLinesIterator / P_BlockThingsIterator -----
+    //
+    // Synthetic 2x2 blockmap. Layout in blockmaplump[]:
+    //   [0..3]  header (origin x, y, width=2, height=2)
+    //   [4..7]  per-block list start offsets (block (0,0)..(1,1))
+    //   [8..]   the per-block lists (each is a sequence of line
+    //           indices into PSetup.lines[], terminated with -1).
+
+    // Helper: install a small synthetic blockmap world.
+    // Lines are populated separately via setLines(); blocklinks
+    // for thing-iterator tests via setBlocklinks().
+    private static void installBlockmap(int width, int height, int[] perBlockOffsets, int[] tail) {
+        // Header (4 ints) + perBlockOffsets (width*height ints) + tail.
+        int[] lump = new int[4 + perBlockOffsets.length + tail.length];
+        lump[0] = 0; // bmaporgx
+        lump[1] = 0; // bmaporgy
+        lump[2] = width;
+        lump[3] = height;
+        for (int i = 0; i < perBlockOffsets.length; i++) {
+            lump[4 + i] = perBlockOffsets[i];
+        }
+        for (int i = 0; i < tail.length; i++) {
+            lump[4 + perBlockOffsets.length + i] = tail[i];
+        }
+        PSetup.blockmaplump = lump;
+        PSetup.blockmap = lump;
+        PSetup.bmapwidth = width;
+        PSetup.bmapheight = height;
+        PSetup.blocklinks = new Mobj[width * height];
+    }
+
+    // Out-of-bounds (negative or beyond bmapwidth/height) returns true
+    // without invoking the callback.
+    @Test
+    void blockLinesIteratorOutOfBoundsReturnsTrueWithoutCalling() {
+        // 4-block lump: 4 header + 4 offsets + tail. All blocks point
+        // at index 8 = the tail terminator → all empty.
+        installBlockmap(2, 2, new int[] { 8, 8, 8, 8 }, new int[] { -1 });
+        PSetup.lines = new Line[] {};
+
+        boolean[] called = { false };
+        java.util.function.Predicate<Line> cb = ld -> { called[0] = true; return true; };
+
+        assertTrue(PMaputl.pBlockLinesIterator(-1, 0, cb));
+        assertTrue(PMaputl.pBlockLinesIterator(0, -1, cb));
+        assertTrue(PMaputl.pBlockLinesIterator(2, 0, cb));
+        assertTrue(PMaputl.pBlockLinesIterator(0, 2, cb));
+        assertFalse(called[0]);
+    }
+
+    // Empty block (offset → list of just -1) returns true with no calls.
+    @Test
+    void blockLinesIteratorEmptyBlockReturnsTrue() {
+        // Lump layout: 4 header ints + 1 per-block offset + 1 tail.
+        // The single block points at index 5 (= header + perBlockOffsets),
+        // which is the -1 terminator → empty list.
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { -1 });
+        PSetup.lines = new Line[] {};
+
+        int[] count = { 0 };
+        boolean rtn = PMaputl.pBlockLinesIterator(0, 0, ld -> { count[0]++; return true; });
+
+        assertTrue(rtn);
+        assertEquals(0, count[0]);
+    }
+
+    // Visits each line in the block once.
+    @Test
+    void blockLinesIteratorVisitsAllLinesInBlock() {
+        // Block (0,0) → list at offset 5: lines [0, 1, 2, -1].
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { 0, 1, 2, -1 });
+
+        Line l0 = new Line(); Line l1 = new Line(); Line l2 = new Line();
+        PSetup.lines = new Line[] { l0, l1, l2 };
+        PSetup.numlines = 3;
+
+        // Bump validcount so the post-stamp comparison guarantees
+        // these lines look fresh.
+        RMain.validcount++;
+
+        List<Line> visited = new ArrayList<>();
+        boolean rtn = PMaputl.pBlockLinesIterator(0, 0, ld -> { visited.add(ld); return true; });
+
+        assertTrue(rtn);
+        assertEquals(List.of(l0, l1, l2), visited);
+    }
+
+    // validcount-stamped lines are skipped on subsequent passes.
+    @Test
+    void blockLinesIteratorSkipsLinesAlreadyStamped() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { 0, 1, -1 });
+        Line l0 = new Line(); Line l1 = new Line();
+        PSetup.lines = new Line[] { l0, l1 };
+
+        RMain.validcount++;
+        // Pre-stamp l0 with the current count.
+        l0.validcount = RMain.validcount;
+
+        List<Line> visited = new ArrayList<>();
+        PMaputl.pBlockLinesIterator(0, 0, ld -> { visited.add(ld); return true; });
+
+        // l0 was stamped → skipped; l1 was visited.
+        assertEquals(List.of(l1), visited);
+    }
+
+    // Callback returns false → iterator stops + propagates false.
+    @Test
+    void blockLinesIteratorStopsWhenCallbackReturnsFalse() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { 0, 1, 2, -1 });
+        PSetup.lines = new Line[] { new Line(), new Line(), new Line() };
+
+        RMain.validcount++;
+
+        int[] count = { 0 };
+        boolean rtn = PMaputl.pBlockLinesIterator(0, 0, ld -> {
+            count[0]++;
+            return count[0] < 2; // stop after the second call returns false
+        });
+
+        assertFalse(rtn);
+        assertEquals(2, count[0]);
+    }
+
+    // After a complete pass, every visited line carries the current
+    // validcount stamp.
+    @Test
+    void blockLinesIteratorStampsVisitedLines() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { 0, 1, -1 });
+        Line l0 = new Line(); Line l1 = new Line();
+        PSetup.lines = new Line[] { l0, l1 };
+
+        RMain.validcount++;
+        int target = RMain.validcount;
+
+        PMaputl.pBlockLinesIterator(0, 0, ld -> true);
+
+        assertEquals(target, l0.validcount);
+        assertEquals(target, l1.validcount);
+    }
+
+    // ----- P_BlockThingsIterator -----
+
+    // Out-of-bounds returns true, callback never fires.
+    @Test
+    void blockThingsIteratorOutOfBoundsReturnsTrueWithoutCalling() {
+        installBlockmap(2, 2, new int[] { 8, 8, 8, 8 }, new int[] { -1 });
+        // (Iterator never reads blockmap on the bounds-fail path; the
+        // valid offsets just keep the lump from looking malformed.)
+        boolean[] called = { false };
+        java.util.function.Predicate<Mobj> cb = m -> { called[0] = true; return true; };
+
+        assertTrue(PMaputl.pBlockThingsIterator(-1, 0, cb));
+        assertTrue(PMaputl.pBlockThingsIterator(0, 2, cb));
+        assertFalse(called[0]);
+    }
+
+    // Empty cell (no head mobj) → true, no calls.
+    @Test
+    void blockThingsIteratorEmptyCellReturnsTrue() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { -1 });
+        // blocklinks[0] left null by installBlockmap.
+        int[] count = { 0 };
+
+        boolean rtn = PMaputl.pBlockThingsIterator(0, 0, m -> { count[0]++; return true; });
+
+        assertTrue(rtn);
+        assertEquals(0, count[0]);
+    }
+
+    // Walks the bnext chain from blocklinks[block] head to the end.
+    @Test
+    void blockThingsIteratorWalksBnextChain() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { -1 });
+        Mobj a = new Mobj(); Mobj b = new Mobj(); Mobj c = new Mobj();
+        a.bnext = b;
+        b.bnext = c;
+        // c.bnext stays null → end of chain
+        PSetup.blocklinks[0] = a;
+
+        List<Mobj> visited = new ArrayList<>();
+        boolean rtn = PMaputl.pBlockThingsIterator(0, 0, m -> { visited.add(m); return true; });
+
+        assertTrue(rtn);
+        assertEquals(List.of(a, b, c), visited);
+    }
+
+    // Callback returns false stops the walk and propagates false.
+    @Test
+    void blockThingsIteratorStopsWhenCallbackReturnsFalse() {
+        installBlockmap(1, 1, new int[] { 5 }, new int[] { -1 });
+        Mobj a = new Mobj(); Mobj b = new Mobj(); Mobj c = new Mobj();
+        a.bnext = b; b.bnext = c;
+        PSetup.blocklinks[0] = a;
+
+        int[] count = { 0 };
+        boolean rtn = PMaputl.pBlockThingsIterator(0, 0, m -> {
+            count[0]++;
+            return m != b; // stop on b
+        });
+
+        assertFalse(rtn);
+        assertEquals(2, count[0]);  // visited a, then b returned false
     }
 }
