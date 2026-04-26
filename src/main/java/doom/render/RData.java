@@ -486,7 +486,7 @@ public final class RData {
     }
 
     // Test-only: drop all state so tests are independent.
-    static void resetForTests() {
+    public static void resetForTests() {
         firstflat = lastflat = numflats = 0;
         firstpatch = lastpatch = numpatches = 0;
         firstspritelump = lastspritelump = numspritelumps = 0;
