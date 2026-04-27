@@ -92,4 +92,11 @@ public class Mobj extends Thinker {
     // clipping and gravity.
     public int floorz;   // fixed_t
     public int ceilingz; // fixed_t
+
+    // p_mobj.h lines 242–244 — momentum, used to update position.
+    // Updated each tic by P_XYMovement / P_ZMovement (p_mobj.c) and
+    // by P_SlideMove (p_map.c) when a player slide along a wall.
+    public int momx; // fixed_t
+    public int momy; // fixed_t
+    public int momz; // fixed_t
 }

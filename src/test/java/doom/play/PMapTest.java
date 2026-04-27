@@ -475,4 +475,126 @@ class PMapTest {
         assertEquals(8, PMap.MAXSPECIALCROSS);
         assertEquals(8, PMap.spechit.length);
     }
+
+    // ----- P_HitSlideLine -----
+
+    @Test
+    void hitSlideLineHorizontalZerosYMove() {
+        Line ld = new Line();
+        ld.slopetype = Slopetype.ST_HORIZONTAL;
+
+        PMap.tmxmove = 100 * Fixed.FRACUNIT;
+        PMap.tmymove = 50 * Fixed.FRACUNIT;
+
+        PMap.pHitSlideLine(ld);
+
+        // Horizontal walls flatten the y component. x is untouched.
+        assertEquals(100 * Fixed.FRACUNIT, PMap.tmxmove);
+        assertEquals(0, PMap.tmymove);
+    }
+
+    @Test
+    void hitSlideLineVerticalZerosXMove() {
+        Line ld = new Line();
+        ld.slopetype = Slopetype.ST_VERTICAL;
+
+        PMap.tmxmove = 100 * Fixed.FRACUNIT;
+        PMap.tmymove = 50 * Fixed.FRACUNIT;
+
+        PMap.pHitSlideLine(ld);
+
+        assertEquals(0, PMap.tmxmove);
+        assertEquals(50 * Fixed.FRACUNIT, PMap.tmymove);
+    }
+
+    // Diagonal slide: just verify the call doesn't crash and that
+    // both components stay within [-tmxmove, +tmxmove] order. The
+    // exact angles depend on R_PointToAngle2's tantoangle table fuzz
+    // — the C and Java answers are bit-identical.
+    @Test
+    void hitSlideLineDiagonalDoesNotCrashAndProducesFiniteResult() {
+        Line ld = new Line();
+        ld.v1 = new Vertex(); ld.v1.x = 0;             ld.v1.y = 0;
+        ld.v2 = new Vertex(); ld.v2.x = 100 * Fixed.FRACUNIT; ld.v2.y = 100 * Fixed.FRACUNIT;
+        ld.dx = ld.v2.x - ld.v1.x;
+        ld.dy = ld.v2.y - ld.v1.y;
+        ld.slopetype = Slopetype.ST_POSITIVE; // diagonal
+
+        PMap.slidemo = new Mobj();
+        PMap.slidemo.x = -10 * Fixed.FRACUNIT;
+        PMap.slidemo.y = 0;
+
+        PMap.tmxmove = 50 * Fixed.FRACUNIT;
+        PMap.tmymove = -50 * Fixed.FRACUNIT;
+
+        PMap.pHitSlideLine(ld);
+
+        // Components shouldn't overflow; they get scaled by the
+        // cosine of the move-vs-wall angle.
+        assertTrue(Math.abs(PMap.tmxmove) <= 50 * Fixed.FRACUNIT);
+        assertTrue(Math.abs(PMap.tmymove) <= 50 * Fixed.FRACUNIT);
+    }
+
+    // ----- P_ThingHeightClip -----
+
+    // Mobj on the floor: rises with the floor when the sector floor
+    // changes height.
+    @Test
+    void thingHeightClipOnFloorRidesNewFloorHeight() {
+        Sector sec = openWorld(50 * Fixed.FRACUNIT, 250 * Fixed.FRACUNIT);
+
+        Mobj m = makeMobj(0, 0, 16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        m.z = 50 * Fixed.FRACUNIT;     // matches floorz → "on floor"
+        m.floorz = 50 * Fixed.FRACUNIT;
+        m.ceilingz = 250 * Fixed.FRACUNIT;
+        linkMobj(m);
+
+        // Raise the sector floor.
+        sec.floorheight = 80 * Fixed.FRACUNIT;
+
+        boolean fits = PMap.pThingHeightClip(m);
+
+        assertTrue(fits);
+        assertEquals(80 * Fixed.FRACUNIT, m.floorz);
+        assertEquals(80 * Fixed.FRACUNIT, m.z);  // rode up with floor
+    }
+
+    // Floating mobj (z != floorz): ceiling drop pushes z down so it fits.
+    @Test
+    void thingHeightClipFloatingMobjDuckedUnderLowCeiling() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj m = makeMobj(0, 0, 16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        m.z = 100 * Fixed.FRACUNIT;    // floating (not on floor)
+        m.floorz = 0;
+        m.ceilingz = 200 * Fixed.FRACUNIT;
+        linkMobj(m);
+
+        // Drop the ceiling so it almost crushes.
+        sec.ceilingheight = 150 * Fixed.FRACUNIT;
+
+        boolean fits = PMap.pThingHeightClip(m);
+
+        assertTrue(fits);
+        // z + height (100 + 56 = 156) > new ceiling (150), so z is
+        // adjusted to ceilingz - height = 94.
+        assertEquals(150 * Fixed.FRACUNIT - 56 * Fixed.FRACUNIT, m.z);
+    }
+
+    // Mobj doesn't fit: returns false.
+    @Test
+    void thingHeightClipReturnsFalseWhenSqueezed() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj m = makeMobj(0, 0, 16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        m.z = 0;
+        m.floorz = 0;
+        m.ceilingz = 200 * Fixed.FRACUNIT;
+        linkMobj(m);
+
+        // Squeeze ceiling below the mobj's height.
+        sec.ceilingheight = 30 * Fixed.FRACUNIT; // gap < 56
+
+        assertFalse(PMap.pThingHeightClip(m));
+    }
 }
