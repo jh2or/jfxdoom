@@ -85,4 +85,11 @@ public class Mobj extends Thinker {
     public Mobj snext;
     public Mobj sprev;
     public Subsector subsector;
+
+    // p_mobj.h lines 234–235 — the closest interval over all
+    // sectors the mobj is currently touching. P_TryMove writes both
+    // when a move is committed; P_ZMovement reads them for vertical
+    // clipping and gravity.
+    public int floorz;   // fixed_t
+    public int ceilingz; // fixed_t
 }
