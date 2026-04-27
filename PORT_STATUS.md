@@ -39,7 +39,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file      | Java class                 | Tier | Status  | Notes                              |
 | ----------- | -------------------------- | ---- | ------- | ---------------------------------- |
 | r_data.c    | `doom.render.RData`        | Hard | Verified | Textures/flats/sprites/colormaps. `R_PrecacheLevel` stubbed (needs playsim). See deviation 7. |
-| r_main.c    | `doom.render.RMain`        | Hard | Partial | BSP-descent layer: `R_PointOnSide` + `R_PointOnSegSide` + `R_PointInSubsector` + `validcount` global, plus the renderer scalars (`centery`, `centerx`, `extralight`) read by r_draw. The remaining ~870 lines (R_PointToAngle/Dist, R_InitTables, R_InitTextureMapping, R_InitLightTables, R_ExecuteSetViewSize, R_Init, R_SetupFrame, R_RenderPlayerView) land with r_bsp/r_segs/r_things. |
+| r_main.c    | `doom.render.RMain`        | Hard | Partial | BSP descent (`R_PointOnSide` + `R_PointOnSegSide` + `R_PointInSubsector`) + angle/distance helpers (`R_PointToAngle`, `R_PointToAngle2`, `R_PointToDist` + `viewx`/`viewy` globals) + `validcount` + the renderer scalars (`centery`, `centerx`, `extralight`) read by r_draw. The remaining view-setup / texture-mapping / lighting initializers (`R_InitTables`, `R_InitTextureMapping`, `R_InitLightTables`, `R_ExecuteSetViewSize`, `R_Init`, `R_SetupFrame`, `R_RenderPlayerView`, `R_ScaleFromGlobalAngle`) land with r_bsp/r_segs/r_things. |
 | r_bsp.c     | `doom.render.RBsp`         | Hard | Pending |                                    |
 | r_plane.c   | `doom.render.RPlane`       | Hard | Pending |                                    |
 | r_segs.c    | `doom.render.RSegs`        | Hard | Pending | Pointer-arithmetic heavy.          |

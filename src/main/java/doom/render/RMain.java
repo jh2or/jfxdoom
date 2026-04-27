@@ -34,6 +34,13 @@ public final class RMain {
     // the first walk always sees fresh state (validcount == 0).
     public static int validcount = 1;
 
+    // r_main.c — view origin used by R_PointToAngle / R_PointToDist.
+    // Set by R_SetupFrame each frame from the player mobj; also
+    // overwritten temporarily by R_PointToAngle2 to anchor a relative
+    // angle computation at an arbitrary point.
+    public static int viewx; // fixed_t
+    public static int viewy; // fixed_t
+
     //
     // R_PointOnSide
     // Traverse BSP (sub) tree, check point against partition plane.
@@ -139,6 +146,115 @@ public final class RMain {
         }
         // back side
         return 1;
+    }
+
+    //
+    // R_PointToAngle
+    // To get a global angle from cartesian coordinates, the
+    // coordinates are flipped until they are in the first octant of
+    // the coordinate system, then the y (<=x) is scaled and divided
+    // by x to get a tangent (slope) value which is looked up in the
+    // tantoangle[] table.
+    //
+    // r_main.c lines 291–374. The C `angle_t` is unsigned 32-bit; we
+    // use signed int with bit-pattern equivalence (CLAUDE.md §3) and
+    // rely on overflow wrapping for the additions.
+    public static int rPointToAngle(int x, int y) {
+        x -= viewx;
+        y -= viewy;
+
+        if (x == 0 && y == 0) {
+            return 0;
+        }
+
+        if (x >= 0) {
+            // x >= 0
+            if (y >= 0) {
+                // y >= 0
+                if (x > y) {
+                    // octant 0
+                    return Tables.tantoangle[Tables.slopeDiv(y, x)];
+                } else {
+                    // octant 1
+                    return Tables.ANG90 - 1 - Tables.tantoangle[Tables.slopeDiv(x, y)];
+                }
+            } else {
+                // y < 0
+                y = -y;
+                if (x > y) {
+                    // octant 8
+                    return -Tables.tantoangle[Tables.slopeDiv(y, x)];
+                } else {
+                    // octant 7
+                    return Tables.ANG270 + Tables.tantoangle[Tables.slopeDiv(x, y)];
+                }
+            }
+        } else {
+            // x < 0
+            x = -x;
+            if (y >= 0) {
+                if (x > y) {
+                    // octant 3
+                    return Tables.ANG180 - 1 - Tables.tantoangle[Tables.slopeDiv(y, x)];
+                } else {
+                    // octant 2
+                    return Tables.ANG90 + Tables.tantoangle[Tables.slopeDiv(x, y)];
+                }
+            } else {
+                y = -y;
+                if (x > y) {
+                    // octant 4
+                    return Tables.ANG180 + Tables.tantoangle[Tables.slopeDiv(y, x)];
+                } else {
+                    // octant 5
+                    return Tables.ANG270 - 1 - Tables.tantoangle[Tables.slopeDiv(x, y)];
+                }
+            }
+        }
+    }
+
+    //
+    // R_PointToAngle2 — angle from (x1,y1) to (x2,y2) by anchoring
+    // viewx/viewy at the source. Note the C side-effect: viewx/viewy
+    // get clobbered. Callers (P_HitSlideLine, P_AimLineAttack, etc.)
+    // are written to either restore them or not care.
+    //
+    // r_main.c lines 377–388.
+    public static int rPointToAngle2(int x1, int y1, int x2, int y2) {
+        viewx = x1;
+        viewy = y1;
+        return rPointToAngle(x2, y2);
+    }
+
+    //
+    // R_PointToDist
+    // Distance from (viewx, viewy) to (x, y), via the
+    // tantoangle table + finesine.
+    //
+    // r_main.c lines 392–418.
+    public static int rPointToDist(int x, int y) {
+        int angle;
+        int dx;
+        int dy;
+        int temp;
+        int dist;
+
+        dx = Math.abs(x - viewx);
+        dy = Math.abs(y - viewy);
+
+        if (dy > dx) {
+            temp = dx;
+            dx = dy;
+            dy = temp;
+        }
+
+        angle = (Tables.tantoangle[doom.fixed.Fixed.div(dy, dx) >> Tables.DBITS]
+                + Tables.ANG90) >>> Tables.ANGLETOFINESHIFT;
+
+        // use as cosine
+        dist = doom.fixed.Fixed.div(dx, Tables.finesine[angle]);
+
+        return dist;
     }
 
     //
