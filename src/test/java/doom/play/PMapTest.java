@@ -581,6 +581,135 @@ class PMapTest {
         assertEquals(150 * Fixed.FRACUNIT - 56 * Fixed.FRACUNIT, m.z);
     }
 
+    // ----- P_UseLines / PTR_UseTraverse -----
+    //
+    // Setup: player facing +x. A two-sided special-line wall is
+    // placed between the player and a tagged sector. Pressing "use"
+    // should walk pPathTraverse forward, hit the line, and dispatch
+    // P_UseSpecialLine.
+
+    // PTR_UseTraverse on a non-special line with no opening plays
+    // `sfx_noway` and stops the walk.
+    @Test
+    void ptrUseTraverseStopsOnSolidNonSpecialWall() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+        // One-sided wall (back=null): pLineOpening sets openrange=0.
+        Line ld = installLine(sec, null,
+                -50 * Fixed.FRACUNIT, 0,
+                 50 * Fixed.FRACUNIT, 0);
+        ld.special = 0; // explicitly non-special
+
+        PMap.usething = makeMobj(0, -30 * Fixed.FRACUNIT,
+                16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        PMap.usething.player = new Player();
+
+        Intercept in = new Intercept();
+        in.isaline = true;
+        in.line = ld;
+        in.frac = Fixed.FRACUNIT / 2;
+
+        boolean rtn = PMap.ptrUseTraverse(in);
+        // openrange is 0 for one-sided line → stop the walk.
+        assertFalse(rtn);
+    }
+
+    // PTR_UseTraverse on a non-special two-sided line lets the walk
+    // continue (returns true).
+    @Test
+    void ptrUseTraverseContinuesPastNonSpecialOpenLine() {
+        Sector front = openWorld(0, 200 * Fixed.FRACUNIT);
+        Sector back = new Sector();
+        back.floorheight = 0;
+        back.ceilingheight = 200 * Fixed.FRACUNIT;
+
+        Line ld = installLine(front, back,
+                -50 * Fixed.FRACUNIT, 0,
+                 50 * Fixed.FRACUNIT, 0);
+        ld.special = 0;
+
+        PMap.usething = makeMobj(0, -30 * Fixed.FRACUNIT,
+                16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        PMap.usething.player = new Player();
+
+        Intercept in = new Intercept();
+        in.isaline = true;
+        in.line = ld;
+
+        assertTrue(PMap.ptrUseTraverse(in));
+    }
+
+    // PTR_UseTraverse on a special line dispatches to PSwitch and
+    // stops the walk (one special per use).
+    @Test
+    void ptrUseTraverseDispatchesSpecialLineAndStops() {
+        Sector front = openWorld(0, 200 * Fixed.FRACUNIT);
+        Sector back = new Sector();
+        back.floorheight = 0;
+        back.ceilingheight = 200 * Fixed.FRACUNIT;
+
+        Line ld = installLine(front, back,
+                -50 * Fixed.FRACUNIT, 0,
+                 50 * Fixed.FRACUNIT, 0);
+        ld.special = 11; // Exit Level → flips GGame.gameaction
+
+        PMap.usething = makeMobj(0, -30 * Fixed.FRACUNIT,
+                16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        PMap.usething.player = new Player();
+
+        // Reset gameaction so we can detect dispatch.
+        doom.system.GGame.gameaction = doom.system.GGame.ga_nothing;
+
+        Intercept in = new Intercept();
+        in.isaline = true;
+        in.line = ld;
+
+        boolean rtn = PMap.ptrUseTraverse(in);
+
+        assertFalse(rtn); // stops after dispatching one special
+        assertEquals(doom.system.GGame.ga_completed,
+                doom.system.GGame.gameaction);
+    }
+
+    // P_UseLines walks forward USERANGE units along the player's
+    // facing and dispatches the first special line it hits.
+    @Test
+    void useLinesActivatesSpecialLineInFront() {
+        Sector front = openWorld(0, 200 * Fixed.FRACUNIT);
+        Sector back = new Sector();
+        back.floorheight = 0;
+        back.ceilingheight = 200 * Fixed.FRACUNIT;
+
+        // Wall in front of the player (player at (-30, 0), facing +x).
+        // Vertices ordered so that the v1→v2 vector has its right-hand
+        // normal pointing toward the player (his side becomes the
+        // line's front, which is required for special activation).
+        Line ld = installLine(front, back,
+                0,  50 * Fixed.FRACUNIT,
+                0, -50 * Fixed.FRACUNIT);
+        ld.special = 11; // Exit Level
+
+        Mobj mo = makeMobj(-30 * Fixed.FRACUNIT, 0,
+                16 * Fixed.FRACUNIT, 56 * Fixed.FRACUNIT);
+        mo.angle = 0; // facing +x
+        Player p = new Player();
+        p.mo = mo;
+        mo.player = p;
+
+        doom.system.GGame.gameaction = doom.system.GGame.ga_nothing;
+
+        PMap.pUseLines(p);
+
+        // The use raycast hit the special line.
+        assertEquals(doom.system.GGame.ga_completed,
+                doom.system.GGame.gameaction);
+    }
+
+    // USERANGE constant matches the C macro.
+    @Test
+    void useRangeMatchesCMacro() {
+        assertEquals(64 * Fixed.FRACUNIT, PMap.USERANGE);
+    }
+
     // Mobj doesn't fit: returns false.
     @Test
     void thingHeightClipReturnsFalseWhenSqueezed() {

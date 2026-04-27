@@ -6,7 +6,7 @@
 // Deferred (each waits on its named module):
 //   - PIT_StompThing / P_TeleportMove (telept)        → p_telept full
 //   - PIT_CheckThing skull/missile/pickup branches     → p_inter
-//   - P_AimLineAttack / P_LineAttack / P_UseLines     → combat port
+//   - P_AimLineAttack / P_LineAttack                  → combat port
 //   - PIT_RadiusAttack / P_RadiusAttack                → combat port
 //   - P_ChangeSector / PIT_ChangeSector real bodies   → keep stub
 //
@@ -615,5 +615,73 @@ public final class PMap {
         if (!pTryMove(mo, mo.x, mo.y + mo.momy)) {
             pTryMove(mo, mo.x + mo.momx, mo.y);
         }
+    }
+
+    //
+    // USE LINES
+    //
+    // p_local.h line 56 — player "use" reach.
+    public static final int USERANGE = 64 * Fixed.FRACUNIT;
+
+    // p_map.c line 1093 — set by P_UseLines so PTR_UseTraverse can
+    // forward to P_UseSpecialLine with the right thing reference.
+    public static Mobj usething;
+
+    //
+    // PTR_UseTraverse
+    //
+    // p_map.c lines 1095–1123.
+    public static boolean ptrUseTraverse(Intercept in) {
+        int side;
+
+        if (in.line.special == 0) {
+            PMaputl.pLineOpening(in.line);
+            if (PMaputl.openrange <= 0) {
+                doom.sound.SSound.sStartSound(usething,
+                        doom.sound.Sounds.sfx_noway);
+
+                // can't use through a wall
+                return false;
+            }
+            // not a special line, but keep checking
+            return true;
+        }
+
+        side = 0;
+        if (PMaputl.pPointOnLineSide(usething.x, usething.y, in.line) == 1) {
+            side = 1;
+        }
+
+        // return false;        // don't use back side
+
+        PSwitch.pUseSpecialLine(usething, in.line, side);
+
+        // can't use for than one special line in a row
+        return false;
+    }
+
+    //
+    // P_UseLines
+    // Looks for special lines in front of the player to activate.
+    //
+    // p_map.c lines 1130–1148.
+    public static void pUseLines(Player player) {
+        int angle;
+        int x1;
+        int y1;
+        int x2;
+        int y2;
+
+        usething = player.mo;
+
+        angle = player.mo.angle >>> Tables.ANGLETOFINESHIFT;
+
+        x1 = player.mo.x;
+        y1 = player.mo.y;
+        x2 = x1 + (USERANGE >> Fixed.FRACBITS) * Tables.finecosine(angle);
+        y2 = y1 + (USERANGE >> Fixed.FRACBITS) * Tables.finesine[angle];
+
+        PMaputl.pPathTraverse(x1, y1, x2, y2,
+                PMaputl.PT_ADDLINES, PMap::ptrUseTraverse);
     }
 }
