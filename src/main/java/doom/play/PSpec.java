@@ -1165,6 +1165,22 @@ public final class PSpec {
         return rtn;
     }
 
+    //
+    // P_PlayerInSpecialSector
+    //
+    // p_spec.c lines 273–377. Stub: the full body damages the player
+    // for slime / lava / hurt-on-contact / 20% damage / etc. (each
+    // gated on Player.powers[pw_ironfeet] or armor) and counts
+    // secrets. Needs P_DamageMobj from p_inter (deferred) plus the
+    // tic-modulo + radsuit-checks.
+    //
+    // p_user.c P_PlayerThink calls this every tic the player stands
+    // in a sector with sector.special != 0; the no-op stub keeps
+    // the call site live without altering player health/secret state.
+    public static void pPlayerInSpecialSector(Player player) {
+        // Intentionally empty until p_inter ports P_DamageMobj.
+    }
+
     private PSpec() {
     }
 }

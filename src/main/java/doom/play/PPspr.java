@@ -24,6 +24,16 @@ public final class PPspr {
         // Intentionally empty until psprites[] lands on Player.
     }
 
+    // p_pspr.c — P_MovePsprites.
+    // Per-tic advance of the held-weapon and gun-flash overlays.
+    // Stub: the full body cycles each pspr's state machine and
+    // calls the bound A_* action callback (none of which are
+    // ported yet). p_user.c P_PlayerThink + P_DeathThink call
+    // through here every tic.
+    public static void pMovePsprites(Player player) {
+        // Intentionally empty until psprites[] lands on Player.
+    }
+
     private PPspr() {
     }
 }

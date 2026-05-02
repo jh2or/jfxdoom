@@ -60,6 +60,31 @@ public final class Doomdef {
     public static final int KEY_ENTER = 13;
     public static final int KEY_BACKSPACE = 127;
 
+    // doomdef.h lines 215–224 — powertype_t. Indexed by Player.powers[].
+    public static final int pw_invulnerability = 0;
+    public static final int pw_strength        = 1;
+    public static final int pw_invisibility    = 2;
+    public static final int pw_ironfeet        = 3;
+    public static final int pw_allmap          = 4;
+    public static final int pw_infrared        = 5;
+    public static final int NUMPOWERS          = 6;
+
+    // d_event.h lines 73–98 — buttoncode_t bits on ticcmd_t.buttons.
+    public static final int BT_ATTACK       = 1;
+    public static final int BT_USE          = 2;
+    public static final int BT_SPECIAL      = 128;
+    public static final int BT_SPECIALMASK  = 3;
+    public static final int BT_CHANGE       = 4;
+    public static final int BT_WEAPONMASK   = (8 + 16 + 32);
+    public static final int BT_WEAPONSHIFT  = 3;
+
+    // d_event.h lines 91–98 — buttoncode_t special-event sub-codes
+    // when BT_SPECIAL is set.
+    public static final int BTS_PAUSE       = 1;
+    public static final int BTS_SAVEGAME    = 2;
+    public static final int BTS_SAVEMASK    = (4 + 8 + 16);
+    public static final int BTS_SAVESHIFT   = 2;
+
     private Doomdef() {
     }
 }
