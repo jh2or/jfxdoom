@@ -482,4 +482,228 @@ class PMobjTest {
         }
         return n;
     }
+
+    // ----- P_SpawnPlayer + P_SpawnMapThing -----
+
+    @BeforeEach
+    void resetPlayerState() {
+        // Default to all four seats inactive — tests opt-in.
+        for (int i = 0; i < doom.system.Doomdef.MAXPLAYERS; i++) {
+            doom.system.GGame.playeringame[i] = false;
+            doom.system.GGame.players[i] = new Player();
+        }
+        doom.system.GGame.consoleplayer = 0;
+        Doomstat.totalkills = 0;
+        Doomstat.totalitems = 0;
+        Doomstat.netgame = false;
+        Doomstat.nomonsters = false;
+        // Wipe deathmatch / playerstart pools.
+        for (int i = 0; i < PSetup.MAX_DEATHMATCH_STARTS; i++) {
+            PSetup.deathmatchstarts[i] = null;
+        }
+        PSetup.deathmatchPIndex = 0;
+        for (int i = 0; i < doom.system.Doomdef.MAXPLAYERS; i++) {
+            PSetup.playerstarts[i] = null;
+        }
+    }
+
+    // Player 1 spawn (mthing.type == 1) wires Player.mo and the
+    // visible playerstate fields.
+    @Test
+    void spawnPlayerWiresPlayerAndMobj() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.GGame.playeringame[0] = true;
+        Player p = doom.system.GGame.players[0];
+        p.health = 100;
+
+        Mapthing mt = new Mapthing(0, 0, /*angle*/ 90, /*type*/ 1, /*options*/ 0);
+        PMobj.pSpawnPlayer(mt);
+
+        assertNotNull(p.mo);
+        assertSame(p, p.mo.player);
+        assertEquals(100, p.mo.health);
+        assertEquals(Player.PST_LIVE, p.playerstate);
+        assertEquals(PMobj.VIEWHEIGHT, p.viewheight);
+        assertEquals(0, p.refire);
+        assertNull(p.message);
+    }
+
+    // Player not in game (playeringame[]==false) → no spawn.
+    @Test
+    void spawnPlayerSkipsWhenNotInGame() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.GGame.playeringame[0] = false;
+
+        Mapthing mt = new Mapthing(0, 0, 0, 1, 0);
+        PMobj.pSpawnPlayer(mt);
+
+        assertNull(doom.system.GGame.players[0].mo);
+    }
+
+    // Players 2-4 get the color-translation flag bits set.
+    @Test
+    void spawnPlayer2GetsTransshiftFlag() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.GGame.playeringame[1] = true;
+        doom.system.GGame.players[1].health = 100;
+
+        Mapthing mt = new Mapthing(0, 0, 0, 2, 0);
+        PMobj.pSpawnPlayer(mt);
+
+        Mobj mo = doom.system.GGame.players[1].mo;
+        assertNotNull(mo);
+        // (type-1) << MF_TRANSSHIFT bits land in flags.
+        int expected = (2 - 1) << Mobj.MF_TRANSSHIFT;
+        assertEquals(expected, mo.flags & Mobj.MF_TRANSLATION);
+    }
+
+    // PST_REBORN flips back to LIVE via gPlayerReborn before spawn.
+    @Test
+    void spawnPlayerHonorsPstRebornBranch() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.GGame.playeringame[0] = true;
+        doom.system.GGame.players[0].playerstate = Player.PST_REBORN;
+
+        Mapthing mt = new Mapthing(0, 0, 0, 1, 0);
+        PMobj.pSpawnPlayer(mt);
+
+        // gPlayerReborn restores health=100, then SpawnPlayer flips
+        // playerstate to LIVE.
+        assertEquals(Player.PST_LIVE, doom.system.GGame.players[0].playerstate);
+        assertEquals(100, doom.system.GGame.players[0].mo.health);
+    }
+
+    // Deathmatch start (type=11) appends to deathmatchstarts.
+    @Test
+    void spawnMapThingDeathmatchStartAppendsToPool() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mapthing dm = new Mapthing(100, 200, 45, 11, 0);
+        PMobj.pSpawnMapThing(dm);
+
+        assertEquals(1, PSetup.deathmatchPIndex);
+        assertNotNull(PSetup.deathmatchstarts[0]);
+        // Source mthing must be defensively copied — mutating it must
+        // not bleed back into the pool.
+        assertNotSame(dm, PSetup.deathmatchstarts[0]);
+        assertEquals(100, PSetup.deathmatchstarts[0].x);
+        assertEquals(200, PSetup.deathmatchstarts[0].y);
+    }
+
+    // Deathmatch pool is bounded at MAX_DEATHMATCH_STARTS=10.
+    @Test
+    void spawnMapThingDeathmatchStartCapsAt10() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        for (int i = 0; i < 12; i++) {
+            PMobj.pSpawnMapThing(new Mapthing(i, i, 0, 11, 0));
+        }
+
+        assertEquals(10, PSetup.deathmatchPIndex);
+    }
+
+    // Player-start (type 1-4) records the spot AND, in cooperative
+    // (deathmatch == 0), spawns the player mobj.
+    @Test
+    void spawnMapThingPlayerStartRecordsSpotAndSpawnsCoop() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.deathmatch = 0;
+        doom.system.GGame.playeringame[0] = true;
+        doom.system.GGame.players[0].health = 100;
+
+        PMobj.pSpawnMapThing(new Mapthing(50, 60, 0, 1, 0));
+
+        assertNotNull(PSetup.playerstarts[0]);
+        assertEquals(50, PSetup.playerstarts[0].x);
+        // Coop spawn fired.
+        assertNotNull(doom.system.GGame.players[0].mo);
+    }
+
+    // In deathmatch the player-start is recorded but NOT spawned —
+    // G_DeathMatchSpawnPlayer handles that later.
+    @Test
+    void spawnMapThingPlayerStartInDeathmatchSkipsCoopSpawn() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.deathmatch = 1;
+        doom.system.GGame.playeringame[0] = true;
+
+        PMobj.pSpawnMapThing(new Mapthing(50, 60, 0, 1, 0));
+
+        assertNotNull(PSetup.playerstarts[0]);
+        assertNull(doom.system.GGame.players[0].mo);
+    }
+
+    // A monster (type 3004 = Former Human) at medium skill (bit 2)
+    // spawns + bumps totalkills + uses MF_AMBUSH if option set.
+    @Test
+    void spawnMapThingMonsterSpawnsAtAppropriateSkill() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.gameskill = Doomstat.sk_medium;
+
+        // options bit 2 = present at medium-skill.
+        PMobj.pSpawnMapThing(new Mapthing(0, 0, 0, /*type*/ 3004,
+                /*options*/ 2 | Mapthing.MTF_AMBUSH));
+
+        assertEquals(1, Doomstat.totalkills);
+        Mobj mo = (Mobj) PTick.thinkercap.prev;
+        assertEquals(Info.MT_POSSESSED, mo.type);
+        assertTrue((mo.flags & Mobj.MF_AMBUSH) != 0);
+        // spawnpoint is the per-mobj defensive copy.
+        assertNotNull(mo.spawnpoint);
+        assertEquals(3004, mo.spawnpoint.type);
+    }
+
+    // Skill filter: options=1 (baby only) → no spawn at sk_medium.
+    @Test
+    void spawnMapThingSkillFilterRejectsWrongTier() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.gameskill = Doomstat.sk_medium;
+
+        int before = countMobjThinkers();
+        PMobj.pSpawnMapThing(new Mapthing(0, 0, 0, 3004, /*baby only*/ 1));
+
+        assertEquals(before, countMobjThinkers());
+        assertEquals(0, Doomstat.totalkills);
+    }
+
+    // Multiplayer-only flag (bit 16) skips in single-player.
+    @Test
+    void spawnMapThingMultiplayerOnlySkipsInSinglePlayer() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.gameskill = Doomstat.sk_medium;
+        Doomstat.netgame = false;
+
+        int before = countMobjThinkers();
+        PMobj.pSpawnMapThing(new Mapthing(0, 0, 0, 3004, /*multi+medium*/ 16 | 2));
+
+        assertEquals(before, countMobjThinkers());
+    }
+
+    // -nomonsters skips MF_COUNTKILL types (and MT_SKULL).
+    @Test
+    void spawnMapThingNomonstersSkipsCountkillTypes() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.gameskill = Doomstat.sk_medium;
+        Doomstat.nomonsters = true;
+
+        int before = countMobjThinkers();
+        PMobj.pSpawnMapThing(new Mapthing(0, 0, 0, 3004, 2));
+
+        assertEquals(before, countMobjThinkers());
+        assertEquals(0, Doomstat.totalkills);
+    }
+
+    // Items (MF_COUNTITEM) get totalitems++ on spawn. doomednum 2013
+    // is MT_MISC12 (Soulsphere) — flagged MF_SPECIAL|MF_COUNTITEM.
+    // Green armor (2018) is MF_SPECIAL only and would not bump.
+    @Test
+    void spawnMapThingItemBumpsTotalitems() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.gameskill = Doomstat.sk_medium;
+
+        PMobj.pSpawnMapThing(new Mapthing(0, 0, 0, /*soulsphere*/ 2013,
+                /*all skills*/ 7));
+
+        assertEquals(1, Doomstat.totalitems);
+    }
 }

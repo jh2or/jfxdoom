@@ -2,12 +2,11 @@
 //
 // Core mobj lifecycle: state machine + spawn/remove + per-tic
 // X/Y/Z movement + helper spawners (puff, blood, missile-spawn
-// commit). Drives the playsim's per-tic mobj tick from PTick
-// once P_Ticker lands.
+// commit) + level-load placement (P_SpawnPlayer, P_SpawnMapThing).
+// Drives the playsim's per-tic mobj tick from PTick once P_Ticker
+// lands.
 //
 // Deferred (each waits on its named module):
-//   - P_SpawnPlayer             → needs player_t expansion + G_PlayerReborn
-//   - P_SpawnMapThing           → needs P_SpawnPlayer + deathmatchstarts
 //   - P_SpawnMissile            → needs Mobj.target chain + R_PointToAngle2 ✓
 //   - P_SpawnPlayerMissile      → needs P_AimLineAttack (combat port)
 //
@@ -24,6 +23,10 @@ import doom.render.Tables;
 import doom.sound.SSound;
 import doom.system.Doomdef;
 import doom.system.Doomstat;
+import doom.system.GGame;
+import doom.system.ISystem;
+import doom.ui.HuStuff;
+import doom.ui.StStuff;
 
 public final class PMobj {
 
@@ -598,6 +601,192 @@ public final class PMobj {
 
         // pull it from the que
         iquetail = (iquetail + 1) & (ITEMQUESIZE - 1);
+    }
+
+    //
+    // P_SpawnPlayer
+    // Called when a player is spawned on the level.
+    // Most of the player structure stays unchanged
+    //  between levels.
+    //
+    // p_mobj.c lines 642–700.
+    //
+    // P_SetupPsprites is dispatched through PPspr.pSetupPsprites
+    // (no-op stub until p_pspr lands). ST_Start / HU_Start dispatch
+    // through StStuff.stStart / HuStuff.huStart (likewise stubs).
+    public static void pSpawnPlayer(Mapthing mthing) {
+        Player p;
+        int x;
+        int y;
+        int z;
+
+        Mobj mobj;
+
+        int i;
+
+        // not playing?
+        if (!GGame.playeringame[mthing.type - 1]) {
+            return;
+        }
+
+        p = GGame.players[mthing.type - 1];
+
+        if (p.playerstate == Player.PST_REBORN) {
+            GGame.gPlayerReborn(mthing.type - 1);
+        }
+
+        x = mthing.x << Fixed.FRACBITS;
+        y = mthing.y << Fixed.FRACBITS;
+        z = ONFLOORZ;
+        mobj = pSpawnMobj(x, y, z, Info.MT_PLAYER);
+
+        // set color translations for player sprites
+        if (mthing.type > 1) {
+            mobj.flags |= (mthing.type - 1) << Mobj.MF_TRANSSHIFT;
+        }
+
+        mobj.angle = Tables.ANG45 * (mthing.angle / 45);
+        mobj.player = p;
+        mobj.health = p.health;
+
+        p.mo = mobj;
+        p.playerstate = Player.PST_LIVE;
+        p.refire = 0;
+        p.message = null;
+        p.damagecount = 0;
+        p.bonuscount = 0;
+        p.extralight = 0;
+        p.fixedcolormap = 0;
+        p.viewheight = VIEWHEIGHT;
+
+        // setup gun psprite
+        PPspr.pSetupPsprites(p);
+
+        // give all cards in death match mode
+        if (Doomstat.deathmatch != 0) {
+            for (i = 0; i < Doomdef.NUMCARDS; i++) {
+                p.cards[i] = true;
+            }
+        }
+
+        if (mthing.type - 1 == GGame.consoleplayer) {
+            // wake up the status bar
+            StStuff.stStart();
+            // wake up the heads up text
+            HuStuff.huStart();
+        }
+    }
+
+    // p_local.h line 34 — VIEWHEIGHT.
+    public static final int VIEWHEIGHT = 41 * Fixed.FRACUNIT;
+
+    //
+    // P_SpawnMapThing
+    // The fields of the mapthing should
+    // already be in host byte order.
+    //
+    // p_mobj.c lines 708–797.
+    public static void pSpawnMapThing(Mapthing mthing) {
+        int i;
+        int bit;
+        Mobj mobj;
+        int x;
+        int y;
+        int z;
+
+        // count deathmatch start positions
+        if (mthing.type == 11) {
+            if (PSetup.deathmatchPIndex < 10) {
+                // C: memcpy (deathmatch_p, mthing, sizeof(*mthing));
+                // the slot owns its own Mapthing copy so the source
+                // entry can be discarded.
+                PSetup.deathmatchstarts[PSetup.deathmatchPIndex] = mthing.copy();
+                PSetup.deathmatchPIndex++;
+            }
+            return;
+        }
+
+        // check for players specially
+        if (mthing.type <= 4) {
+            // save spots for respawning in network games
+            PSetup.playerstarts[mthing.type - 1] = mthing.copy();
+            if (Doomstat.deathmatch == 0) {
+                pSpawnPlayer(mthing);
+            }
+
+            return;
+        }
+
+        // check for apropriate skill level
+        if (!Doomstat.netgame && (mthing.options & 16) != 0) {
+            return;
+        }
+
+        if (Doomstat.gameskill == Doomstat.sk_baby) {
+            bit = 1;
+        } else if (Doomstat.gameskill == Doomstat.sk_nightmare) {
+            bit = 4;
+        } else {
+            bit = 1 << (Doomstat.gameskill - 1);
+        }
+
+        if ((mthing.options & bit) == 0) {
+            return;
+        }
+
+        // find which type to spawn
+        for (i = 0; i < Info.NUMMOBJTYPES; i++) {
+            if (mthing.type == Info.mobjinfo[i].doomednum) {
+                break;
+            }
+        }
+
+        if (i == Info.NUMMOBJTYPES) {
+            ISystem.iError("P_SpawnMapThing: Unknown type "
+                    + mthing.type + " at (" + mthing.x + ", "
+                    + mthing.y + ")");
+        }
+
+        // don't spawn keycards and players in deathmatch
+        if (Doomstat.deathmatch != 0
+                && (Info.mobjinfo[i].flags & Mobj.MF_NOTDMATCH) != 0) {
+            return;
+        }
+
+        // don't spawn any monsters if -nomonsters
+        if (Doomstat.nomonsters
+                && (i == Info.MT_SKULL
+                    || (Info.mobjinfo[i].flags & Mobj.MF_COUNTKILL) != 0)) {
+            return;
+        }
+
+        // spawn it
+        x = mthing.x << Fixed.FRACBITS;
+        y = mthing.y << Fixed.FRACBITS;
+
+        if ((Info.mobjinfo[i].flags & Mobj.MF_SPAWNCEILING) != 0) {
+            z = ONCEILINGZ;
+        } else {
+            z = ONFLOORZ;
+        }
+
+        mobj = pSpawnMobj(x, y, z, i);
+        mobj.spawnpoint = mthing.copy();
+
+        if (mobj.tics > 0) {
+            mobj.tics = 1 + (MRandom.pRandom() % mobj.tics);
+        }
+        if ((mobj.flags & Mobj.MF_COUNTKILL) != 0) {
+            Doomstat.totalkills++;
+        }
+        if ((mobj.flags & Mobj.MF_COUNTITEM) != 0) {
+            Doomstat.totalitems++;
+        }
+
+        mobj.angle = Tables.ANG45 * (mthing.angle / 45);
+        if ((mthing.options & Mapthing.MTF_AMBUSH) != 0) {
+            mobj.flags |= Mobj.MF_AMBUSH;
+        }
     }
 
     //

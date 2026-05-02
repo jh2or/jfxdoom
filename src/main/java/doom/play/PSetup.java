@@ -1,17 +1,16 @@
 // Port of linuxdoom-1.10/p_setup.c — partial.
 //
 // Loads a level's worth of geometry from a WAD: VERTEXES, SIDEDEFS,
-// LINEDEFS, SECTORS, SUBSECTORS, NODES, SEGS, BLOCKMAP, REJECT.
-// Each parser reads its lump's bytes into a typed Java array; sizes
-// come from the lump length divided by the on-disk record size.
+// LINEDEFS, SECTORS, SUBSECTORS, NODES, SEGS, BLOCKMAP, REJECT, plus
+// THINGS (mobj placements). Each parser reads its lump's bytes into a
+// typed Java array; sizes come from the lump length divided by the
+// on-disk record size.
 //
 // Deferred:
-//   - P_LoadThings: needs P_SpawnMapThing → P_SpawnMobj (p_mobj.c).
-//   - P_SetupLevel: the orchestrator. Needs S_Start, players[],
-//     consoleplayer, deathmatchstarts, G_DeathMatchSpawnPlayer,
-//     R_PrecacheLevel, all unported. The geometry-only chunk is
-//     factored into pSetupLevelGeometry() so tests + future
-//     orchestrator can call it.
+//   - P_SetupLevel: the orchestrator. Needs S_Start, full G_PlayerReborn,
+//     G_DeathMatchSpawnPlayer, R_PrecacheLevel, all unported. The
+//     geometry-only chunk is factored into pSetupLevelGeometry() so
+//     tests + future orchestrator can call it.
 //   - P_Init: calls R_InitSprites, unported. P_InitSwitchList +
 //     P_InitPicAnims are wired here for the orchestrator path.
 //
@@ -29,6 +28,8 @@ import doom.render.Side;
 import doom.render.Slopetype;
 import doom.render.Subsector;
 import doom.render.Vertex;
+import doom.system.Doomdef;
+import doom.system.Doomstat;
 import doom.system.ISystem;
 import doom.wad.WWad;
 import doom.wad.ZZone;
@@ -96,6 +97,16 @@ public final class PSetup {
     // Indexed (i,j) = bit (i*numsectors + j); set bit means sector
     // i can never see sector j (P_CheckSight short-circuits).
     public static byte[] rejectmatrix;
+
+    // p_setup.c lines 109–113 — single/multi-player starting spots.
+    // deathmatchstarts is a fixed pool of 10 mapthing slots; the C
+    // tracks the next free slot via the `deathmatch_p` pointer, the
+    // Java port uses an int index into the array (deathmatchPIndex).
+    // playerstarts is one slot per player seat (MAXPLAYERS).
+    public static final int MAX_DEATHMATCH_STARTS = 10;
+    public static final Mapthing[] deathmatchstarts = new Mapthing[MAX_DEATHMATCH_STARTS];
+    public static int deathmatchPIndex; // C: deathmatch_p - deathmatchstarts
+    public static final Mapthing[] playerstarts = new Mapthing[Doomdef.MAXPLAYERS];
 
     private PSetup() {
     }
@@ -456,6 +467,70 @@ public final class PSetup {
             block = block < 0 ? 0 : block;
             sector.blockbox[MBbox.BOXLEFT] = block;
         }
+    }
+
+    //
+    // P_LoadThings
+    //
+    // p_setup.c lines 301–350. Reads the THINGS lump and dispatches
+    // each entry through P_SpawnMapThing. Filters out commercial-only
+    // monster types when running on a non-commercial IWAD; the C
+    // `break` on the first filtered entry is preserved verbatim — it
+    // stops at the first commercial-only thing rather than skipping
+    // just that entry. (Real PWADs avoid putting any of these types
+    // into a non-commercial map, so the difference never bites.)
+    //
+    // mapthing_t on disk is 10 bytes (5 shorts: x, y, angle, type,
+    // options).
+    public static void pLoadThings(int lump) throws IOException {
+        byte[] data = WWad.wCacheLumpNum(lump, ZZone.PU_STATIC);
+        int numthings = WWad.wLumpLength(lump) / 10;
+        ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+
+        for (int i = 0; i < numthings; i++) {
+            boolean spawn = true;
+
+            // Read all five shorts up-front so the per-entry filter
+            // and the spawn path see the same field values. The C
+            // peeks at the unswapped on-disk mt->type for the
+            // commercial filter; that works because the commercial
+            // type-numbers are all < 256 and a 16-bit little-endian
+            // SHORT round-trip through SHORT() is a no-op for those.
+            // The Java port has already swapped via getShort().
+            int x = buf.getShort();
+            int y = buf.getShort();
+            int angle = buf.getShort();
+            int type = buf.getShort();
+            int options = buf.getShort();
+
+            // Do not spawn cool, new monsters if !commercial.
+            if (Doomstat.gamemode != Doomstat.GameMode.commercial) {
+                switch (type) {
+                    case 68: // Arachnotron
+                    case 64: // Archvile
+                    case 88: // Boss Brain
+                    case 89: // Boss Shooter
+                    case 69: // Hell Knight
+                    case 67: // Mancubus
+                    case 71: // Pain Elemental
+                    case 65: // Former Human Commando
+                    case 66: // Revenant
+                    case 84: // Wolf SS
+                        spawn = false;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (!spawn) {
+                break; // C: `break` — stops the loop entirely.
+            }
+
+            Mapthing mt = new Mapthing(x, y, angle, type, options);
+            PMobj.pSpawnMapThing(mt);
+        }
+
+        ZZone.zFree(data);
     }
 
     //

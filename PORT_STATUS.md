@@ -52,8 +52,8 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file      | Java class            | Tier     | Status  | Notes                                          |
 | ----------- | --------------------- | -------- | ------- | ---------------------------------------------- |
 | p_tick.c    | `doom.play.PTick`     | Standard | Partial | 158 / ~. Thinker list ops (`P_InitThinkers`/`P_AddThinker`/`P_RemoveThinker`/`P_AllocateThinker`/`P_RunThinkers`) + `leveltime`/`thinkercap` globals. `P_Ticker` deferred — it calls `P_PlayerThink`/`P_UpdateSpecials`/`P_RespawnSpecials` and reads `paused`/`menuactive`/`players[]`, none ported yet. Thinker.java upgraded from stub to full `actionf_t` union (see deviation 14). |
-| p_setup.c   | `doom.play.PSetup`    | Standard | Partial | 708 / ~. Geometry-only port: P_LoadVertexes / P_LoadSegs / P_LoadSubsectors / P_LoadSectors / P_LoadNodes / P_LoadLineDefs / P_LoadSideDefs / P_LoadBlockMap / P_GroupLines + the orchestrator slice `pSetupLevelGeometry(lumpnum)` that runs all eight loaders + REJECT cache + GroupLines in C order. New `Subsector`/`Seg`/`Node` classes in render. P_LoadThings (calls P_SpawnMapThing) and full P_SetupLevel (player/deathmatch/S_Start/R_PrecacheLevel) defer until p_mobj.c. |
-| p_mobj.c    | `doom.play.PMobj`     | Standard | Partial | 988 / ~. Core lifecycle (P_SetMobjState/RemoveMobj/SpawnMobj/MobjThinker/XYMovement/ZMovement/ExplodeMissile/SpawnPuff/SpawnBlood/CheckMissileSpawn) + monster respawn (P_NightmareRespawn — uses spawnpoint, gates on respawnmonsters + COUNTKILL + leveltime mod) + item respawn queue (P_RespawnSpecials, itemrespawnque[ITEMQUESIZE=128] ring buffer, iquehead/iquetail wired into P_RemoveMobj). Mobj picks up the lifecycle fields plus spawnpoint. Doomstat picks up gameskill/sk_*/respawnmonsters/netgame/nomonsters/totalkills/totalitems. New `Mapthing` struct (mapthing_t) with MTF_AMBUSH bit. Deferred: P_SpawnPlayer (needs full Player + G_PlayerReborn + ST_Start/HU_Start), P_SpawnMapThing (needs P_SpawnPlayer + deathmatchstarts), P_SpawnMissile/P_SpawnPlayerMissile (need Mobj.target + P_AimLineAttack from combat). |
+| p_setup.c   | `doom.play.PSetup`    | Standard | Partial | 708 / ~. Geometry-only loaders + P_LoadThings (THINGS lump → P_SpawnMapThing dispatch with the C's commercial-IWAD monster-type filter preserved). `pSetupLevelGeometry(lumpnum)` runs the eight geometry loaders + REJECT cache + GroupLines in C order; THINGS loader is callable separately. New `Subsector`/`Seg`/`Node` classes in render. New cross-module pools: `deathmatchstarts[10]` + `deathmatchPIndex` (the C's deathmatch_p as an int index, deviation 26) + `playerstarts[MAXPLAYERS]`. Full P_SetupLevel orchestrator (S_Start/R_PrecacheLevel/G_DeathMatchSpawnPlayer) still defers. |
+| p_mobj.c    | `doom.play.PMobj`     | Standard | Partial | 988 / ~. Core lifecycle (P_SetMobjState/RemoveMobj/SpawnMobj/MobjThinker/XYMovement/ZMovement/ExplodeMissile/SpawnPuff/SpawnBlood/CheckMissileSpawn) + monster respawn (P_NightmareRespawn) + item respawn queue (P_RespawnSpecials, itemrespawnque[ITEMQUESIZE=128] ring buffer, iquehead/iquetail wired into P_RemoveMobj) + level-load placement (P_SpawnPlayer + P_SpawnMapThing). New `VIEWHEIGHT` constant (p_local.h). Player picks up playerstate/refire/damagecount/bonuscount/health/viewheight + PST_LIVE/DEAD/REBORN constants. GGame picks up playeringame[]/players[]/consoleplayer + a stub gPlayerReborn (full memset+ammo restore lands with p_inter). New PPspr stub (pSetupPsprites no-op). New HuStuff stub (huStart no-op). StStuff picks up stStart no-op. New `Mapthing` struct (mapthing_t) with MTF_AMBUSH bit. Deferred: P_SpawnMissile/P_SpawnPlayerMissile (need P_AimLineAttack from combat). |
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Verified | 883 / ~. Full port: pure-math layer (`P_AproxDistance`, `P_PointOnLineSide`, `P_BoxOnLineSide`, `P_PointOnDivlineSide`, `P_MakeDivline`, `P_InterceptVector`, `P_LineOpening`) + blockmap iterators (`P_BlockLinesIterator`, `P_BlockThingsIterator`) with `Predicate<Line>`/`Predicate<Mobj>` callbacks + intercept machinery (`PIT_*Intercepts`, `P_TraverseIntercepts`, `P_PathTraverse`) with the `intercepts[128]`/`intercept_p`/`trace`/`earlyout`/`ptflags` globals + thing-position linkers (`P_SetThingPosition`/`P_UnsetThingPosition`) using `RMain.rPointInSubsector` for the BSP descent. New helper structs `Divline`, `Intercept`. |
 | p_map.c     | `doom.play.PMap`      | Standard | Partial | 1339 / ~. Movement-and-collision core (`PIT_CheckLine`, `PIT_CheckThing` minimal, `P_CheckPosition`, `P_TryMove`) + slide stack (`P_HitSlideLine`, `PTR_SlideTraverse`, `P_SlideMove`, `P_ThingHeightClip`) + use-line stack (`PTR_UseTraverse`, `P_UseLines`, `usething` global, `USERANGE` constant). Special lines crossed during a move dispatch through `PSpec.pCrossSpecialLine`; "use" key dispatches through `PSwitch.pUseSpecialLine`. Still ahead: `PIT_StompThing`/`P_TeleportMove`, `P_AimLineAttack`/`P_LineAttack`/`P_RadiusAttack`, real `P_ChangeSector`/`PIT_ChangeSector` (current `pChangeSector` stub preserved per deviation 21). |
 | p_user.c    | `doom.play.PUser`     | Standard | Pending |                                                |
@@ -369,6 +369,24 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+26. `p_setup.c` deathmatchstarts pool:
+    - The C declares `mapthing_t deathmatchstarts[10]` plus a moving
+      pointer `mapthing_t* deathmatch_p` that P_SpawnMapThing bumps
+      and G_DeathMatchSpawnPlayer reads as the upper bound. Java has
+      no pointer-into-array type that survives reseating; the port
+      stores the upper bound as `int deathmatchPIndex` (logical
+      index, equivalent to `deathmatch_p - deathmatchstarts`) and
+      reads/writes `deathmatchstarts[deathmatchPIndex]`. Same
+      observable contract; G_DeathMatchSpawnPlayer (when ported)
+      iterates `0..deathmatchPIndex-1`.
+    - The slot stores a `mthing.copy()` rather than the source
+      reference, since the C `memcpy(deathmatch_p, mthing, sizeof(*mthing))`
+      makes a full value copy. P_LoadThings discards each Mapthing
+      after dispatch, so failing to copy would alias every slot to
+      a no-longer-tracked input record.
+    - P_SpawnMapThing also `mthing.copy()`s into Mobj.spawnpoint and
+      into PSetup.playerstarts[], for the same reason.
 
 21. `p_map.c` + `p_floor.c`:
     - `P_ChangeSector` is stubbed on `PMap` to return `false` by default

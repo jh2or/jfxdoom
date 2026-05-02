@@ -17,6 +17,15 @@ public final class StStuff {
     public static final int ST_WIDTH = Doomdef.SCREENWIDTH;
     public static final int ST_Y = Doomdef.SCREENHEIGHT - ST_HEIGHT;
 
+    // st_stuff.c — ST_Start.
+    // Stub: P_SpawnPlayer calls this to wake the status bar when
+    // spawning the local console seat. The full body resets the
+    // weapon-flash icon table + face animation; lands when the
+    // status-bar logic ports.
+    public static void stStart() {
+        // Intentionally empty until st_stuff.c lands.
+    }
+
     private StStuff() {
     }
 }

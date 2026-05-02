@@ -16,6 +16,9 @@ import doom.render.Side;
 import doom.render.Slopetype;
 import doom.render.Subsector;
 import doom.render.Vertex;
+import doom.system.Doomdef;
+import doom.system.Doomstat;
+import doom.system.GGame;
 import doom.wad.WWad;
 import doom.wad.ZZone;
 
@@ -346,5 +349,51 @@ class PSetupTest {
         assertEquals(486, PSetup.numlines);
         assertEquals(666, PSetup.numsides);
         assertEquals(88, PSetup.numsectors);
+    }
+
+    // --- pLoadThings ---
+
+    // Reset cross-module state pLoadThings touches: the deathmatch /
+    // playerstart pools, the playsim totals, and the playeringame[]
+    // roster (all four seats off so the player-start branch records
+    // the spot but doesn't try to spawn a player without a Player
+    // object backing it).
+    private void resetThingsState() {
+        Doomstat.gameskill = Doomstat.sk_medium;
+        Doomstat.deathmatch = 0;
+        Doomstat.netgame = false;
+        Doomstat.nomonsters = false;
+        Doomstat.totalkills = 0;
+        Doomstat.totalitems = 0;
+        Doomstat.gamemode = Doomstat.GameMode.shareware;
+        for (int i = 0; i < PSetup.MAX_DEATHMATCH_STARTS; i++) {
+            PSetup.deathmatchstarts[i] = null;
+        }
+        PSetup.deathmatchPIndex = 0;
+        for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            PSetup.playerstarts[i] = null;
+            GGame.playeringame[i] = false;
+        }
+        PTick.pInitThinkers();
+    }
+
+    // E1M1 THINGS lump should populate at least the player-1 start
+    // slot and (in single-player co-op spawn off) leave totalkills /
+    // totalitems > 0 once monsters/items spawn.
+    @Test
+    void loadThingsPopulatesStartsAndCounters() throws IOException {
+        resetThingsState();
+        PSetup.pSetupLevelGeometry(e1m1());
+
+        PSetup.pLoadThings(e1m1() + PSetup.ML_THINGS);
+
+        // Player 1 start always exists in E1M1.
+        assertNotNull(PSetup.playerstarts[0],
+                "expected player 1 start in E1M1");
+        // Some monsters and items live in E1M1.
+        assertTrue(Doomstat.totalkills > 0,
+                "expected COUNTKILL monsters in E1M1");
+        assertTrue(Doomstat.totalitems > 0,
+                "expected COUNTITEM pickups in E1M1");
     }
 }
