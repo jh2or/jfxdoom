@@ -48,6 +48,11 @@ public class Mobj extends Thinker {
     // Orientation (p_mobj.h line 222).
     public int angle; // angle_t
 
+    // p_mobj.h lines 223–224 — current sprite + frame for the
+    // renderer. P_SetMobjState writes these from the state row.
+    public int sprite; // spritenum_t
+    public int frame;  // | optional FF_FULLBRIGHT bit (32768)
+
     // p_mobj.h line 275 — back-pointer to Player when type == MT_PLAYER,
     // null otherwise. EV_VerticalDoor / EV_DoLockedDoor / many AI paths
     // gate on this to distinguish player triggers from monster triggers.
@@ -99,4 +104,42 @@ public class Mobj extends Thinker {
     public int momx; // fixed_t
     public int momy; // fixed_t
     public int momz; // fixed_t
+
+    // p_mobj.h line 250 — &mobjinfo[type]. Cached on spawn for cheap
+    // access; reads spawnstate, painchance, deathsound, speed, etc.
+    public MobjInfo info;
+
+    // p_mobj.h lines 252–253 — current animation state + tic counter.
+    // P_MobjThinker decrements `tics`; on zero, P_SetMobjState
+    // advances to `state.nextstate`.
+    public int tics;     // tics until next state change; -1 = static
+    public State state;
+
+    // p_mobj.h line 255 — current hit points.
+    public int health;
+
+    // p_mobj.h line 247 — `validcount` snapshot for the per-frame
+    // already-checked stamp; written by callers, not by P_MobjThinker.
+    public int validcount;
+
+    // p_mobj.h lines 258–259 — AI direction state. P_NewChaseDir /
+    // P_Move (p_enemy.c) read/write these.
+    public int movedir;   // 0..7
+    public int movecount;
+
+    // p_mobj.h line 263 — AI target / missile owner.
+    public Mobj target;
+
+    // p_mobj.h line 267 — countdown before AI may attack again.
+    public int reactiontime;
+
+    // p_mobj.h line 271 — chase commitment: while >0, AI sticks with
+    // current target regardless of damage.
+    public int threshold;
+
+    // p_mobj.h line 278 — round-robin start index for player-search.
+    public int lastlook;
+
+    // p_mobj.h line 284 — AI tracer (revenant homing missile target).
+    public Mobj tracer;
 }

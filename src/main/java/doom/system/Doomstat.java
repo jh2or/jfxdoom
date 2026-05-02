@@ -31,6 +31,36 @@ public final class Doomstat {
     // when a player first enters one.
     public static int totalsecret;
 
+    // doomdef.h skill_t — game difficulty, set by D_DoomMain from
+    // -skill / -nightmare. P_SpawnMobj and P_SpawnMapThing branch on
+    // it (sk_baby = double pickups, sk_nightmare = monsters use
+    // reactiontime 0 + respawn).
+    public static final int sk_baby      = 0;
+    public static final int sk_easy      = 1;
+    public static final int sk_medium    = 2;
+    public static final int sk_hard      = 3;
+    public static final int sk_nightmare = 4;
+
+    public static int gameskill;
+
+    // doomstat.h — true under -respawn or -nightmare. P_NightmareRespawn
+    // and P_MobjThinker gate on this for the monster-respawn loop.
+    public static boolean respawnmonsters;
+
+    // doomstat.h — true when running multiplayer (-net), false for
+    // single player. P_SpawnMapThing's "skip cooperative spots in
+    // single-player" branch reads this.
+    public static boolean netgame;
+
+    // doomstat.h — true under -nomonsters; P_SpawnMapThing skips
+    // skull/COUNTKILL spawns when set.
+    public static boolean nomonsters;
+
+    // doomstat.h — running totals updated as P_SpawnMapThing creates
+    // counted things; consumed by the intermission screen (wi_stuff).
+    public static int totalkills;
+    public static int totalitems;
+
     private Doomstat() {
     }
 }
