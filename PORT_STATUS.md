@@ -60,7 +60,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_pspr.c    | `doom.play.PPspr`     | Standard | Pending |                                                |
 | p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
 | p_inter.c   | `doom.play.PInter`    | Standard | Pending |                                                |
-| p_sight.c   | `doom.play.PSight`    | Standard | Pending |                                                |
+| p_sight.c   | `doom.play.PSight`    | Standard | Verified | 349 / ~. Full port: P_DivlineSide (with the C bug `if (x==node->y)` preserved verbatim — see deviation 27) + P_InterceptVector2 + P_CrossSubsector + P_CrossBSPNode + P_CheckSight. The C reinterprets `node_t*` → `divline_t*` (first four fields are x/y/dx/dy in both); Java cannot reinterpret, so a parallel `pDivlineSideNode(int, int, Node)` reads the four Node fields directly with identical arithmetic. `t1->subsector->sector - sectors` becomes a linear `sectorIndex(Sector)` scan (same pattern as PFloor). `validcount` snapshot lives on RMain. |
 | p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers (`getSide`/`getSector`/`twoSided`/`getNextSector`/`pFind{Lowest,Highest,Next}{Floor,Ceiling}Surrounding`/`pFindMinSurroundingLight`/`pFindSectorFromLineTag`) + `Result` enum + `FLOORSPEED` + animated textures (`Anim`/`AnimDef`, `animdefs[22]`, `P_InitPicAnims`) + per-tic `P_UpdateSpecials` (animation, line-scroll 48, button countdown — level timer `G_ExitLevel` deferred, deviation 23) + level-start `P_SpawnSpecials` (sector specials 1/2/3/4/8/9/10/12/13/14/17 + line 48 scrolls + -avg/-timer parsing) + `EV_DoDonut` (with the famous `(!flags & ML_TWOSIDED)` precedence-bug branch preserved verbatim — see deviation 24) + `P_CrossSpecialLine` (60+ case walk-trigger dispatcher with monster filter and projectile early-return) + `P_ShootSpecialLine` (3-case impact dispatcher). `P_PlayerInSpecialSector` waits on player.powers[]/P_DamageMobj. |
 | p_doors.c   | `doom.play.PDoors`    | Standard | Verified | 717 / ~. T_VerticalDoor + EV_DoDoor + EV_DoLockedDoor + EV_VerticalDoor + P_SpawnDoorCloseIn30 + P_SpawnDoorRaiseIn5Mins. vldoor_e (8 values) as int constants. EV_VerticalDoor / EV_DoLockedDoor read `Mobj.player.cards[]` for keycard locks (Player + Mobj.player added in this round); the message strings (PD_BLUEK / PD_REDK / PD_YELLOWK / PD_BLUEO / PD_REDO / PD_YELLOWO from d_englsh.h) live on Dstrings. The `#if 0` sliding-door block is skipped (dead C code). The C's redundant `if (!p) return 0;` checks inside switch cases and the unused `secnum` local in EV_VerticalDoor are preserved verbatim (CLAUDE.md §2). |
 | p_ceilng.c  | `doom.play.PCeilng`   | Standard | Verified | 279 / ~. Full port: T_MoveCeiling + EV_DoCeiling + active-ceiling slot table (MAXCEILINGS=30) + EV_CeilingCrushStop + P_ActivateInStasisCeiling. Sound calls go through SSound stub; `acv=NULL` pause sentinel maps to `acp1=null` (deviation 14). |
@@ -369,6 +369,22 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+27. `p_sight.c` P_DivlineSide quirk + node-as-divline reinterpret:
+    - The horizontal-axis branch in P_DivlineSide reads
+      `if (x==node->y)` (note `y`, not `x`) — a likely C typo since
+      the test should presumably mirror the vertical branch's
+      `if (x==node->x)`. Per CLAUDE.md §2 the Java port preserves
+      the misspelled comparison verbatim. The branch is rarely
+      live (it requires x==y simultaneously plus dy==0) so the bug
+      almost never affects sight outcomes; preserved for parity.
+    - The C calls `P_DivlineSide(strace.x, strace.y, (divline_t*)bsp)`
+      to reinterpret the first four fields of node_t (x/y/dx/dy)
+      as a divline_t. Java cannot punning-cast, so the Java port
+      adds `pDivlineSideNode(x, y, Node)` with identical arithmetic
+      reading the four Node fields directly. Same numeric output
+      across the full input domain (the unit test exhaustively
+      verifies it for a 17×17 grid).
 
 26. `p_setup.c` deathmatchstarts pool:
     - The C declares `mapthing_t deathmatchstarts[10]` plus a moving
