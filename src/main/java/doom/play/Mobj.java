@@ -142,4 +142,11 @@ public class Mobj extends Thinker {
 
     // p_mobj.h line 284 — AI tracer (revenant homing missile target).
     public Mobj tracer;
+
+    // p_mobj.h line 281 — spawn record for nightmare respawn /
+    // monster-respawn queue. Copied from the THINGS lump entry by
+    // P_SpawnMapThing; preserved across the mobj's lifecycle so
+    // P_NightmareRespawn / P_RespawnSpecials can recreate the mobj
+    // at its original placement.
+    public Mapthing spawnpoint;
 }

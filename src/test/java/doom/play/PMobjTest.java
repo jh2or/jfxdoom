@@ -323,5 +323,163 @@ class PMobjTest {
         assertEquals(Integer.MAX_VALUE, PMobj.ONCEILINGZ);
         assertEquals(0x1000, PMobj.STOPSPEED);
         assertEquals(0xe800, PMobj.FRICTION);
+        assertEquals(128, PMobj.ITEMQUESIZE);
+    }
+
+    // ----- P_RemoveMobj item-respawn enqueue -----
+
+    @BeforeEach
+    void resetItemQueue() {
+        // Clear the ring buffer between tests.
+        for (int i = 0; i < PMobj.ITEMQUESIZE; i++) {
+            PMobj.itemrespawnque[i] = null;
+            PMobj.itemrespawntime[i] = 0;
+        }
+        PMobj.iquehead = 0;
+        PMobj.iquetail = 0;
+        PTick.leveltime = 0;
+        Doomstat.deathmatch = 0;
+    }
+
+    // MF_SPECIAL && !MF_DROPPED && not MT_INV/MT_INS → enqueue.
+    @Test
+    void removeMobjEnqueuesSpecialItemForRespawn() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        // Manually craft an MF_SPECIAL pickup. MT_CLIP (ammo clip)
+        // is special by default.
+        Mobj m = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_CLIP);
+        m.spawnpoint = new Mapthing(10, 20, 90, 2007, 0);
+        PTick.leveltime = 1234;
+
+        PMobj.pRemoveMobj(m);
+
+        assertEquals(1, PMobj.iquehead);
+        assertSame(m.spawnpoint, PMobj.itemrespawnque[0]);
+        assertEquals(1234, PMobj.itemrespawntime[0]);
+    }
+
+    // MF_DROPPED items (e.g. ammo dropped by enemies) skip the queue.
+    @Test
+    void removeMobjSkipsDroppedItems() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Mobj m = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_CLIP);
+        m.flags |= Mobj.MF_DROPPED;
+        m.spawnpoint = new Mapthing(0, 0, 0, 0, 0);
+
+        PMobj.pRemoveMobj(m);
+
+        assertEquals(0, PMobj.iquehead);  // not enqueued
+    }
+
+    // Non-MF_SPECIAL mobjs (monsters, props) don't enqueue.
+    @Test
+    void removeMobjSkipsNonSpecialMobjs() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Mobj m = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        // Possessed has no MF_SPECIAL.
+        assertEquals(0, m.flags & Mobj.MF_SPECIAL);
+
+        PMobj.pRemoveMobj(m);
+
+        assertEquals(0, PMobj.iquehead);
+    }
+
+    // ----- P_RespawnSpecials -----
+
+    // Skipped unless deathmatch == 2 (-altdeath).
+    @Test
+    void respawnSpecialsNoOpUnlessAltdeath() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.deathmatch = 1;
+
+        // Pretend the queue has an entry.
+        PMobj.itemrespawnque[0] = new Mapthing(0, 0, 0, 2007, 0);
+        PMobj.itemrespawntime[0] = 0;
+        PMobj.iquehead = 1;
+        PTick.leveltime = 60 * 35;
+
+        int before = countMobjThinkers();
+        PMobj.pRespawnSpecials();
+        // No new mobj spawned.
+        assertEquals(before, countMobjThinkers());
+    }
+
+    // Skipped if the head item has aged < 30 seconds.
+    @Test
+    void respawnSpecialsWaits30Seconds() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.deathmatch = 2;
+
+        PMobj.itemrespawnque[0] = new Mapthing(0, 0, 0, 2007, 0);
+        PMobj.itemrespawntime[0] = 0;
+        PMobj.iquehead = 1;
+        PTick.leveltime = 29 * 35;  // not yet 30s
+
+        int before = countMobjThinkers();
+        PMobj.pRespawnSpecials();
+        assertEquals(before, countMobjThinkers());
+        assertEquals(0, PMobj.iquetail);  // queue tail didn't advance
+    }
+
+    // Aged enough → spawns IFOG + the item, advances tail.
+    @Test
+    void respawnSpecialsSpawnsItemAfter30Seconds() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        Doomstat.deathmatch = 2;
+
+        // doomednum 2007 = MT_CLIP (clip ammo).
+        PMobj.itemrespawnque[0] = new Mapthing(0, 0, 0, 2007, 0);
+        PMobj.itemrespawntime[0] = 0;
+        PMobj.iquehead = 1;
+        PTick.leveltime = 35 * 35;  // 35 seconds
+
+        int before = countMobjThinkers();
+        PMobj.pRespawnSpecials();
+
+        // Two mobjs spawned: an IFOG and the item.
+        assertEquals(before + 2, countMobjThinkers());
+        assertEquals(1, PMobj.iquetail);  // tail advanced past entry
+    }
+
+    // ----- P_NightmareRespawn -----
+
+    @Test
+    void nightmareRespawnRecreatesMobjAtSpawnpoint() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+
+        // Spawn a possessed monster at (0, 0); pretend it had been
+        // placed by P_SpawnMapThing at the same position.
+        Mobj orig = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        orig.spawnpoint = new Mapthing(0, 0, /*angle*/ 90, /*type*/ 3004,
+                /*options*/ Mapthing.MTF_AMBUSH);
+
+        int before = countMobjThinkers();
+
+        PMobj.pNightmareRespawn(orig);
+
+        // Original is removed, two TFOGs + new monster = 3 new mobjs,
+        // 1 removal. Net: +3 alive, -1 removal -> +2 mobjs alive.
+        // (Removed thinkers stay until P_RunThinkers sweeps; just
+        // verify the new monster and that the original is marked.)
+        assertTrue(orig.removed);
+        // A new MT_POSSESSED with MF_AMBUSH set was created.
+        Mobj newest = (Mobj) PTick.thinkercap.prev;
+        assertEquals(Info.MT_POSSESSED, newest.type);
+        assertNotSame(orig, newest);
+        assertTrue((newest.flags & Mobj.MF_AMBUSH) != 0);
+        assertEquals(18, newest.reactiontime);
+    }
+
+    // Helper: count mobj-thinkers in the active list.
+    private static int countMobjThinkers() {
+        int n = 0;
+        for (Thinker t = PTick.thinkercap.next;
+                t != PTick.thinkercap;
+                t = t.next) {
+            if (t instanceof Mobj && !t.removed) {
+                n++;
+            }
+        }
+        return n;
     }
 }

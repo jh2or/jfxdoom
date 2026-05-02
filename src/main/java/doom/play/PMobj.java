@@ -6,8 +6,6 @@
 // once P_Ticker lands.
 //
 // Deferred (each waits on its named module):
-//   - P_NightmareRespawn        → needs Mobj.spawnpoint (mapthing_t)
-//   - P_RespawnSpecials         → needs item-respawn queue + spawnpoint
 //   - P_SpawnPlayer             → needs player_t expansion + G_PlayerReborn
 //   - P_SpawnMapThing           → needs P_SpawnPlayer + deathmatchstarts
 //   - P_SpawnMissile            → needs Mobj.target chain + R_PointToAngle2 ✓
@@ -22,6 +20,7 @@ package doom.play;
 import doom.fixed.Fixed;
 import doom.render.RMain;
 import doom.render.RSky;
+import doom.render.Tables;
 import doom.sound.SSound;
 import doom.system.Doomdef;
 import doom.system.Doomstat;
@@ -312,6 +311,67 @@ public final class PMobj {
     }
 
     //
+    // P_NightmareRespawn
+    //
+    // p_mobj.c lines 357–409. Recreates `mobj` at its spawnpoint
+    // with full health, leaving a teleport fog at both source and
+    // destination.
+    public static void pNightmareRespawn(Mobj mobj) {
+        int x;
+        int y;
+        int z;
+        doom.render.Subsector ss;
+        Mobj mo;
+        Mapthing mthing;
+
+        x = mobj.spawnpoint.x << Fixed.FRACBITS;
+        y = mobj.spawnpoint.y << Fixed.FRACBITS;
+
+        // somthing is occupying it's position?
+        if (!PMap.pCheckPosition(mobj, x, y)) {
+            return; // no respwan
+        }
+
+        // spawn a teleport fog at old spot because of removal of the body?
+        mo = pSpawnMobj(mobj.x,
+                mobj.y,
+                mobj.subsector.sector.floorheight, Info.MT_TFOG);
+        // initiate teleport sound
+        SSound.sStartSound(mo, doom.sound.Sounds.sfx_telept);
+
+        // spawn a teleport fog at the new spot
+        ss = RMain.rPointInSubsector(x, y);
+
+        mo = pSpawnMobj(x, y, ss.sector.floorheight, Info.MT_TFOG);
+
+        SSound.sStartSound(mo, doom.sound.Sounds.sfx_telept);
+
+        // spawn the new monster
+        mthing = mobj.spawnpoint;
+
+        // spawn it
+        if ((mobj.info.flags & Mobj.MF_SPAWNCEILING) != 0) {
+            z = ONCEILINGZ;
+        } else {
+            z = ONFLOORZ;
+        }
+
+        // inherit attributes from deceased one
+        mo = pSpawnMobj(x, y, z, mobj.type);
+        mo.spawnpoint = mobj.spawnpoint;
+        mo.angle = Tables.ANG45 * (mthing.angle / 45);
+
+        if ((mthing.options & Mapthing.MTF_AMBUSH) != 0) {
+            mo.flags |= Mobj.MF_AMBUSH;
+        }
+
+        mo.reactiontime = 18;
+
+        // remove the old monster
+        pRemoveMobj(mobj);
+    }
+
+    //
     // P_MobjThinker
     //
     // p_mobj.c lines 415–473. The C compares
@@ -348,9 +408,32 @@ public final class PMobj {
                     return; // freed itself
                 }
             }
+        } else {
+            // check for nightmare respawn
+            if ((mobj.flags & Mobj.MF_COUNTKILL) == 0) {
+                return;
+            }
+
+            if (!Doomstat.respawnmonsters) {
+                return;
+            }
+
+            mobj.movecount++;
+
+            if (mobj.movecount < 12 * 35) {
+                return;
+            }
+
+            if ((PTick.leveltime & 31) != 0) {
+                return;
+            }
+
+            if (MRandom.pRandom() > 4) {
+                return;
+            }
+
+            pNightmareRespawn(mobj);
         }
-        // P_NightmareRespawn check is deferred (needs spawnpoint +
-        // respawnmonsters wiring through p_setup THINGS load).
     }
 
     //
@@ -410,21 +493,35 @@ public final class PMobj {
     }
 
     //
+    // p_local.h line 99 — item-respawn queue size (must be a power
+    // of two for the (iqueX+1)&(ITEMQUESIZE-1) ring-buffer trick).
+    public static final int ITEMQUESIZE = 128;
+
+    // p_mobj.c lines 540–543 — ring buffer of items pending respawn
+    // (deathmatch -altdeath). P_RemoveMobj enqueues; P_RespawnSpecials
+    // dequeues after 30 seconds.
+    public static final Mapthing[] itemrespawnque = new Mapthing[ITEMQUESIZE];
+    public static final int[] itemrespawntime = new int[ITEMQUESIZE];
+    public static int iquehead;
+    public static int iquetail;
+
+    //
     // P_RemoveMobj
     //
-    // p_mobj.c lines 540–570. The item-respawn queue logic is
-    // preserved as a TODO until P_RespawnSpecials lands.
+    // p_mobj.c lines 546–570.
     public static void pRemoveMobj(Mobj mobj) {
         if ((mobj.flags & Mobj.MF_SPECIAL) != 0
                 && (mobj.flags & Mobj.MF_DROPPED) == 0
                 && mobj.type != Info.MT_INV
                 && mobj.type != Info.MT_INS) {
-            // TODO(p_mobj rest): item-respawn queue.
-            // itemrespawnque[iquehead] = mobj.spawnpoint;
-            // itemrespawntime[iquehead] = leveltime;
-            // iquehead = (iquehead+1) & (ITEMQUESIZE-1);
-            // if (iquehead == iquetail)
-            //     iquetail = (iquetail+1) & (ITEMQUESIZE-1);
+            itemrespawnque[iquehead] = mobj.spawnpoint;
+            itemrespawntime[iquehead] = PTick.leveltime;
+            iquehead = (iquehead + 1) & (ITEMQUESIZE - 1);
+
+            // lose one off the end?
+            if (iquehead == iquetail) {
+                iquetail = (iquetail + 1) & (ITEMQUESIZE - 1);
+            }
         }
 
         // unlink from sector and block lists
@@ -437,6 +534,70 @@ public final class PMobj {
         // free block — i.e. mark thinker for removal. P_RunThinkers
         // unlinks it on the next pass.
         PTick.pRemoveThinker(mobj);
+    }
+
+    //
+    // P_RespawnSpecials
+    //
+    // p_mobj.c lines 578–631. Pulls an item placement off the
+    // respawn queue once it has aged 30+ seconds and recreates the
+    // mobj. -altdeath only (deathmatch == 2).
+    public static void pRespawnSpecials() {
+        int x;
+        int y;
+        int z;
+
+        doom.render.Subsector ss;
+        Mobj mo;
+        Mapthing mthing;
+
+        int i;
+
+        // only respawn items in deathmatch
+        if (Doomstat.deathmatch != 2) {
+            return;
+        }
+
+        // nothing left to respawn?
+        if (iquehead == iquetail) {
+            return;
+        }
+
+        // wait at least 30 seconds
+        if (PTick.leveltime - itemrespawntime[iquetail] < 30 * 35) {
+            return;
+        }
+
+        mthing = itemrespawnque[iquetail];
+
+        x = mthing.x << Fixed.FRACBITS;
+        y = mthing.y << Fixed.FRACBITS;
+
+        // spawn a teleport fog at the new spot
+        ss = RMain.rPointInSubsector(x, y);
+        mo = pSpawnMobj(x, y, ss.sector.floorheight, Info.MT_IFOG);
+        SSound.sStartSound(mo, doom.sound.Sounds.sfx_itmbk);
+
+        // find which type to spawn
+        for (i = 0; i < Info.NUMMOBJTYPES; i++) {
+            if (mthing.type == Info.mobjinfo[i].doomednum) {
+                break;
+            }
+        }
+
+        // spawn it
+        if ((Info.mobjinfo[i].flags & Mobj.MF_SPAWNCEILING) != 0) {
+            z = ONCEILINGZ;
+        } else {
+            z = ONFLOORZ;
+        }
+
+        mo = pSpawnMobj(x, y, z, i);
+        mo.spawnpoint = mthing;
+        mo.angle = Tables.ANG45 * (mthing.angle / 45);
+
+        // pull it from the que
+        iquetail = (iquetail + 1) & (ITEMQUESIZE - 1);
     }
 
     //
