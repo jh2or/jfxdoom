@@ -1,22 +1,15 @@
 // Port of linuxdoom-1.10/p_map.c — partial.
 //
 // Movement-and-collision core: P_CheckPosition + P_TryMove + the two
-// PIT_* iterator callbacks they drive.
+// PIT_* iterator callbacks they drive (PIT_CheckLine + PIT_CheckThing
+// — the latter now full with skull-fly slam, missile damage, and
+// special-pickup branches all wired through PInter).
 //
 // Deferred (each waits on its named module):
 //   - PIT_StompThing / P_TeleportMove (telept)        → p_telept full
-//   - PIT_CheckThing skull/missile/pickup branches     → p_inter
 //   - P_AimLineAttack / P_LineAttack                  → combat port
 //   - PIT_RadiusAttack / P_RadiusAttack                → combat port
 //   - P_ChangeSector / PIT_ChangeSector real bodies   → keep stub
-//
-// PIT_CheckThing's skull/missile/pickup paths read fields not yet
-// declared on Mobj (info, target) and call P_DamageMobj /
-// P_SetMobjState / P_TouchSpecialThing — none ported. The minimal
-// implementation here handles only the basic body-collision case
-// (radius vs. radius, plus MF_SOLID / MF_SHOOTABLE / MF_SPECIAL).
-// Everything else is captured in TODO comments at the deferred
-// branches.
 //
 // The C `tmthing`, `tmflags`, `tmx`, `tmy`, `tmbbox[4]`, `tmfloorz`,
 // `tmceilingz`, `tmdropoffz`, `floatok`, `ceilingline`, `spechit[8]`,
@@ -146,13 +139,14 @@ public final class PMap {
     //
     // PIT_CheckThing
     //
-    // p_map.c lines 252–343. Minimal port: only the early-out (no
-    // collision interest), the radius/self short-circuits, and the
-    // final MF_SOLID return. The skull/missile/pickup branches need
-    // p_inter.c (P_DamageMobj, P_TouchSpecialThing) and p_mobj.c
-    // (P_SetMobjState, mobj.info, mobj.target) — deferred.
+    // p_map.c lines 252–343. Full port now that p_inter has landed:
+    // skull-fly slam damage, missile fly-over / fly-under skip + same-
+    // species filter + damage dispatch, and special-pickup with the
+    // MF_PICKUP gate.
     public static boolean pitCheckThing(Mobj thing) {
         int blockdist;
+        boolean solid;
+        int damage;
 
         if ((thing.flags & (Mobj.MF_SOLID | Mobj.MF_SPECIAL | Mobj.MF_SHOOTABLE)) == 0) {
             return true;
@@ -171,10 +165,69 @@ public final class PMap {
             return true;
         }
 
-        // TODO(p_inter): SKULLFLY/MISSILE/SPECIAL branches. Those
-        // need P_DamageMobj / P_TouchSpecialThing / P_SetMobjState
-        // and the mobj.info/target fields. The skipped logic from
-        // p_map.c lines 274–340 lands when those modules port.
+        // check for skulls slamming into things
+        if ((tmthing.flags & Mobj.MF_SKULLFLY) != 0) {
+            damage = ((MRandom.pRandom() % 8) + 1) * tmthing.info.damage;
+
+            PInter.pDamageMobj(thing, tmthing, tmthing, damage);
+
+            tmthing.flags &= ~Mobj.MF_SKULLFLY;
+            tmthing.momx = tmthing.momy = tmthing.momz = 0;
+
+            PMobj.pSetMobjState(tmthing, tmthing.info.spawnstate);
+
+            return false;       // stop moving
+        }
+
+
+        // missiles can hit other things
+        if ((tmthing.flags & Mobj.MF_MISSILE) != 0) {
+            // see if it went over / under
+            if (tmthing.z > thing.z + thing.height) {
+                return true;    // overhead
+            }
+            if (tmthing.z + tmthing.height < thing.z) {
+                return true;    // underneath
+            }
+
+            if (tmthing.target != null && (
+                    tmthing.target.type == thing.type
+                    || (tmthing.target.type == Info.MT_KNIGHT && thing.type == Info.MT_BRUISER)
+                    || (tmthing.target.type == Info.MT_BRUISER && thing.type == Info.MT_KNIGHT))) {
+                // Don't hit same species as originator.
+                if (thing == tmthing.target) {
+                    return true;
+                }
+
+                if (thing.type != Info.MT_PLAYER) {
+                    // Explode, but do no damage.
+                    // Let players missile other players.
+                    return false;
+                }
+            }
+
+            if ((thing.flags & Mobj.MF_SHOOTABLE) == 0) {
+                // didn't do any damage
+                return (thing.flags & Mobj.MF_SOLID) == 0;
+            }
+
+            // damage / explode
+            damage = ((MRandom.pRandom() % 8) + 1) * tmthing.info.damage;
+            PInter.pDamageMobj(thing, tmthing, tmthing.target, damage);
+
+            // don't traverse any more
+            return false;
+        }
+
+        // check for special pickup
+        if ((thing.flags & Mobj.MF_SPECIAL) != 0) {
+            solid = (thing.flags & Mobj.MF_SOLID) != 0;
+            if ((tmflags & Mobj.MF_PICKUP) != 0) {
+                // can remove thing
+                PInter.pTouchSpecialThing(thing, tmthing);
+            }
+            return !solid;
+        }
 
         return (thing.flags & Mobj.MF_SOLID) == 0;
     }

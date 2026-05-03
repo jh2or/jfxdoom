@@ -58,6 +58,9 @@ class PMapTest {
         PMap.changeSectorResult = false;
 
         RMain.validcount++;
+        // pitCheckThing tests use pSpawnMobj, which adds to the
+        // thinker chain — the chain must be initialised first.
+        PTick.pInitThinkers();
     }
 
     // Single-sector world with a 1×1 blockmap origin -64*FRACUNIT, so
@@ -725,5 +728,96 @@ class PMapTest {
         sec.ceilingheight = 30 * Fixed.FRACUNIT; // gap < 56
 
         assertFalse(PMap.pThingHeightClip(m));
+    }
+
+    // --- PIT_CheckThing branches (now wired through PInter) ---
+
+    // A picker (MF_PICKUP) walking onto an MF_SPECIAL pickup
+    // triggers P_TouchSpecialThing, which should remove the item +
+    // bump the player's stats.
+    @Test
+    void pitCheckThingPickupRemovesItem() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+
+        // Spawn a soulsphere (MF_SPECIAL|MF_COUNTITEM, doomednum 2013).
+        Mobj item = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_MISC12);
+        // Spawn the player at the same spot as the picker.
+        Mobj picker = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        // Picker needs a Player back-pointer for pTouchSpecialThing
+        // (sets player.message, etc.).
+        Player p = new Player();
+        p.health = 100;
+        Mobj playerMobj = picker;
+        playerMobj.player = p;
+        p.mo = playerMobj;
+        // The MF_PICKUP bit on tmflags drives the actual touch.
+        // pCheckPosition copies thing.flags → tmflags, so it's enough
+        // to ensure picker.flags carries MF_PICKUP (player flags
+        // already include it from MT_PLAYER).
+        assertTrue((picker.flags & Mobj.MF_PICKUP) != 0,
+                "MT_PLAYER should have MF_PICKUP");
+
+        PMap.tmthing = picker;
+        PMap.tmflags = picker.flags;
+        PMap.tmx = 0;
+        PMap.tmy = 0;
+
+        // pitCheckThing(item) — picker steps onto item.
+        boolean kept = PMap.pitCheckThing(item);
+
+        // Item is non-solid → returns true (no block).
+        assertTrue(kept);
+        // Item was removed by P_TouchSpecialThing.
+        assertTrue(item.removed);
+        // Player got the soulsphere message.
+        assertEquals(PInter.GOTSUPER, p.message);
+    }
+
+    // A missile flying past at unrelated z → no damage, no stop.
+    @Test
+    void pitCheckThingMissileFliesOverTarget() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj target = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        int beforeHealth = target.health;
+
+        // Missile origin and target type.
+        Mobj missile = PMobj.pSpawnMobj(0, 0, 200 * Fixed.FRACUNIT,
+                Info.MT_TROOPSHOT);
+        missile.z = target.z + target.height + 100 * Fixed.FRACUNIT;
+
+        PMap.tmthing = missile;
+        PMap.tmflags = missile.flags;
+        PMap.tmx = 0;
+        PMap.tmy = 0;
+
+        boolean kept = PMap.pitCheckThing(target);
+        assertTrue(kept, "missile flew overhead → should not stop");
+        assertEquals(beforeHealth, target.health);
+    }
+
+    // Missile hits shootable → P_DamageMobj fires, traversal stops.
+    @Test
+    void pitCheckThingMissileHitsShootable() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj target = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        int beforeHealth = target.health;
+
+        Mobj missile = PMobj.pSpawnMobj(0, 0, target.z + 16 * Fixed.FRACUNIT,
+                Info.MT_TROOPSHOT);
+        // No friendly-fire same-species target.
+        missile.target = null;
+
+        PMap.tmthing = missile;
+        PMap.tmflags = missile.flags;
+        PMap.tmx = 0;
+        PMap.tmy = 0;
+
+        boolean kept = PMap.pitCheckThing(target);
+        assertFalse(kept, "missile hit → traversal stops");
+        // Damage was applied (3..24 from random*8+1 * info.damage=3).
+        assertTrue(target.health < beforeHealth,
+                "expected health drop, was " + target.health);
     }
 }
