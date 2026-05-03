@@ -15,6 +15,16 @@ public final class ISystem {
         throw new DoomError(msg);
     }
 
+    // i_system.c — I_Tactile.
+    // Force-feedback hook that the original DOS build piped to
+    // hardware controllers (the SDL/Linux ports were already a no-op
+    // — see the empty body in i_system.c). Stub here too so
+    // P_DamageMobj can call it on the console seat without a wired
+    // backend.
+    public static void iTactile(int on, int off, int total) {
+        // Intentionally empty — matches the linuxdoom build.
+    }
+
     // Exception class so tests can catch/assert on the I_Error path.
     public static final class DoomError extends RuntimeException {
         public DoomError(String message) {

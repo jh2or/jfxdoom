@@ -34,6 +34,15 @@ public final class PPspr {
         // Intentionally empty until psprites[] lands on Player.
     }
 
+    // p_pspr.c — P_DropWeapon.
+    // Drops the player's currently-held weapon to the lowered state
+    // when they die. Stub: full body sets the weapon-down psprite
+    // state. p_inter.c P_KillMobj calls through here on player kill;
+    // the no-op stub keeps the call site live.
+    public static void pDropWeapon(Player player) {
+        // Intentionally empty until psprites[] lands on Player.
+    }
+
     private PPspr() {
     }
 }

@@ -69,6 +69,20 @@ public final class Doomdef {
     public static final int pw_infrared        = 5;
     public static final int NUMPOWERS          = 6;
 
+    // doomdef.h lines 234–238 — powerduration_t.
+    public static final int INVULNTICS = (30 * TICRATE);
+    public static final int INVISTICS  = (60 * TICRATE);
+    public static final int INFRATICS  = (120 * TICRATE);
+    public static final int IRONTICS   = (60 * TICRATE);
+
+    // p_local.h line 33 — player base / pickup-clamp health.
+    public static final int MAXHEALTH = 100;
+
+    // p_local.h line 61 — chase-commitment baseline. P_DamageMobj
+    // sets target.threshold to this when the target acquires a new
+    // chase target.
+    public static final int BASETHRESHOLD = 100;
+
     // d_event.h lines 73–98 — buttoncode_t bits on ticcmd_t.buttons.
     public static final int BT_ATTACK       = 1;
     public static final int BT_USE          = 2;
