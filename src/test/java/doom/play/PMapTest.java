@@ -820,4 +820,100 @@ class PMapTest {
         assertTrue(target.health < beforeHealth,
                 "expected health drop, was " + target.health);
     }
+
+    // --- P_RadiusAttack / PIT_RadiusAttack ---
+
+    // A spot bombing a victim within range with clear LOS deals
+    // (bombdamage - dist) damage. With dist clamped to 0 (radius
+    // covers the victim) the full damage applies.
+    @Test
+    void radiusAttackDamagesVictimInRange() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        // Victim is far enough away to be in the iteration range but
+        // close enough that dist << bombdamage. Place at the bombspot
+        // so dist = 0 → full damage.
+        Mobj victim = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        // Need REJECT to be all-zero so pCheckSight passes the bit
+        // check (one byte covers the 1-sector world).
+        PSetup.rejectmatrix = new byte[] { 0 };
+
+        Mobj source = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        Mobj bomb   = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_ROCKET);
+        int beforeHealth = victim.health;
+
+        PMap.pRadiusAttack(bomb, source, 50);
+
+        assertTrue(victim.health < beforeHealth,
+                "expected damage, victim health was " + victim.health);
+    }
+
+    // CYBORG and SPIDER take no concussion damage.
+    @Test
+    void radiusAttackSparesCyborg() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        PSetup.rejectmatrix = new byte[] { 0 };
+
+        Mobj cyborg = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_CYBORG);
+        Mobj source = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        Mobj bomb   = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_ROCKET);
+        int beforeHealth = cyborg.health;
+
+        PMap.pRadiusAttack(bomb, source, 100);
+
+        assertEquals(beforeHealth, cyborg.health,
+                "CYBORG should be immune to splash");
+    }
+
+    // PIT_RadiusAttack returns true (keep iterating) for all paths.
+    @Test
+    void pitRadiusAttackAlwaysKeepsIterating() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        PSetup.rejectmatrix = new byte[] { 0 };
+
+        Mobj nonShoot = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_TFOG);
+        PMap.bombspot = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_ROCKET);
+        PMap.bombsource = null;
+        PMap.bombdamage = 100;
+
+        // Non-shootable mobj → quick true return.
+        assertTrue(PMap.pitRadiusAttack(nonShoot));
+    }
+
+    // --- P_AimLineAttack / P_LineAttack: minimal sanity ---
+
+    // pAimLineAttack with no target in range returns 0 (linetarget
+    // stays null).
+    @Test
+    void aimLineAttackNoTargetReturnsZero() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj shooter = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        // Empty world — nothing to aim at.
+        int slope = PMap.pAimLineAttack(shooter, 0,
+                /*distance*/ 1024 * Fixed.FRACUNIT);
+
+        assertEquals(0, slope);
+        assertEquals(null, PMap.linetarget);
+    }
+
+    // pLineAttack with damage=0 is a test trace — leaves linetarget
+    // pointing at any aimable mobj (when used after pAimLineAttack
+    // setup, linetarget is whatever the C path traverse left).
+    // This test just verifies the call doesn't throw on an empty
+    // world and shootthing/attackrange globals get set.
+    @Test
+    void lineAttackSetsGlobalsAndDoesNotThrow() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj shooter = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        PMap.pLineAttack(shooter, 0,
+                /*distance*/ 256 * Fixed.FRACUNIT,
+                /*slope*/ 0,
+                /*damage*/ 0);
+
+        assertEquals(shooter, PMap.shootthing);
+        assertEquals(256 * Fixed.FRACUNIT, PMobj.attackrange);
+        assertEquals(0, PMap.la_damage);
+    }
 }

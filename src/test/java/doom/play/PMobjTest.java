@@ -483,6 +483,52 @@ class PMobjTest {
         return n;
     }
 
+    // ----- P_SpawnMissile / P_SpawnPlayerMissile -----
+
+    // Spawning a missile from source toward dest sets target =
+    // source, momentum aligned toward dest, and registers as a
+    // thinker.
+    @Test
+    void spawnMissileTargetsAndAngles() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj source = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        // Place dest to the east at +500 fixed-units.
+        Mobj dest = PMobj.pSpawnMobj(500 * Fixed.FRACUNIT, 0,
+                PMobj.ONFLOORZ, Info.MT_POSSESSED);
+
+        Mobj missile = PMobj.pSpawnMissile(source, dest, Info.MT_TROOPSHOT);
+        assertNotNull(missile);
+        assertSame(source, missile.target);
+        // East-facing momentum: momx > 0, momy ~ 0.
+        assertTrue(missile.momx > 0,
+                "expected +momx for east-facing missile, was " + missile.momx);
+        assertTrue(Math.abs(missile.momy) < missile.info.speed / 8,
+                "expected near-zero momy, was " + missile.momy);
+    }
+
+    // pSpawnPlayerMissile auto-aims; with no targets in range the
+    // C drops to slope=0 and uses the source's facing angle. Verify
+    // the missile spawns + targets the source.
+    @Test
+    void spawnPlayerMissileSpawnsForwardWithoutTarget() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+
+        Mobj source = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        source.angle = 0; // east
+        // Empty world — no auto-aim target.
+
+        int beforeThinkers = countMobjThinkers();
+        PMobj.pSpawnPlayerMissile(source, Info.MT_TROOPSHOT);
+
+        // A missile thinker was added.
+        assertTrue(countMobjThinkers() > beforeThinkers);
+        // The most-recent mobj thinker is the missile.
+        Mobj last = (Mobj) PTick.thinkercap.prev;
+        assertEquals(Info.MT_TROOPSHOT, last.type);
+        assertSame(source, last.target);
+    }
+
     // ----- P_SpawnPlayer + P_SpawnMapThing -----
 
     @BeforeEach

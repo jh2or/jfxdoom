@@ -21,10 +21,13 @@ package doom.play;
 import doom.fixed.Fixed;
 import doom.render.Line;
 import doom.render.RMain;
+import doom.render.RSky;
 import doom.render.Sector;
 import doom.render.Slopetype;
 import doom.render.Subsector;
 import doom.render.Tables;
+import doom.sound.SSound;
+import doom.sound.Sounds;
 import doom.system.ISystem;
 
 public final class PMap {
@@ -690,8 +693,7 @@ public final class PMap {
         if (in.line.special == 0) {
             PMaputl.pLineOpening(in.line);
             if (PMaputl.openrange <= 0) {
-                doom.sound.SSound.sStartSound(usething,
-                        doom.sound.Sounds.sfx_noway);
+                SSound.sStartSound(usething, Sounds.sfx_noway);
 
                 // can't use through a wall
                 return false;
@@ -736,5 +738,413 @@ public final class PMap {
 
         PMaputl.pPathTraverse(x1, y1, x2, y2,
                 PMaputl.PT_ADDLINES, PMap::ptrUseTraverse);
+    }
+
+    //
+    // SHOOT TRACE
+    //
+    // p_map.c lines 793–1086. The hitscan combat helpers all share a
+    // single trace + a handful of globals: shootthing (the firer),
+    // shootz (eye z), aimslope (vertical aim), la_damage (damage to
+    // apply on hit), linetarget (the mobj actually hit by AimTraverse),
+    // and PMobj.attackrange (used by P_SpawnPuff for the punch-spark
+    // special case).
+    //
+    // topslope / bottomslope are the per-trace vertical aim window;
+    // shared with p_sight.c (the C `extern fixed_t topslope`) — both
+    // modules live on PSight.
+    public static Mobj shootthing;
+    public static int shootz;       // fixed_t — eye z of the firer
+    public static int la_damage;
+    public static Mobj linetarget;  // last shootable mobj hit by AimTraverse
+    public static int aimslope;     // fixed_t
+
+    //
+    // PTR_AimTraverse
+    // Sets linetarget and aimslope when a target is aimed at.
+    //
+    // p_map.c lines 815–893.
+    public static boolean ptrAimTraverse(Intercept in) {
+        Line li;
+        Mobj th;
+        int slope;
+        int thingtopslope;
+        int thingbottomslope;
+        int dist;
+
+        if (in.isaline) {
+            li = in.line;
+
+            if ((li.flags & Line.ML_TWOSIDED) == 0) {
+                return false;       // stop
+            }
+
+            // Crosses a two sided line.
+            // A two sided line will restrict
+            // the possible target ranges.
+            PMaputl.pLineOpening(li);
+
+            if (PMaputl.openbottom >= PMaputl.opentop) {
+                return false;       // stop
+            }
+
+            dist = Fixed.mul(PMobj.attackrange, in.frac);
+
+            if (li.frontsector.floorheight != li.backsector.floorheight) {
+                slope = Fixed.div(PMaputl.openbottom - shootz, dist);
+                if (slope > PSight.bottomslope) {
+                    PSight.bottomslope = slope;
+                }
+            }
+
+            if (li.frontsector.ceilingheight != li.backsector.ceilingheight) {
+                slope = Fixed.div(PMaputl.opentop - shootz, dist);
+                if (slope < PSight.topslope) {
+                    PSight.topslope = slope;
+                }
+            }
+
+            if (PSight.topslope <= PSight.bottomslope) {
+                return false;       // stop
+            }
+
+            return true;            // shot continues
+        }
+
+        // shoot a thing
+        th = in.thing;
+        if (th == shootthing) {
+            return true;            // can't shoot self
+        }
+
+        if ((th.flags & Mobj.MF_SHOOTABLE) == 0) {
+            return true;            // corpse or something
+        }
+
+        // check angles to see if the thing can be aimed at
+        dist = Fixed.mul(PMobj.attackrange, in.frac);
+        thingtopslope = Fixed.div(th.z + th.height - shootz, dist);
+
+        if (thingtopslope < PSight.bottomslope) {
+            return true;            // shot over the thing
+        }
+
+        thingbottomslope = Fixed.div(th.z - shootz, dist);
+
+        if (thingbottomslope > PSight.topslope) {
+            return true;            // shot under the thing
+        }
+
+        // this thing can be hit!
+        if (thingtopslope > PSight.topslope) {
+            thingtopslope = PSight.topslope;
+        }
+
+        if (thingbottomslope < PSight.bottomslope) {
+            thingbottomslope = PSight.bottomslope;
+        }
+
+        aimslope = (thingtopslope + thingbottomslope) / 2;
+        linetarget = th;
+
+        return false;               // don't go any farther
+    }
+
+
+    //
+    // PTR_ShootTraverse
+    //
+    // p_map.c lines 899–1016. The C uses a `goto hitline:` to share
+    // the line-impact branch across two paths through the function.
+    // Java replaces that with an explicit boolean flag (CLAUDE.md §2:
+    // labeled-break / boolean toggle, never restructure).
+    public static boolean ptrShootTraverse(Intercept in) {
+        int x;
+        int y;
+        int z;
+        int frac;
+
+        Line li;
+
+        Mobj th;
+
+        int slope;
+        int dist;
+        int thingtopslope;
+        int thingbottomslope;
+
+        if (in.isaline) {
+            li = in.line;
+
+            if (li.special != 0) {
+                PSpec.pShootSpecialLine(shootthing, li);
+            }
+
+            boolean hitline;
+            if ((li.flags & Line.ML_TWOSIDED) == 0) {
+                hitline = true;
+            } else {
+                // crosses a two sided line
+                PMaputl.pLineOpening(li);
+
+                dist = Fixed.mul(PMobj.attackrange, in.frac);
+                hitline = false;
+
+                if (li.frontsector.floorheight != li.backsector.floorheight) {
+                    slope = Fixed.div(PMaputl.openbottom - shootz, dist);
+                    if (slope > aimslope) {
+                        hitline = true;
+                    }
+                }
+
+                if (!hitline
+                        && li.frontsector.ceilingheight
+                            != li.backsector.ceilingheight) {
+                    slope = Fixed.div(PMaputl.opentop - shootz, dist);
+                    if (slope < aimslope) {
+                        hitline = true;
+                    }
+                }
+
+                // shot continues
+                if (!hitline) {
+                    return true;
+                }
+            }
+
+            // hit line
+            // position a bit closer
+            frac = in.frac - Fixed.div(4 * Fixed.FRACUNIT, PMobj.attackrange);
+            x = PMaputl.trace.x + Fixed.mul(PMaputl.trace.dx, frac);
+            y = PMaputl.trace.y + Fixed.mul(PMaputl.trace.dy, frac);
+            z = shootz + Fixed.mul(aimslope,
+                    Fixed.mul(frac, PMobj.attackrange));
+
+            if (li.frontsector.ceilingpic == RSky.skyflatnum) {
+                // don't shoot the sky!
+                if (z > li.frontsector.ceilingheight) {
+                    return false;
+                }
+
+                // it's a sky hack wall
+                if (li.backsector != null
+                        && li.backsector.ceilingpic == RSky.skyflatnum) {
+                    return false;
+                }
+            }
+
+            // Spawn bullet puffs.
+            PMobj.pSpawnPuff(x, y, z);
+
+            // don't go any farther
+            return false;
+        }
+
+        // shoot a thing
+        th = in.thing;
+        if (th == shootthing) {
+            return true;            // can't shoot self
+        }
+
+        if ((th.flags & Mobj.MF_SHOOTABLE) == 0) {
+            return true;            // corpse or something
+        }
+
+        // check angles to see if the thing can be aimed at
+        dist = Fixed.mul(PMobj.attackrange, in.frac);
+        thingtopslope = Fixed.div(th.z + th.height - shootz, dist);
+
+        if (thingtopslope < aimslope) {
+            return true;            // shot over the thing
+        }
+
+        thingbottomslope = Fixed.div(th.z - shootz, dist);
+
+        if (thingbottomslope > aimslope) {
+            return true;            // shot under the thing
+        }
+
+
+        // hit thing
+        // position a bit closer
+        frac = in.frac - Fixed.div(10 * Fixed.FRACUNIT, PMobj.attackrange);
+
+        x = PMaputl.trace.x + Fixed.mul(PMaputl.trace.dx, frac);
+        y = PMaputl.trace.y + Fixed.mul(PMaputl.trace.dy, frac);
+        z = shootz + Fixed.mul(aimslope, Fixed.mul(frac, PMobj.attackrange));
+
+        // Spawn bullet puffs or blod spots,
+        // depending on target type.
+        if ((in.thing.flags & Mobj.MF_NOBLOOD) != 0) {
+            PMobj.pSpawnPuff(x, y, z);
+        } else {
+            PMobj.pSpawnBlood(x, y, z, la_damage);
+        }
+
+        if (la_damage != 0) {
+            PInter.pDamageMobj(th, shootthing, shootthing, la_damage);
+        }
+
+        // don't go any farther
+        return false;
+    }
+
+
+    //
+    // P_AimLineAttack
+    //
+    // p_map.c lines 1023–1054.
+    public static int pAimLineAttack(Mobj t1, int angle, int distance) {
+        int x2;
+        int y2;
+
+        int a = (angle >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK;
+        shootthing = t1;
+
+        x2 = t1.x + (distance >> Fixed.FRACBITS) * Tables.finecosine(a);
+        y2 = t1.y + (distance >> Fixed.FRACBITS) * Tables.finesine[a];
+        shootz = t1.z + (t1.height >> 1) + 8 * Fixed.FRACUNIT;
+
+        // can't shoot outside view angles
+        PSight.topslope = 100 * Fixed.FRACUNIT / 160;
+        PSight.bottomslope = -100 * Fixed.FRACUNIT / 160;
+
+        PMobj.attackrange = distance;
+        linetarget = null;
+
+        PMaputl.pPathTraverse(t1.x, t1.y,
+                x2, y2,
+                PMaputl.PT_ADDLINES | PMaputl.PT_ADDTHINGS,
+                PMap::ptrAimTraverse);
+
+        if (linetarget != null) {
+            return aimslope;
+        }
+
+        return 0;
+    }
+
+
+    //
+    // P_LineAttack
+    // If damage == 0, it is just a test trace
+    // that will leave linetarget set.
+    //
+    // p_map.c lines 1063–1086.
+    public static void pLineAttack(Mobj t1, int angle, int distance,
+            int slope, int damage) {
+        int x2;
+        int y2;
+
+        int a = (angle >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK;
+        shootthing = t1;
+        la_damage = damage;
+        x2 = t1.x + (distance >> Fixed.FRACBITS) * Tables.finecosine(a);
+        y2 = t1.y + (distance >> Fixed.FRACBITS) * Tables.finesine[a];
+        shootz = t1.z + (t1.height >> 1) + 8 * Fixed.FRACUNIT;
+        PMobj.attackrange = distance;
+        aimslope = slope;
+
+        PMaputl.pPathTraverse(t1.x, t1.y,
+                x2, y2,
+                PMaputl.PT_ADDLINES | PMaputl.PT_ADDTHINGS,
+                PMap::ptrShootTraverse);
+    }
+
+
+    //
+    // RADIUS ATTACK
+    //
+    // p_map.c lines 1154–1233. Splash damage from a bombspot, scaled
+    // linearly by Chebyshev (max-axis) distance with a P_CheckSight
+    // pre-flight to keep the explosion from leaking through walls.
+    public static Mobj bombsource;
+    public static Mobj bombspot;
+    public static int bombdamage;
+
+    //
+    // PIT_RadiusAttack
+    // "bombsource" is the creature that caused the explosion at
+    // "bombspot".
+    //
+    // p_map.c lines 1164–1198.
+    public static boolean pitRadiusAttack(Mobj thing) {
+        int dx;
+        int dy;
+        int dist;
+
+        if ((thing.flags & Mobj.MF_SHOOTABLE) == 0) {
+            return true;
+        }
+
+        // Boss spider and cyborg
+        // take no damage from concussion.
+        if (thing.type == Info.MT_CYBORG
+                || thing.type == Info.MT_SPIDER) {
+            return true;
+        }
+
+        dx = Math.abs(thing.x - bombspot.x);
+        dy = Math.abs(thing.y - bombspot.y);
+
+        dist = dx > dy ? dx : dy;
+        dist = (dist - thing.radius) >> Fixed.FRACBITS;
+
+        if (dist < 0) {
+            dist = 0;
+        }
+
+        if (dist >= bombdamage) {
+            return true;        // out of range
+        }
+
+        if (PSight.pCheckSight(thing, bombspot)) {
+            // must be in direct path
+            PInter.pDamageMobj(thing, bombspot, bombsource, bombdamage - dist);
+        }
+
+        return true;
+    }
+
+
+    //
+    // P_RadiusAttack
+    // Source is the creature that caused the explosion at spot.
+    //
+    // p_map.c lines 1206–1233.
+    public static void pRadiusAttack(Mobj spot, Mobj source, int damage) {
+        int x;
+        int y;
+
+        int xl;
+        int xh;
+        int yl;
+        int yh;
+
+        int dist;
+
+        // p_local.h: MAXRADIUS = 32*FRACUNIT, MAPBLOCKSHIFT = FRACBITS+7.
+        final int MAXRADIUS = 32 * Fixed.FRACUNIT;
+        final int MAPBLOCKSHIFT = Fixed.FRACBITS + 7;
+
+        // C: dist = (damage + MAXRADIUS) << FRACBITS — double-shifted
+        // since MAXRADIUS is already in fixed_t. Preserved verbatim
+        // per CLAUDE.md §2 (deviation 28). The over-broad iteration
+        // bounds don't change correctness — PIT_RadiusAttack filters
+        // per-thing.
+        dist = (damage + MAXRADIUS) << Fixed.FRACBITS;
+        yh = (spot.y + dist - PSetup.bmaporgy) >> MAPBLOCKSHIFT;
+        yl = (spot.y - dist - PSetup.bmaporgy) >> MAPBLOCKSHIFT;
+        xh = (spot.x + dist - PSetup.bmaporgx) >> MAPBLOCKSHIFT;
+        xl = (spot.x - dist - PSetup.bmaporgx) >> MAPBLOCKSHIFT;
+        bombspot = spot;
+        bombsource = source;
+        bombdamage = damage;
+
+        for (y = yl; y <= yh; y++) {
+            for (x = xl; x <= xh; x++) {
+                PMaputl.pBlockThingsIterator(x, y, PMap::pitRadiusAttack);
+            }
+        }
     }
 }

@@ -6,14 +6,10 @@
 // Drives the playsim's per-tic mobj tick from PTick once P_Ticker
 // lands.
 //
-// Deferred (each waits on its named module):
-//   - P_SpawnMissile            → needs Mobj.target chain + R_PointToAngle2 ✓
-//   - P_SpawnPlayerMissile      → needs P_AimLineAttack (combat port)
-//
-// PIT_CheckThing's missile branch in PMap calls P_ExplodeMissile
-// (deferred there); once p_inter ports P_DamageMobj the full
-// PIT_CheckThing body lands and PMap can dispatch missile hits
-// through here.
+// All sub-functions now ported. PIT_CheckThing's skull/missile/
+// pickup branches are wired through PInter; P_SpawnMissile and
+// P_SpawnPlayerMissile use PMap.pAimLineAttack now that combat is
+// online.
 package doom.play;
 
 import doom.fixed.Fixed;
@@ -860,6 +856,109 @@ public final class PMobj {
         if (!PMap.pTryMove(th, th.x, th.y)) {
             pExplodeMissile(th);
         }
+    }
+
+    //
+    // P_SpawnMissile
+    //
+    // p_mobj.c lines 888–927.
+    public static Mobj pSpawnMissile(Mobj source, Mobj dest, int type) {
+        Mobj th;
+        int an;
+        int dist;
+
+        th = pSpawnMobj(source.x,
+                source.y,
+                source.z + 4 * 8 * Fixed.FRACUNIT, type);
+
+        if (th.info.seesound != 0) {
+            SSound.sStartSound(th, th.info.seesound);
+        }
+
+        th.target = source;     // where it came from
+        an = doom.render.RMain.rPointToAngle2(source.x, source.y,
+                dest.x, dest.y);
+
+        // fuzzy player
+        if ((dest.flags & Mobj.MF_SHADOW) != 0) {
+            an += (MRandom.pRandom() - MRandom.pRandom()) << 20;
+        }
+
+        th.angle = an;
+        int aIdx = (an >>> doom.render.Tables.ANGLETOFINESHIFT)
+                & doom.render.Tables.FINEMASK;
+        th.momx = Fixed.mul(th.info.speed, doom.render.Tables.finecosine(aIdx));
+        th.momy = Fixed.mul(th.info.speed, doom.render.Tables.finesine[aIdx]);
+
+        dist = PMaputl.pAproxDistance(dest.x - source.x, dest.y - source.y);
+        dist = dist / th.info.speed;
+
+        if (dist < 1) {
+            dist = 1;
+        }
+
+        th.momz = (dest.z - source.z) / dist;
+        pCheckMissileSpawn(th);
+
+        return th;
+    }
+
+    //
+    // P_SpawnPlayerMissile
+    // Tries to aim at a nearby monster.
+    //
+    // p_mobj.c lines 934–989. The C uses a triple-nested no-target
+    // ladder of P_AimLineAttack calls (forward → +1°33' → -1°33');
+    // ported verbatim.
+    public static void pSpawnPlayerMissile(Mobj source, int type) {
+        Mobj th;
+        int an;
+
+        int x;
+        int y;
+        int z;
+        int slope;
+
+        // see which target is to be aimed at
+        an = source.angle;
+        slope = PMap.pAimLineAttack(source, an, 16 * 64 * Fixed.FRACUNIT);
+
+        if (PMap.linetarget == null) {
+            an += 1 << 26;
+            slope = PMap.pAimLineAttack(source, an, 16 * 64 * Fixed.FRACUNIT);
+
+            if (PMap.linetarget == null) {
+                an -= 2 << 26;
+                slope = PMap.pAimLineAttack(source, an, 16 * 64 * Fixed.FRACUNIT);
+            }
+
+            if (PMap.linetarget == null) {
+                an = source.angle;
+                slope = 0;
+            }
+        }
+
+        x = source.x;
+        y = source.y;
+        z = source.z + 4 * 8 * Fixed.FRACUNIT;
+
+        th = pSpawnMobj(x, y, z, type);
+
+        if (th.info.seesound != 0) {
+            SSound.sStartSound(th, th.info.seesound);
+        }
+
+        th.target = source;
+        th.angle = an;
+        int aIdx = (an >>> doom.render.Tables.ANGLETOFINESHIFT)
+                & doom.render.Tables.FINEMASK;
+        th.momx = Fixed.mul(th.info.speed,
+                doom.render.Tables.finecosine(aIdx));
+        th.momy = Fixed.mul(th.info.speed,
+                doom.render.Tables.finesine[aIdx]);
+        th.momz = Fixed.mul(th.info.speed, slope);
+
+        pCheckMissileSpawn(th);
     }
 
     // Suppress: RMain import needs at least one reference even if
