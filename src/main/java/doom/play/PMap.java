@@ -5,11 +5,11 @@
 // — the latter now full with skull-fly slam, missile damage, and
 // special-pickup branches all wired through PInter).
 //
-// Deferred (each waits on its named module):
-//   - PIT_StompThing / P_TeleportMove (telept)        → p_telept full
-//   - P_AimLineAttack / P_LineAttack                  → combat port
-//   - PIT_RadiusAttack / P_RadiusAttack                → combat port
-//   - P_ChangeSector / PIT_ChangeSector real bodies   → keep stub
+// All previously-deferred sub-functions are now in: PIT_StompThing /
+// P_TeleportMove (telefrag), the four combat helpers, and the real
+// P_ChangeSector / PIT_ChangeSector (the deviation-21 stub still
+// exists as `changeSectorOverride` for tests that drive plane-mover
+// crush paths without populating a full world).
 //
 // The C `tmthing`, `tmflags`, `tmx`, `tmy`, `tmbbox[4]`, `tmfloorz`,
 // `tmceilingz`, `tmdropoffz`, `floatok`, `ceilingline`, `spechit[8]`,
@@ -28,6 +28,7 @@ import doom.render.Subsector;
 import doom.render.Tables;
 import doom.sound.SSound;
 import doom.sound.Sounds;
+import doom.system.Doomstat;
 import doom.system.ISystem;
 
 public final class PMap {
@@ -57,17 +58,19 @@ public final class PMap {
     public static final Line[] spechit = new Line[MAXSPECIALCROSS];
     public static int numspechit;
 
-    // ----- LEGACY P_ChangeSector STUB (deviation 21) -----
-    //
-    // The real P_ChangeSector drives PIT_ChangeSector which depends
-    // on P_DamageMobj + P_SpawnMobj + mobj.health/info — all unported.
-    // T_MovePlane (PFloor) reads pChangeSector(); the test override
-    // pattern stays in place until the real body lands.
-    public static boolean changeSectorResult = false;
+    // p_map.c lines 1250–1251 — PIT_ChangeSector / P_ChangeSector
+    // shared scratch.
+    public static boolean crushchange;
+    public static boolean nofit;
 
-    public static boolean pChangeSector(Sector sector, boolean crunch) {
-        return changeSectorResult;
-    }
+    // Test-only override: when true, pChangeSector returns this value
+    // instead of running the real body. Lets unit tests for the plane
+    // movers (PFloor, PCeilng, PDoors, PPlats) drive the crush /
+    // pastdest path without spinning up a fully populated world.
+    // Production callers leave it false (the default), and the real
+    // P_ChangeSector body runs.
+    public static boolean changeSectorOverride;
+    public static boolean changeSectorResult = false;
 
     private PMap() {
     }
@@ -741,6 +744,120 @@ public final class PMap {
     }
 
     //
+    // TELEPORT MOVE
+    //
+
+    //
+    // PIT_StompThing
+    //
+    // p_map.c lines 81–108. Telefrag damage = 10000 (always lethal).
+    // Monsters can only stomp on the boss level (gamemap == 30) —
+    // this gates the Romero-head boss-spitter targets.
+    public static boolean pitStompThing(Mobj thing) {
+        int blockdist;
+
+        if ((thing.flags & Mobj.MF_SHOOTABLE) == 0) {
+            return true;
+        }
+
+        blockdist = thing.radius + tmthing.radius;
+
+        if (Math.abs(thing.x - tmx) >= blockdist
+                || Math.abs(thing.y - tmy) >= blockdist) {
+            // didn't hit it
+            return true;
+        }
+
+        // don't clip against self
+        if (thing == tmthing) {
+            return true;
+        }
+
+        // monsters don't stomp things except on boss level
+        if (tmthing.player == null && Doomstat.gamemap != 30) {
+            return false;
+        }
+
+        PInter.pDamageMobj(thing, tmthing, tmthing, 10000);
+
+        return true;
+    }
+
+    //
+    // P_TeleportMove
+    //
+    // p_map.c lines 114–177. Teleport drops the mobj at (x, y),
+    // telefragging anything inside the radius bbox. Returns true on
+    // success; false only when monsters try to teleport into a non-
+    // boss-level destination occupied by something shootable.
+    public static boolean pTeleportMove(Mobj thing, int x, int y) {
+        int xl;
+        int xh;
+        int yl;
+        int yh;
+        int bx;
+        int by;
+
+        Subsector newsubsec;
+
+        // kill anything occupying the position
+        tmthing = thing;
+        tmflags = thing.flags;
+
+        tmx = x;
+        tmy = y;
+
+        tmbbox[MBbox.BOXTOP] = y + tmthing.radius;
+        tmbbox[MBbox.BOXBOTTOM] = y - tmthing.radius;
+        tmbbox[MBbox.BOXRIGHT] = x + tmthing.radius;
+        tmbbox[MBbox.BOXLEFT] = x - tmthing.radius;
+
+        newsubsec = RMain.rPointInSubsector(x, y);
+        ceilingline = null;
+
+        // The base floor/ceiling is from the subsector
+        // that contains the point.
+        // Any contacted lines the step closer together
+        // will adjust them.
+        tmfloorz = tmdropoffz = newsubsec.sector.floorheight;
+        tmceilingz = newsubsec.sector.ceilingheight;
+
+        RMain.validcount++;
+        numspechit = 0;
+
+        // p_local.h: MAXRADIUS = 32*FRACUNIT, MAPBLOCKSHIFT = FRACBITS+7.
+        final int MAXRADIUS = 32 * Fixed.FRACUNIT;
+        final int MAPBLOCKSHIFT = Fixed.FRACBITS + 7;
+
+        // stomp on any things contacted
+        xl = (tmbbox[MBbox.BOXLEFT] - PSetup.bmaporgx - MAXRADIUS) >> MAPBLOCKSHIFT;
+        xh = (tmbbox[MBbox.BOXRIGHT] - PSetup.bmaporgx + MAXRADIUS) >> MAPBLOCKSHIFT;
+        yl = (tmbbox[MBbox.BOXBOTTOM] - PSetup.bmaporgy - MAXRADIUS) >> MAPBLOCKSHIFT;
+        yh = (tmbbox[MBbox.BOXTOP] - PSetup.bmaporgy + MAXRADIUS) >> MAPBLOCKSHIFT;
+
+        for (bx = xl; bx <= xh; bx++) {
+            for (by = yl; by <= yh; by++) {
+                if (!PMaputl.pBlockThingsIterator(bx, by, PMap::pitStompThing)) {
+                    return false;
+                }
+            }
+        }
+
+        // the move is ok,
+        // so link the thing into its new position
+        PMaputl.pUnsetThingPosition(thing);
+
+        thing.floorz = tmfloorz;
+        thing.ceilingz = tmceilingz;
+        thing.x = x;
+        thing.y = y;
+
+        PMaputl.pSetThingPosition(thing);
+
+        return true;
+    }
+
+    //
     // SHOOT TRACE
     //
     // p_map.c lines 793–1086. The hitscan combat helpers all share a
@@ -1106,6 +1223,101 @@ public final class PMap {
         return true;
     }
 
+
+    //
+    // SECTOR HEIGHT CHANGING
+    //
+
+    //
+    // PIT_ChangeSector
+    //
+    // p_map.c lines 1257–1313. Per-thing crush handler driven by
+    // P_ChangeSector when a sector floor/ceiling moves.
+    public static boolean pitChangeSector(Mobj thing) {
+        Mobj mo;
+
+        if (pThingHeightClip(thing)) {
+            // keep checking
+            return true;
+        }
+
+
+        // crunch bodies to giblets
+        if (thing.health <= 0) {
+            PMobj.pSetMobjState(thing, Info.S_GIBS);
+
+            thing.flags &= ~Mobj.MF_SOLID;
+            thing.height = 0;
+            thing.radius = 0;
+
+            // keep checking
+            return true;
+        }
+
+        // crunch dropped items
+        if ((thing.flags & Mobj.MF_DROPPED) != 0) {
+            PMobj.pRemoveMobj(thing);
+
+            // keep checking
+            return true;
+        }
+
+        if ((thing.flags & Mobj.MF_SHOOTABLE) == 0) {
+            // assume it is bloody gibs or something
+            return true;
+        }
+
+        nofit = true;
+
+        if (crushchange && (PTick.leveltime & 3) == 0) {
+            PInter.pDamageMobj(thing, null, null, 10);
+
+            // spray blood in a random direction
+            mo = PMobj.pSpawnMobj(thing.x,
+                    thing.y,
+                    thing.z + thing.height / 2, Info.MT_BLOOD);
+
+            mo.momx = (MRandom.pRandom() - MRandom.pRandom()) << 12;
+            mo.momy = (MRandom.pRandom() - MRandom.pRandom()) << 12;
+        }
+
+        // keep checking (crush other things)
+        return true;
+    }
+
+
+    //
+    // P_ChangeSector
+    //
+    // p_map.c lines 1320–1338. Re-checks heights for all mobjs in
+    // the sector's blockmap bbox; sets `nofit` if any can't fit.
+    // Crusher floors / ceilings pass `crunch=true` to make the per-
+    // thing handler damage shootables.
+    public static boolean pChangeSector(Sector sector, boolean crunch) {
+        if (changeSectorOverride) {
+            return changeSectorResult;
+        }
+
+        int x;
+        int y;
+
+        nofit = false;
+        crushchange = crunch;
+
+        // re-check heights for all things near the moving sector
+        for (x = sector.blockbox[MBbox.BOXLEFT];
+                x <= sector.blockbox[MBbox.BOXRIGHT];
+                x++) {
+            for (y = sector.blockbox[MBbox.BOXBOTTOM];
+                    y <= sector.blockbox[MBbox.BOXTOP];
+                    y++) {
+                PMaputl.pBlockThingsIterator(x, y, PMap::pitChangeSector);
+            }
+        }
+
+
+        return nofit;
+    }
 
     //
     // P_RadiusAttack

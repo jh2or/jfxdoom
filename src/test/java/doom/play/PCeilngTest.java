@@ -21,6 +21,10 @@ class PCeilngTest {
             PCeilng.activeceilings[i] = null;
         }
         PTick.pInitThinkers();
+        // Plane-mover tests drive the crush path via changeSectorResult,
+        // not by spinning up a fully-populated blockmap. Engage the
+        // override to short-circuit pChangeSector's real body.
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
         PTick.leveltime = 0;
         PSetup.numsectors = 0;

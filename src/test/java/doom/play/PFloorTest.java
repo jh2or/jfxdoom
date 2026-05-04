@@ -23,6 +23,7 @@ class PFloorTest {
     @BeforeEach
     void reset() {
         // Default: no mobj blocking. Each test re-flips as needed.
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
     }
 

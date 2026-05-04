@@ -54,7 +54,7 @@ class PSpecTest {
         }
         GGame.gameaction = GGame.ga_nothing;
         GGame.secretexit = 0;
-        PTelept.teleportResult = 0;
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
     }
 

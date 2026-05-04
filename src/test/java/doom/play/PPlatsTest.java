@@ -24,6 +24,7 @@ class PPlatsTest {
             PPlats.activeplats[i] = null;
         }
         PTick.pInitThinkers();
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
         PTick.leveltime = 0;
         PSetup.numsectors = 0;

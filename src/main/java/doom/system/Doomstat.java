@@ -61,6 +61,11 @@ public final class Doomstat {
     public static int totalkills;
     public static int totalitems;
 
+    // doomstat.h — current map number (1..32 for Doom 2; 1..9 per
+    // episode for Doom 1). PIT_StompThing reads this for the
+    // boss-level (level 30) telefrag exception.
+    public static int gamemap;
+
     private Doomstat() {
     }
 }

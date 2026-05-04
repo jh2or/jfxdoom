@@ -21,6 +21,8 @@ class PDoorsTest {
     @BeforeEach
     void reset() {
         PTick.pInitThinkers();
+        // Plane-mover tests drive crush returns via changeSectorResult.
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
         PTick.leveltime = 0;
         PSetup.numsectors = 0;

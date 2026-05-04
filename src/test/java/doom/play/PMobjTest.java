@@ -51,6 +51,7 @@ class PMobjTest {
         PMap.floatok = false;
         PMap.ceilingline = null;
         PMap.numspechit = 0;
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
 
         PTick.pInitThinkers();

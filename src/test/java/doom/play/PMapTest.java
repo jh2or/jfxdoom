@@ -460,15 +460,21 @@ class PMapTest {
         assertTrue(PMap.pitCheckLine(ld));
     }
 
-    // --- ChangeSector stub still works ---
+    // --- ChangeSector test override (deviation 21) ---
 
     @Test
-    void pChangeSectorStubReturnsOverrideValue() {
+    void pChangeSectorOverrideShortCircuitsRealBody() {
+        Sector sec = new Sector();
+        // Real body would walk sec.blockbox; the override skips it.
+        PMap.changeSectorOverride = true;
+
         PMap.changeSectorResult = false;
-        assertFalse(PMap.pChangeSector(new Sector(), false));
+        assertFalse(PMap.pChangeSector(sec, false));
 
         PMap.changeSectorResult = true;
-        assertTrue(PMap.pChangeSector(new Sector(), false));
+        assertTrue(PMap.pChangeSector(sec, false));
+
+        PMap.changeSectorOverride = false;
     }
 
     // ----- Globals match C constants -----
@@ -915,5 +921,82 @@ class PMapTest {
         assertEquals(shooter, PMap.shootthing);
         assertEquals(256 * Fixed.FRACUNIT, PMobj.attackrange);
         assertEquals(0, PMap.la_damage);
+    }
+
+    // --- P_TeleportMove / PIT_StompThing ---
+
+    // Move into empty space → relinks at new position, returns true.
+    @Test
+    void teleportMoveSucceedsIntoEmptySpace() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        // Real change-sector body off; teleport doesn't engage it.
+        PMap.changeSectorOverride = false;
+
+        Mobj m = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+
+        boolean ok = PMap.pTeleportMove(m,
+                10 * Fixed.FRACUNIT, 20 * Fixed.FRACUNIT);
+
+        assertTrue(ok);
+        assertEquals(10 * Fixed.FRACUNIT, m.x);
+        assertEquals(20 * Fixed.FRACUNIT, m.y);
+    }
+
+    // Monster teleport into a destination occupied by a shootable
+    // returns false (not the boss level → no telefrag).
+    @Test
+    void teleportMoveMonsterBlockedByShootable() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.Doomstat.gamemap = 1;
+
+        Mobj victim = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        Mobj monster = PMobj.pSpawnMobj(100 * Fixed.FRACUNIT, 0,
+                PMobj.ONFLOORZ, Info.MT_POSSESSED);
+
+        // Monster (no Player back-pointer) can't telefrag.
+        boolean ok = PMap.pTeleportMove(monster, victim.x, victim.y);
+
+        assertFalse(ok);
+    }
+
+    // Player telefrag: stomp damages victim and the move succeeds.
+    @Test
+    void teleportMovePlayerTelefragsOccupant() {
+        openWorld(0, 200 * Fixed.FRACUNIT);
+        doom.system.Doomstat.gamemap = 1;
+
+        Mobj victim = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
+        Mobj player = PMobj.pSpawnMobj(100 * Fixed.FRACUNIT, 0,
+                PMobj.ONFLOORZ, Info.MT_PLAYER);
+        // Wire a Player back-pointer so the boss-level guard accepts.
+        Player p = new Player();
+        p.health = 100;
+        player.player = p;
+        p.mo = player;
+
+        boolean ok = PMap.pTeleportMove(player, victim.x, victim.y);
+
+        assertTrue(ok);
+        // Victim took 10000 damage → killed.
+        assertTrue(victim.health <= 0,
+                "expected telefrag, victim health was " + victim.health);
+    }
+
+    // --- P_ChangeSector real body ---
+
+    // Empty sector (no mobjs in blockbox) → returns false (no nofit).
+    @Test
+    void changeSectorEmptyReturnsFalse() {
+        Sector sec = openWorld(0, 200 * Fixed.FRACUNIT);
+        // sec.blockbox is zero-init by default; the iteration walks an
+        // empty blockmap range and returns immediately.
+        sec.blockbox[MBbox.BOXLEFT] = 0;
+        sec.blockbox[MBbox.BOXRIGHT] = 0;
+        sec.blockbox[MBbox.BOXBOTTOM] = 0;
+        sec.blockbox[MBbox.BOXTOP] = 0;
+        PMap.changeSectorOverride = false;
+
+        assertFalse(PMap.pChangeSector(sec, /*crunch*/ false));
+        assertFalse(PMap.nofit);
     }
 }

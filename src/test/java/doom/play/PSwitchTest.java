@@ -38,6 +38,7 @@ class PSwitchTest {
         PSetup.sectors = null;
         PSetup.numsectors = 0;
         PTick.pInitThinkers();
+        PMap.changeSectorOverride = true;
         PMap.changeSectorResult = false;
         GGame.gameaction = GGame.ga_nothing;
         GGame.secretexit = 0;
