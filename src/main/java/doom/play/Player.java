@@ -119,4 +119,16 @@ public class Player {
     // d_player.h line 147 — last attacker (NULL for floors/ceilings).
     // P_DeathThink turns the corpse to face it.
     public Mobj attacker;
+
+    // d_player.h line 158 — overlay sprites (held weapon + muzzle
+    // flash). Indexed by PPspr.ps_weapon / ps_flash.
+    public Pspdef[] psprites = makePsprites();
+
+    private static Pspdef[] makePsprites() {
+        Pspdef[] arr = new Pspdef[2 /* PPspr.NUMPSPRITES */];
+        for (int i = 0; i < arr.length; i++) {
+            arr[i] = new Pspdef();
+        }
+        return arr;
+    }
 }

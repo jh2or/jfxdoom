@@ -57,8 +57,8 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_maputl.c  | `doom.play.PMaputl`   | Standard | Verified | 883 / ~. Full port: pure-math layer (`P_AproxDistance`, `P_PointOnLineSide`, `P_BoxOnLineSide`, `P_PointOnDivlineSide`, `P_MakeDivline`, `P_InterceptVector`, `P_LineOpening`) + blockmap iterators (`P_BlockLinesIterator`, `P_BlockThingsIterator`) with `Predicate<Line>`/`Predicate<Mobj>` callbacks + intercept machinery (`PIT_*Intercepts`, `P_TraverseIntercepts`, `P_PathTraverse`) with the `intercepts[128]`/`intercept_p`/`trace`/`earlyout`/`ptflags` globals + thing-position linkers (`P_SetThingPosition`/`P_UnsetThingPosition`) using `RMain.rPointInSubsector` for the BSP descent. New helper structs `Divline`, `Intercept`. |
 | p_map.c     | `doom.play.PMap`      | Standard | Verified | 1339 / ~. Full port: movement-and-collision core (`PIT_CheckLine`, `PIT_CheckThing`, `P_CheckPosition`, `P_TryMove`), slide stack, use-line stack, telefrag (`PIT_StompThing` + `P_TeleportMove`), hitscan combat (`PTR_AimTraverse` + `P_AimLineAttack` + `PTR_ShootTraverse` + `P_LineAttack`), splash damage (`PIT_RadiusAttack` + `P_RadiusAttack`), and sector crush (`PIT_ChangeSector` + `P_ChangeSector` real body — `changeSectorOverride` flag preserves the deviation-21 stub semantics for plane-mover unit tests that don't populate full worlds). The C `(damage+MAXRADIUS)<<FRACBITS` double-shift bug preserved verbatim per deviation 28. Globals shared with PSight (`topslope`/`bottomslope`) and PMobj (`attackrange`). |
 | p_user.c    | `doom.play.PUser`     | Standard | Verified | 386 / ~. Full port: P_Thrust + P_CalcHeight + P_MovePlayer + P_DeathThink + P_PlayerThink. New `Ticcmd` struct (d_ticcmd.h ticcmd_t) with int-widened fields per CLAUDE.md §3. Doomdef picks up powertype_t (pw_*/NUMPOWERS) + buttoncode_t (BT_*/BTS_*) constants. Player picks up cmd/bob/deltaviewheight + the remaining d_player.h fields needed by p_inter (powers[]/weaponowned[]/ammo[]/maxammo[]/readyweapon/pendingweapon/cheats/refire/attackdown/usedown/killcount/itemcount/secretcount/armorpoints/armortype/backpack/frags[]/attacker) plus CF_* cheat-bit constants. PPspr stub gains pMovePsprites. PSpec stub gains pPlayerInSpecialSector (no-op until p_inter ports P_DamageMobj). The C `delta < ANG5 || delta > (unsigned)-ANG5` 32-bit wraparound check uses `Integer.compareUnsigned` (C unsigned semantics on a Java int). The C macro `ANG5 = ANG90/18` lifted to a class constant since values are module-stable. |
-| p_pspr.c    | `doom.play.PPspr`     | Standard | Pending |                                                |
-| p_enemy.c   | `doom.play.PEnemy`    | Standard | Pending |                                                |
+| p_pspr.c    | `doom.play.PPspr`     | Standard | Verified | 879 / ~. Full port: P_SetPsprite + P_CalcSwing + P_BringUpWeapon + P_CheckAmmo (with the C's preference ladder for backup-weapon picks) + P_FireWeapon + P_DropWeapon + the 18 A_* action callbacks (WeaponReady / ReFire / CheckReload / Lower / Raise / GunFlash / Punch / Saw / FireMissile / FireBFG / FirePlasma / FirePistol / FireShotgun / FireShotgun2 / FireCGun / Light0/1/2 / BFGSpray / BFGsound) + P_BulletSlope + P_GunShot + P_SetupPsprites + P_MovePsprites. New `Pspdef` struct (pspdef_t). Player gains `psprites[NUMPSPRITES=2]`. State extended with `actionPsp` (BiConsumer<Player, Pspdef>) for the C union's acp2 slot — see deviation 25; the InfoData regenerator must wire each weapon-state row's actionPsp before A_* callbacks fire from the state machine. The A_FireCGun pointer-diff `weaponinfo[].flashstate + psp->state - &states[S_CHAIN1]` becomes a linear `stateIndex(State)` lookup. PEnemy stub (pNoiseAlert no-op) so P_FireWeapon can dispatch. |
+| p_enemy.c   | `doom.play.PEnemy`    | Standard | Partial  | Stub: pNoiseAlert no-op so p_pspr.c P_FireWeapon can dispatch. Full body (recursive flood-fill of sound into adjacent sectors via REJECT-aware traversal, sets sector.soundtarget = target on every reachable sector + the rest of the AI A_Look/A_Chase/A_Fire* callbacks) lands when p_enemy ports. |
 | p_inter.c   | `doom.play.PInter`    | Standard | Verified | 918 / ~. Full port: P_GiveAmmo + P_GiveWeapon + P_GiveBody + P_GiveArmor + P_GiveCard + P_GivePower + P_TouchSpecialThing (30+ pickup-class sprite-id dispatcher) + P_KillMobj + P_DamageMobj. Doomdef picks up MAXHEALTH / BASETHRESHOLD / INVULNTICS / INVISTICS / INFRATICS / IRONTICS. Pickup messages from d_englsh.h live as PInter constants (deviation 10). PPspr stub gains pDropWeapon. ISystem stub gains iTactile (no-op — matches the linuxdoom build). AmMap stub gains amStop. The C `target->player - players` pointer-subtract becomes a `playerIndex(Player)` linear scan (same pattern as PFloor.sectorIndex / PSight.sectorIndex). |
 | p_sight.c   | `doom.play.PSight`    | Standard | Verified | 349 / ~. Full port: P_DivlineSide (with the C bug `if (x==node->y)` preserved verbatim — see deviation 27) + P_InterceptVector2 + P_CrossSubsector + P_CrossBSPNode + P_CheckSight. The C reinterprets `node_t*` → `divline_t*` (first four fields are x/y/dx/dy in both); Java cannot reinterpret, so a parallel `pDivlineSideNode(int, int, Node)` reads the four Node fields directly with identical arithmetic. `t1->subsector->sector - sectors` becomes a linear `sectorIndex(Sector)` scan (same pattern as PFloor). `validcount` snapshot lives on RMain. |
 | p_spec.c    | `doom.play.PSpec`     | Standard | Partial | Sector-graph walkers (`getSide`/`getSector`/`twoSided`/`getNextSector`/`pFind{Lowest,Highest,Next}{Floor,Ceiling}Surrounding`/`pFindMinSurroundingLight`/`pFindSectorFromLineTag`) + `Result` enum + `FLOORSPEED` + animated textures (`Anim`/`AnimDef`, `animdefs[22]`, `P_InitPicAnims`) + per-tic `P_UpdateSpecials` (animation, line-scroll 48, button countdown — level timer `G_ExitLevel` deferred, deviation 23) + level-start `P_SpawnSpecials` (sector specials 1/2/3/4/8/9/10/12/13/14/17 + line 48 scrolls + -avg/-timer parsing) + `EV_DoDonut` (with the famous `(!flags & ML_TWOSIDED)` precedence-bug branch preserved verbatim — see deviation 24) + `P_CrossSpecialLine` (60+ case walk-trigger dispatcher with monster filter and projectile early-return) + `P_ShootSpecialLine` (3-case impact dispatcher). `P_PlayerInSpecialSector` waits on player.powers[]/P_DamageMobj. |
@@ -337,18 +337,24 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       (`origin` is `Object` until Mobj/Degenmobj share a listener-origin
       type — see SSound javadoc). The call-site shape is unchanged.
 25. `info.c` data tables — A_* action callbacks are null:
-    - The C states[] table sets each entry's `action.acp1` to either
-      NULL or a function pointer like `A_Punch` / `A_FirePistol` /
-      `A_Look` / `A_Chase` / etc. These A_* callbacks live in
-      p_pspr.c (player weapon actions) and p_enemy.c (monster AI),
-      neither of which is ported. The autogenerated `InfoData.java`
-      sets every State.action to `null` for now. Callers
-      (`P_SetMobjState`, `P_SetPsprite`) are written to skip the
-      dispatch when action is null, so sprite frame transitions
-      still work — only the side-effect callbacks (firing weapons,
-      AI decisions) are inert. When p_pspr / p_enemy port, the
-      script `scripts/extract_info_data.py` regenerates InfoData
-      with `Mobj::aPunch` etc. method-reference bindings.
+    - The C states[] table sets each entry's `action.acp1` (mobj-AI
+      callback) or `action.acp2` (weapon psprite callback) to one
+      of the A_* function pointers. Java has no union; State carries
+      both `action: Consumer<Mobj>` and `actionPsp: BiConsumer<Player,Pspdef>`,
+      and only one is populated per row.
+    - PPspr now provides every weapon-action A_* (A_Punch /
+      A_FireMissile / A_WeaponReady / etc.) as a static method —
+      callable directly. PEnemy still has only the pNoiseAlert
+      stub; A_Look / A_Chase / A_Fire* land when p_enemy ports.
+    - `InfoData.java` is autogenerated by
+      `scripts/extract_info_data.py` and currently sets every
+      action / actionPsp to null. Sprite frame transitions still
+      work because P_SetMobjState / P_SetPsprite skip the dispatch
+      when both fields are null. The regenerator pass that wires
+      each row's binding (e.g. `(p, psp) -> PPspr.aFirePistol(p, psp)`)
+      is a separate follow-up — once it runs, the A_* callbacks
+      fire from the state machine instead of just being directly
+      callable.
     - The 28 mobjflag_t bit constants live on `Mobj` (e.g.
       `Mobj.MF_SOLID`); the InfoData generator translates the C
       `MF_X` tokens to `Mobj.MF_X`.
