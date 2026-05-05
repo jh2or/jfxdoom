@@ -56,6 +56,12 @@ public final class Doomstat {
     // skull/COUNTKILL spawns when set.
     public static boolean nomonsters;
 
+    // doomstat.h — true under -fast (or implicit on sk_nightmare).
+    // p_enemy.c reads this to skip the per-tic A_Chase movement-
+    // delay branch (faster monster chase + faster missile-fire
+    // cadence).
+    public static boolean fastparm;
+
     // doomstat.h — running totals updated as P_SpawnMapThing creates
     // counted things; consumed by the intermission screen (wi_stuff).
     public static int totalkills;
