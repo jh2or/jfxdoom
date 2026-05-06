@@ -169,4 +169,93 @@ class PTickTest {
         // mutation.
         assertSame(PTick.thinkercap, PTick.thinkercap.next);
     }
+
+    // ---- P_Ticker ----
+
+    // Reset the cross-module state P_Ticker reads.
+    @BeforeEach
+    void resetTickerState() {
+        doom.system.Doomstat.paused = false;
+        doom.system.Doomstat.netgame = false;
+        doom.system.Doomstat.demoplayback = false;
+        doom.system.Doomstat.deathmatch = 0;
+        doom.ui.MMenu.menuactive = false;
+        for (int i = 0; i < doom.system.Doomdef.MAXPLAYERS; i++) {
+            doom.system.GGame.players[i] = new Player();
+            doom.system.GGame.playeringame[i] = false;
+        }
+        doom.system.GGame.consoleplayer = 0;
+    }
+
+    // paused → bail out without ticking; leveltime unchanged.
+    @Test
+    void pTickerBailsWhenPaused() {
+        doom.system.Doomstat.paused = true;
+        int before = PTick.leveltime;
+        PTick.pTicker();
+        assertEquals(before, PTick.leveltime);
+    }
+
+    // Menu active in single-player → pause the playsim. Note the C
+    // also gates on `players[consoleplayer].viewz != 1` — viewz==1
+    // is a sentinel that lets the first tick bootstrap; default int
+    // viewz is 0 in Java, so the gate fires.
+    @Test
+    void pTickerBailsWhenMenuActiveSinglePlayer() {
+        doom.ui.MMenu.menuactive = true;
+        // Default viewz=0 ≠ 1, so the gate triggers.
+        int before = PTick.leveltime;
+        PTick.pTicker();
+        assertEquals(before, PTick.leveltime);
+    }
+
+    // Normal tick advances leveltime + runs every active player's
+    // think. Verify by setting damagecount on player 0 and checking
+    // it decremented (P_PlayerThink decrements at the end).
+    @Test
+    void pTickerAdvancesLeveltimeAndPumpsActivePlayers() {
+        // Build a minimal world so PUser.pPlayerThink doesn't NPE
+        // when reading mo.subsector.sector.special.
+        doom.render.Sector sec = new doom.render.Sector();
+        sec.floorheight = 0;
+        sec.ceilingheight = 200 * doom.fixed.Fixed.FRACUNIT;
+        sec.special = 0;
+        doom.render.Subsector ss = new doom.render.Subsector();
+        ss.sector = sec;
+
+        Mobj mo = new Mobj();
+        mo.x = 0; mo.y = 0; mo.z = 0;
+        mo.angle = 0;
+        mo.subsector = ss;
+        mo.height = 56 * doom.fixed.Fixed.FRACUNIT;
+        mo.floorz = 0;
+        mo.ceilingz = 200 * doom.fixed.Fixed.FRACUNIT;
+        mo.flags = 0;
+        mo.state = Info.states[Info.S_PLAY];
+
+        Player p = doom.system.GGame.players[0];
+        doom.system.GGame.playeringame[0] = true;
+        p.mo = mo;
+        mo.player = p;
+        p.health = 100;
+        p.damagecount = 5;
+        p.bonuscount = 0;
+        p.playerstate = Player.PST_LIVE;
+
+        int before = PTick.leveltime;
+        PTick.pTicker();
+
+        assertEquals(before + 1, PTick.leveltime);
+        // P_PlayerThink decremented damagecount at end-of-tick.
+        assertEquals(4, p.damagecount);
+    }
+
+    // Inactive seats are skipped — even when menuactive bails before
+    // P_PlayerThink, the loop guard checks playeringame.
+    @Test
+    void pTickerSkipsInactivePlayers() {
+        // No seat active. Just verify pTicker doesn't crash.
+        PTick.pTicker();
+        assertEquals(1, PTick.leveltime);
+    }
 }

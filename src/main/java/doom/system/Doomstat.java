@@ -62,6 +62,10 @@ public final class Doomstat {
     // cadence).
     public static boolean fastparm;
 
+    // doomstat.h — pause flag set by the BTS_PAUSE special-button
+    // chord. P_Ticker bails immediately when set.
+    public static boolean paused;
+
     // doomstat.h — running totals updated as P_SpawnMapThing creates
     // counted things; consumed by the intermission screen (wi_stuff).
     public static int totalkills;

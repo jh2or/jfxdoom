@@ -9,11 +9,15 @@
 // list, calls each function, and lazily unlinks anything flagged for
 // removal.
 //
-// Partial: P_Ticker is not yet translated — it calls P_PlayerThink,
-// P_UpdateSpecials, P_RespawnSpecials, and references the paused /
-// menuactive / netgame globals and the players[] array, all of which
-// belong to modules still ahead of us in the dependency order.
+// P_Ticker is the per-tic playsim entry point — D_DoomLoop calls it
+// once per game tic. It pumps player input → P_PlayerThink, advances
+// every thinker, runs the sector-special updates, and ages the item-
+// respawn queue.
 package doom.play;
+
+import doom.system.Doomdef;
+import doom.system.Doomstat;
+import doom.system.GGame;
 
 public final class PTick {
 
@@ -87,10 +91,36 @@ public final class PTick {
     }
 
     // p_tick.c lines 130–158 — P_Ticker.
-    // Deferred: depends on P_PlayerThink, P_UpdateSpecials,
-    // P_RespawnSpecials and the players[]/paused/menuactive globals
-    // that still live in not-yet-ported modules. When those land the
-    // body moves here verbatim.
+    public static void pTicker() {
+        int i;
+
+        // run the tic
+        if (Doomstat.paused) {
+            return;
+        }
+
+        // pause if in menu and at least one tic has been run
+        if (!Doomstat.netgame
+                && doom.ui.MMenu.menuactive
+                && !Doomstat.demoplayback
+                && GGame.players[GGame.consoleplayer].viewz != 1) {
+            return;
+        }
+
+
+        for (i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            if (GGame.playeringame[i]) {
+                PUser.pPlayerThink(GGame.players[i]);
+            }
+        }
+
+        pRunThinkers();
+        PSpec.pUpdateSpecials();
+        PMobj.pRespawnSpecials();
+
+        // for par times
+        leveltime++;
+    }
 
     private PTick() {
     }
