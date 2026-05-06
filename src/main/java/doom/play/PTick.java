@@ -20,6 +20,13 @@ public final class PTick {
     // p_tick.c line 34 — int leveltime;
     public static int leveltime;
 
+    // d_main.c line 78 — gametic. Total tic counter across all
+    // levels (vs. leveltime, which resets each level). p_enemy.c
+    // A_Tracer reads `gametic & 3` to fire its smoke trail every
+    // 4th tic. Lives here next to leveltime; the d_main port will
+    // re-export from there if needed.
+    public static int gametic;
+
     // p_tick.c line 47 — thinker_t thinkercap;
     // Both head and tail of the thinker list. Sentinel node: its
     // `function` slot is never invoked.

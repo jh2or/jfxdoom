@@ -281,4 +281,157 @@ class PEnemyTest {
         assertEquals(PEnemy.DI_SOUTH, PEnemy.opposite[PEnemy.DI_NORTH]);
         assertEquals(PEnemy.DI_NODIR, PEnemy.opposite[PEnemy.DI_NODIR]);
     }
+
+    // ---- per-monster attack callbacks ----
+
+    // A_PosAttack with no target → bail.
+    @Test
+    void aPosAttackSkipsWithoutTarget() {
+        Mobj actor = makeMonster(0, 0, Info.MT_POSSESSED);
+        actor.target = null;
+        // Should not throw / spawn anything.
+        PEnemy.aPosAttack(actor);
+        assertNull(actor.target);
+    }
+
+    // A_TroopAttack within melee range → P_DamageMobj path (no missile).
+    @Test
+    void aTroopAttackInMeleeDoesDamage() {
+        Mobj actor = makeMonster(0, 0, Info.MT_TROOP);
+        Player p = makePlayer1(8 * Fixed.FRACUNIT, 0);
+        actor.target = p.mo;
+        int beforeHealth = p.mo.health;
+
+        PEnemy.aTroopAttack(actor);
+        assertTrue(p.mo.health < beforeHealth,
+                "expected melee damage, was " + p.mo.health);
+    }
+
+    // A_TroopAttack out of melee → spawns MT_TROOPSHOT missile.
+    @Test
+    void aTroopAttackOutOfMeleeFiresFireball() {
+        Mobj actor = makeMonster(0, 0, Info.MT_TROOP);
+        Player p = makePlayer1(500 * Fixed.FRACUNIT, 0);
+        actor.target = p.mo;
+
+        PEnemy.aTroopAttack(actor);
+        Mobj last = (Mobj) PTick.thinkercap.prev;
+        assertEquals(Info.MT_TROOPSHOT, last.type);
+    }
+
+    // A_CyberAttack always spawns a rocket.
+    @Test
+    void aCyberAttackSpawnsRocket() {
+        Mobj actor = makeMonster(0, 0, Info.MT_CYBORG);
+        Player p = makePlayer1(500 * Fixed.FRACUNIT, 0);
+        actor.target = p.mo;
+
+        PEnemy.aCyberAttack(actor);
+        Mobj last = (Mobj) PTick.thinkercap.prev;
+        assertEquals(Info.MT_ROCKET, last.type);
+    }
+
+    // A_SkullAttack flips MF_SKULLFLY and computes a momentum
+    // vector toward target.
+    @Test
+    void aSkullAttackFlipsSkullflyAndAimsMomentum() {
+        Mobj actor = makeMonster(0, 0, Info.MT_SKULL);
+        Player p = makePlayer1(500 * Fixed.FRACUNIT, 0);
+        actor.target = p.mo;
+
+        PEnemy.aSkullAttack(actor);
+
+        assertTrue((actor.flags & Mobj.MF_SKULLFLY) != 0);
+        // Target east → +momx.
+        assertTrue(actor.momx > 0,
+                "expected +momx for east-facing skull, was " + actor.momx);
+    }
+
+    // A_Explode dispatches through P_RadiusAttack with damage=128.
+    @Test
+    void aExplodeDamagesNearbyMobj() {
+        Mobj source = makeMonster(0, 0, Info.MT_PLAYER);
+        Mobj victim = makeMonster(50 * Fixed.FRACUNIT, 0, Info.MT_POSSESSED);
+
+        Mobj barrel = makeMonster(0, 0, Info.MT_ROCKET);
+        barrel.target = source;
+
+        int beforeHealth = victim.health;
+        PEnemy.aExplode(barrel);
+
+        assertTrue(victim.health < beforeHealth,
+                "expected splash damage, was " + victim.health);
+    }
+
+    // A_Pain plays painsound when set.
+    @Test
+    void aPainCallableNoCrashes() {
+        Mobj actor = makeMonster(0, 0, Info.MT_POSSESSED);
+        // Just verify it doesn't throw — sound is stubbed.
+        PEnemy.aPain(actor);
+    }
+
+    // A_Fall clears MF_SOLID.
+    @Test
+    void aFallClearsSolidFlag() {
+        Mobj actor = makeMonster(0, 0, Info.MT_POSSESSED);
+        // Sanity: MF_SOLID is set on POSSESSED.
+        assertTrue((actor.flags & Mobj.MF_SOLID) != 0);
+
+        PEnemy.aFall(actor);
+        assertEquals(0, actor.flags & Mobj.MF_SOLID);
+    }
+
+    // A_PlayerScream plays sfx_pldeth at health > -50, sfx_pdiehi
+    // at health <= -50 in commercial mode.
+    @Test
+    void aPlayerScreamRunsWithoutCrash() {
+        Mobj player = makeMonster(0, 0, Info.MT_PLAYER);
+        player.health = -100;
+        Doomstat.gamemode = Doomstat.GameMode.commercial;
+        // Sound is stubbed; just verify no throw.
+        PEnemy.aPlayerScream(player);
+    }
+
+    // A_FatRaise face-targets and emits sound; should not crash.
+    @Test
+    void aFatRaiseFacesTarget() {
+        Mobj actor = makeMonster(0, 0, Info.MT_FATSO);
+        Player p = makePlayer1(50 * Fixed.FRACUNIT, 0);
+        actor.target = p.mo;
+        actor.angle = doom.render.Tables.ANG180; // facing west
+
+        PEnemy.aFatRaise(actor);
+        // East target → angle ~ 0.
+        assertEquals(0, actor.angle);
+    }
+
+    // A_Hoof / A_Metal / A_BabyMetal delegate to A_Chase.
+    // Sanity: with no target, A_Chase drops to spawnstate. Verify
+    // the stomp/hoof variants drop the same way.
+    @Test
+    void aHoofDelegatesToChase() {
+        Mobj actor = makeMonster(0, 0, Info.MT_CYBORG);
+        actor.target = null;
+        PEnemy.aHoof(actor);
+        assertSame(Info.states[actor.info.spawnstate], actor.state);
+    }
+
+    // TRACEANGLE matches the C constant.
+    @Test
+    void traceAngleConstantMatchesC() {
+        assertEquals(0xc000000, PEnemy.TRACEANGLE);
+    }
+
+    // SKULLSPEED matches the C constant.
+    @Test
+    void skullSpeedConstantMatchesC() {
+        assertEquals(20 * Fixed.FRACUNIT, PEnemy.SKULLSPEED);
+    }
+
+    // FATSPREAD = ANG90/8.
+    @Test
+    void fatSpreadConstantMatchesC() {
+        assertEquals(doom.render.Tables.ANG90 / 8, PEnemy.FATSPREAD);
+    }
 }

@@ -72,6 +72,11 @@ public final class Doomstat {
     // boss-level (level 30) telefrag exception.
     public static int gamemap;
 
+    // doomstat.h — current episode (1..4 for Doom; ignored on Doom 2).
+    // A_BossDeath reads this to pick the per-episode boss-trigger
+    // tag/action.
+    public static int gameepisode;
+
     private Doomstat() {
     }
 }
