@@ -145,8 +145,14 @@ class PPsprTest {
 
         // pendingweapon is reset to wp_nochange after consumption.
         assertEquals(Doomdef.wp_nochange, player.pendingweapon);
-        // psp.sy snapped to WEAPONBOTTOM.
-        assertEquals(PPspr.WEAPONBOTTOM, player.psprites[PPspr.ps_weapon].sy);
+        // psp.sy lands somewhere between WEAPONBOTTOM (the snap-to)
+        // and WEAPONBOTTOM-RAISESPEED (after A_Raise's first tic
+        // fires during the pSetPsprite dispatch, now that
+        // InfoData wires A_Raise to the upstate row).
+        assertTrue(player.psprites[PPspr.ps_weapon].sy >= PPspr.WEAPONBOTTOM - PPspr.RAISESPEED
+                && player.psprites[PPspr.ps_weapon].sy <= PPspr.WEAPONBOTTOM,
+                "expected sy near WEAPONBOTTOM, was "
+                        + player.psprites[PPspr.ps_weapon].sy);
     }
 
     // --- P_FireWeapon ---
@@ -265,9 +271,14 @@ class PPsprTest {
         PPspr.pSetupPsprites(player);
 
         // ps_flash got cleared, ps_weapon got pBringUpWeapon → state
-        // populated.
+        // populated. sy lands near WEAPONBOTTOM (the snap-to value)
+        // minus one A_Raise step, since the upstate's actionPsp now
+        // dispatches during pSetPsprite.
         assertNull(player.psprites[PPspr.ps_flash].state);
-        assertEquals(PPspr.WEAPONBOTTOM, player.psprites[PPspr.ps_weapon].sy);
+        assertTrue(player.psprites[PPspr.ps_weapon].sy >= PPspr.WEAPONBOTTOM - PPspr.RAISESPEED
+                && player.psprites[PPspr.ps_weapon].sy <= PPspr.WEAPONBOTTOM,
+                "expected sy near WEAPONBOTTOM, was "
+                        + player.psprites[PPspr.ps_weapon].sy);
     }
 
     // --- Constants sanity ---

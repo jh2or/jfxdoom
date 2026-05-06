@@ -57,6 +57,21 @@ class PMobjTest {
         PTick.pInitThinkers();
         Doomstat.gameskill = Doomstat.sk_medium;
 
+        // Seed the playeringame[0]=true invariant. Several A_* now
+        // bound by InfoData (A_Chase, A_Look) eventually call
+        // P_LookForPlayers, which spins forever if every seat is
+        // false (see PEnemy.pLookForPlayers comment). Player health
+        // stays 0 (Java default) so monsters don't actually wake.
+        for (int i = 0; i < doom.system.Doomdef.MAXPLAYERS; i++) {
+            doom.system.GGame.players[i] = new Player();
+            doom.system.GGame.playeringame[i] = false;
+        }
+        doom.system.GGame.playeringame[0] = true;
+        // REJECT clear so any P_CheckSight call (from A_Look /
+        // A_Chase paths that fire during state transitions) doesn't
+        // hit a null rejectmatrix.
+        PSetup.rejectmatrix = new byte[] { 0 };
+
         RMain.validcount++;
         PMobj.attackrange = 0;
     }
@@ -142,13 +157,16 @@ class PMobjTest {
         openWorld(0, 200 * Fixed.FRACUNIT);
         Mobj m = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_POSSESSED);
 
-        // S_POSS_RUN1 is a 4-tic walk-cycle frame on SPR_POSS.
-        boolean alive = PMobj.pSetMobjState(m, Info.S_POSS_RUN1);
+        // S_POSS_PAIN is a 3-tic NULL-action frame on SPR_POSS — picked
+        // because the test verifies pSetMobjState's bookkeeping, not
+        // any A_* dispatch side-effect. Walk-cycle states (S_POSS_RUN1)
+        // bind A_Chase, which dispatches AI logic.
+        boolean alive = PMobj.pSetMobjState(m, Info.S_POSS_PAIN);
 
         assertTrue(alive);
-        assertSame(Info.states[Info.S_POSS_RUN1], m.state);
+        assertSame(Info.states[Info.S_POSS_PAIN], m.state);
         assertEquals(Info.SPR_POSS, m.sprite);
-        assertEquals(Info.states[Info.S_POSS_RUN1].tics, m.tics);
+        assertEquals(Info.states[Info.S_POSS_PAIN].tics, m.tics);
     }
 
     // S_NULL transition removes the mobj and returns false.

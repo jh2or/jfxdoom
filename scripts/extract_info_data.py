@@ -4,11 +4,15 @@ generated Java helper class doom.play.InfoData.
 Run once at project setup; regenerate if info.c changes (it won't —
 it is a frozen reference file).
 
-The C action function pointers (A_WeaponReady, A_Punch, ...) all
-become `null` in the State entries because none of the A_* functions
-are ported yet (they live in p_pspr.c and p_enemy.c). When those
-modules port, this script rewrites itself to bind method references.
-For now the data tables are correct except for the action field.
+The C state_t.action union has three function-pointer slots (acv,
+acp1, acp2). Java has no union, so each State row carries TWO typed
+fields:
+  - `action: Consumer<Mobj>`             — for mobj-AI A_* (acp1)
+  - `actionPsp: BiConsumer<Player,Pspdef>` — for weapon-action A_* (acp2)
+
+This script binds each C A_X to its Java method-reference based on
+ACTION_BINDINGS below. p_pspr.c and p_enemy.c are both ported, so
+all 60+ A_* names resolve.
 """
 
 from __future__ import annotations
@@ -100,16 +104,132 @@ def translate_expr(expr: str) -> str:
     return "".join(out)
 
 
-def extract_states() -> list[tuple[str, str, str, str, str, str, str]]:
+# A_X (C name) → ("PMobj"|"PEnemy"|"PPspr", "aX") + signature kind.
+# kind == "mobj"  → method reference goes in `action`    (Consumer<Mobj>)
+# kind == "pspr"  → method reference goes in `actionPsp` (BiConsumer<Player, Pspdef>)
+ACTION_BINDINGS = {
+    # --- pspr signature (player_t*, pspdef_t*) — p_pspr.c + 3 in p_enemy.c ---
+    "A_WeaponReady":   ("PPspr",  "aWeaponReady",   "pspr"),
+    "A_Lower":         ("PPspr",  "aLower",         "pspr"),
+    "A_Raise":         ("PPspr",  "aRaise",         "pspr"),
+    "A_Punch":         ("PPspr",  "aPunch",         "pspr"),
+    "A_ReFire":        ("PPspr",  "aReFire",        "pspr"),
+    "A_CheckReload":   ("PPspr",  "aCheckReload",   "pspr"),
+    "A_FirePistol":    ("PPspr",  "aFirePistol",    "pspr"),
+    "A_Light0":        ("PPspr",  "aLight0",        "pspr"),
+    "A_Light1":        ("PPspr",  "aLight1",        "pspr"),
+    "A_Light2":        ("PPspr",  "aLight2",        "pspr"),
+    "A_FireShotgun":   ("PPspr",  "aFireShotgun",   "pspr"),
+    "A_FireShotgun2":  ("PPspr",  "aFireShotgun2",  "pspr"),
+    "A_FireCGun":      ("PPspr",  "aFireCGun",      "pspr"),
+    "A_GunFlash":      ("PPspr",  "aGunFlash",      "pspr"),
+    "A_FireMissile":   ("PPspr",  "aFireMissile",   "pspr"),
+    "A_Saw":           ("PPspr",  "aSaw",           "pspr"),
+    "A_FirePlasma":    ("PPspr",  "aFirePlasma",    "pspr"),
+    "A_BFGsound":      ("PPspr",  "aBFGsound",      "pspr"),
+    "A_FireBFG":       ("PPspr",  "aFireBFG",       "pspr"),
+    "A_OpenShotgun2":  ("PEnemy", "aOpenShotgun2",  "pspr"),
+    "A_LoadShotgun2":  ("PEnemy", "aLoadShotgun2",  "pspr"),
+    "A_CloseShotgun2": ("PEnemy", "aCloseShotgun2", "pspr"),
+
+    # --- mobj signature (mobj_t*) — p_enemy.c (+ A_BFGSpray in p_pspr.c) ---
+    "A_BFGSpray":     ("PPspr",  "aBFGSpray",     "mobj"),
+
+    "A_Look":         ("PEnemy", "aLook",         "mobj"),
+    "A_Chase":        ("PEnemy", "aChase",        "mobj"),
+    "A_FaceTarget":   ("PEnemy", "aFaceTarget",   "mobj"),
+    "A_Fall":         ("PEnemy", "aFall",         "mobj"),
+    "A_KeenDie":      ("PEnemy", "aKeenDie",      "mobj"),
+
+    "A_PosAttack":    ("PEnemy", "aPosAttack",    "mobj"),
+    "A_SPosAttack":   ("PEnemy", "aSPosAttack",   "mobj"),
+    "A_CPosAttack":   ("PEnemy", "aCPosAttack",   "mobj"),
+    "A_CPosRefire":   ("PEnemy", "aCPosRefire",   "mobj"),
+    "A_SpidRefire":   ("PEnemy", "aSpidRefire",   "mobj"),
+    "A_BspiAttack":   ("PEnemy", "aBspiAttack",   "mobj"),
+
+    "A_TroopAttack":  ("PEnemy", "aTroopAttack",  "mobj"),
+    "A_SargAttack":   ("PEnemy", "aSargAttack",   "mobj"),
+    "A_HeadAttack":   ("PEnemy", "aHeadAttack",   "mobj"),
+    "A_CyberAttack":  ("PEnemy", "aCyberAttack",  "mobj"),
+    "A_BruisAttack":  ("PEnemy", "aBruisAttack",  "mobj"),
+
+    "A_SkelMissile":  ("PEnemy", "aSkelMissile",  "mobj"),
+    "A_Tracer":       ("PEnemy", "aTracer",       "mobj"),
+    "A_SkelWhoosh":   ("PEnemy", "aSkelWhoosh",   "mobj"),
+    "A_SkelFist":     ("PEnemy", "aSkelFist",     "mobj"),
+
+    "A_VileChase":    ("PEnemy", "aVileChase",    "mobj"),
+    "A_VileStart":    ("PEnemy", "aVileStart",    "mobj"),
+    "A_StartFire":    ("PEnemy", "aStartFire",    "mobj"),
+    "A_FireCrackle":  ("PEnemy", "aFireCrackle",  "mobj"),
+    "A_Fire":         ("PEnemy", "aFire",         "mobj"),
+    "A_VileTarget":   ("PEnemy", "aVileTarget",   "mobj"),
+    "A_VileAttack":   ("PEnemy", "aVileAttack",   "mobj"),
+
+    "A_FatRaise":     ("PEnemy", "aFatRaise",     "mobj"),
+    "A_FatAttack1":   ("PEnemy", "aFatAttack1",   "mobj"),
+    "A_FatAttack2":   ("PEnemy", "aFatAttack2",   "mobj"),
+    "A_FatAttack3":   ("PEnemy", "aFatAttack3",   "mobj"),
+
+    "A_SkullAttack":  ("PEnemy", "aSkullAttack",  "mobj"),
+    "A_PainAttack":   ("PEnemy", "aPainAttack",   "mobj"),
+    "A_PainDie":      ("PEnemy", "aPainDie",      "mobj"),
+
+    "A_Scream":       ("PEnemy", "aScream",       "mobj"),
+    "A_XScream":      ("PEnemy", "aXScream",      "mobj"),
+    "A_Pain":         ("PEnemy", "aPain",         "mobj"),
+    "A_Explode":      ("PEnemy", "aExplode",      "mobj"),
+    "A_BossDeath":    ("PEnemy", "aBossDeath",    "mobj"),
+
+    "A_Hoof":         ("PEnemy", "aHoof",         "mobj"),
+    "A_Metal":        ("PEnemy", "aMetal",        "mobj"),
+    "A_BabyMetal":    ("PEnemy", "aBabyMetal",    "mobj"),
+
+    "A_BrainAwake":   ("PEnemy", "aBrainAwake",   "mobj"),
+    "A_BrainPain":    ("PEnemy", "aBrainPain",    "mobj"),
+    "A_BrainScream":  ("PEnemy", "aBrainScream",  "mobj"),
+    "A_BrainExplode": ("PEnemy", "aBrainExplode", "mobj"),
+    "A_BrainDie":     ("PEnemy", "aBrainDie",     "mobj"),
+    "A_BrainSpit":    ("PEnemy", "aBrainSpit",    "mobj"),
+    "A_SpawnSound":   ("PEnemy", "aSpawnSound",   "mobj"),
+    "A_SpawnFly":     ("PEnemy", "aSpawnFly",     "mobj"),
+
+    "A_PlayerScream": ("PEnemy", "aPlayerScream", "mobj"),
+}
+
+
+def resolve_action(c_action: str) -> tuple[str, str]:
+    """Translate the C action token into (action_expr, actionPsp_expr).
+
+    Both are Java expressions returning the right field value (`null`
+    or `Class::method`) for the State 8-arg constructor.
+    """
+    tok = c_action.strip()
+    if tok in ("NULL", "0"):
+        return "null", "null"
+    binding = ACTION_BINDINGS.get(tok)
+    if binding is None:
+        raise ValueError(f"unknown action token {tok!r} — extend ACTION_BINDINGS")
+    cls, method, kind = binding
+    ref = f"{cls}::{method}"
+    if kind == "mobj":
+        return ref, "null"
+    return "null", ref
+
+
+def extract_states() -> list[tuple[str, str, str, str, str, str, str, str]]:
     body = slurp_array("states")
     states = []
     for m in STATE_FIELD_RE.finditer(body):
         sprite, frame, tics, action, nextstate, misc1, misc2 = m.groups()
+        action_expr, action_psp_expr = resolve_action(action)
         states.append((
             translate_token(sprite),
             translate_expr(frame),
             tics,                       # tics is a small signed int
-            "null",                     # action — deferred
+            action_expr,
+            action_psp_expr,
             translate_token(nextstate),
             translate_expr(misc1),
             translate_expr(misc2),
@@ -181,9 +301,11 @@ def emit():
     lines.append("// AUTOGENERATED by scripts/extract_info_data.py from")
     lines.append("// reference/linuxdoom-1.10/info.c. Do not edit by hand.")
     lines.append("//")
-    lines.append("// State.action is null for every entry: the A_* function")
-    lines.append("// pointers (p_pspr.c, p_enemy.c) aren't ported yet. Once")
-    lines.append("// they are, regenerate this file with action bindings.")
+    lines.append("// Each State row binds either `action` (Consumer<Mobj>, for")
+    lines.append("// monster-AI A_* in p_enemy.c / a few in p_pspr.c) or")
+    lines.append("// `actionPsp` (BiConsumer<Player, Pspdef>, for weapon A_*)")
+    lines.append("// — the C state_t.action union mapped onto two parallel")
+    lines.append("// typed fields (deviation 25). At most one is non-null.")
     lines.append("package doom.play;")
     lines.append("")
     lines.append("import doom.fixed.Fixed;")
@@ -210,10 +332,11 @@ def emit():
 
     lines.append("    static final State[] states = {")
     for i, st in enumerate(states):
-        sprite, frame, tics, action, nextstate, misc1, misc2 = st
+        sprite, frame, tics, action, action_psp, nextstate, misc1, misc2 = st
         comma = "," if i < len(states) - 1 else ""
-        lines.append(f"        new State({sprite}, {frame}, {tics}, {action}, "
-                     f"{nextstate}, {misc1}, {misc2}){comma}")
+        lines.append(
+            f"        new State({sprite}, {frame}, {tics}, {action}, "
+            f"{action_psp}, {nextstate}, {misc1}, {misc2}){comma}")
     lines.append("    };")
     lines.append("")
 
@@ -225,7 +348,7 @@ def emit():
     lines.append("    };")
     lines.append("}")
 
-    OUT.write_text("\n".join(lines) + "\n")
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {OUT}: {len(states)} states, {len(mobjs)} mobjinfo, {len(sprnames)} sprnames")
 
 
