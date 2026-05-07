@@ -69,7 +69,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | p_plats.c   | `doom.play.PPlats`    | Standard | Verified | 295 / ~. Full port: T_PlatRaise + EV_DoPlat + activeplats[MAXPLATS] slot table + EV_StopPlat + P_ActivateInStasis + add/remove. plat_e and plattype_e as int constants (same rationale as PCeilng's ceiling_e). raise{AndChange,ToNearestAndChange} reads Side.sector.floorpic. |
 | p_switch.c  | `doom.play.PSwitch`   | Standard | Verified | 655 / ~. Button/switch infrastructure (`alphSwitchList[]`, `P_InitSwitchList`, `P_StartButton`, `P_ChangeSwitchTexture`) plus the full `P_UseSpecialLine` line-special "use" dispatcher (50+ case labels routing to EV_VerticalDoor / EV_DoLockedDoor / EV_DoFloor / EV_DoCeiling / EV_DoDoor / EV_DoPlat / EV_BuildStairs / EV_DoDonut / EV_LightTurnOn / G_ExitLevel / G_SecretExitLevel). Preserves the C quirk `buttonlist->soundorg` (always slot-0 for switch SFX). |
 | p_telept.c  | `doom.play.PTelept`   | Standard | Verified | 132 / ~. Full port of EV_Teleport: thinker-chain walk for an MT_TELEPORTMAN in the tag-matched sector, P_TeleportMove relocation, source/destination MT_TFOG spawn with sfx_telept, 18-tic player reactiontime gate, and angle/momentum reset. The C `sector - sectors` pointer-diff becomes a linear `sectorIndex(Sector)` scan (same pattern as PFloor / PSight). |
-| p_saveg.c   | `doom.play.PSaveg`    | Standard | Pending |                                                |
+| p_saveg.c   | `doom.play.PSaveg`    | Standard | Verified | 586 / ~. Full save/load: P_ArchivePlayers / P_ArchiveWorld / P_ArchiveThinkers / P_ArchiveSpecials and the four Un* counterparts. New top-level orchestrators `save()` / `load(byte[])` wrap a ByteArrayOutputStream/InputStream + Data*Stream pair (replaces the C `byte* save_p` global with a per-call DataOutputStream / DataInputStream — see deviation 30). Field-level binary serialization replaces the C's struct-memcpy-with-pointer-swizzle pattern (which Java cannot reproduce). Thinker dispatch uses `instanceof` against the Java subclass instead of method-pointer comparisons. The known C bug (FireFlicker thinkers don't survive a save) is preserved. Stasis-paused ceilings/plats round-trip via a leading bool flag indicating whether `function.acp1` was non-null. |
 
 ## 5 — Sound
 
@@ -375,6 +375,35 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+30. `p_saveg.c` save format diverges from the C:
+    - The C `P_Archive*` family memcpy's full struct contents into
+      a contiguous byte buffer, then "swizzles" pointer fields
+      (state_t* → S_* index, sector_t* → sector index,
+      player_t* → 1-based seat). Java has no struct-as-bytes view,
+      so the port writes each field individually through
+      DataOutputStream / DataInputStream.
+    - Result: the on-disk save format does NOT match the C save
+      file layout. Saves from the original DOS Doom can't be loaded
+      by the Java port and vice-versa. This is acceptable because
+      (a) the C save format isn't a documented wire format, just a
+      memory snapshot dependent on struct padding / pointer width,
+      and (b) demo playback (`.lmp`) uses a different format
+      handled by g_game.c, so demo compatibility is unaffected.
+    - The C `byte* save_p` global becomes a per-call
+      DataOutputStream (`PSaveg.out`) or DataInputStream
+      (`PSaveg.in`); single-flight, mirroring the C invariant.
+    - The C `PADSAVEP()` 4-byte-alignment macro is dropped — Data*
+      Stream's per-field framing makes alignment irrelevant.
+    - Thinker dispatch uses `instanceof` against the Java subclass
+      (Mobj, Ceiling, VLDoor, FloorMove, Plat, LightFlash, Strobe,
+      Glow) instead of comparing `function.acp1` to the action
+      method-reference. Method references in Java don't have
+      reliable equality, and the type-discriminated dispatch is
+      the natural Java idiom.
+    - Known C omission preserved: FireFlicker thinkers (from
+      p_lights.c) have no archive case in C and so don't survive a
+      save. The Java port matches this verbatim.
 
 29. `p_enemy.c` A_VileTarget x/y typo:
     - The C calls `P_SpawnMobj(actor->target->x, actor->target->x,
