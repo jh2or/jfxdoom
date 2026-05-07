@@ -41,6 +41,34 @@ public final class RMain {
     public static int viewx; // fixed_t
     public static int viewy; // fixed_t
 
+    // r_main.c — eye z (player's view height above floor) and the
+    // facing angle. Both set by R_SetupFrame; read by r_bsp /
+    // r_segs / r_plane / r_things.
+    public static int viewz;     // fixed_t
+    public static int viewangle; // angle_t
+
+    // r_main.c — view-cone half-angle (FIELDOFVIEW edge). Set by
+    // R_InitTextureMapping at startup, fixed for the life of the
+    // process. r_bsp's R_AddLine / R_CheckBBox use it to clip
+    // off-screen segments before angle-to-x mapping.
+    public static int clipangle; // angle_t
+
+    // r_main.c — pixel-width of the rendered view (set by
+    // R_ExecuteSetViewSize). r_bsp.c R_ClearClipSegs seeds the
+    // initial clip list to ±viewwidth.
+    public static int viewwidth;
+
+    // r_main.c — per-frame subsector counter, bumped by R_Subsector.
+    // Diagnostic only; the C uses it for the IDDQD-era counters.
+    public static int sscount;
+
+    // r_main.c — angle-to-screen-x lookup table. Indexed by an
+    // angle_t (>>>ANGLETOFINESHIFT and rotated by ANG90), it returns
+    // the screen-x at which a ray at that angle from viewx/y projects.
+    // Built by R_InitTextureMapping; r_bsp reads it to map seg-end
+    // angles to pixel columns.
+    public static final int[] viewangletox = new int[Tables.FINEANGLES / 2];
+
     //
     // R_PointOnSide
     // Traverse BSP (sub) tree, check point against partition plane.
