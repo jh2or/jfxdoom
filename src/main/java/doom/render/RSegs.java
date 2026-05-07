@@ -11,6 +11,14 @@ package doom.render;
 
 public final class RSegs {
 
+    // r_segs.c — wall-render globals consumed by RMain's
+    // R_ScaleFromGlobalAngle. R_StoreWallRange (full body, deferred)
+    // sets these from the seg's normal angle and view-relative
+    // distance. Until the full port lands, both stay 0 — the wall
+    // pixels just don't paint.
+    public static int rwNormalangle; // angle_t
+    public static int rwDistance;    // fixed_t
+
     // r_segs.c — R_StoreWallRange (stub).
     // Called by r_bsp's R_ClipSolidWallSegment / R_ClipPassWallSegment
     // for each visible column range of the current `curline` seg.

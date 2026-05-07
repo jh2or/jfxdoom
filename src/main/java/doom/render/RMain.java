@@ -1,19 +1,45 @@
-// Port of linuxdoom-1.10/r_main.c — partial.
+// Port of linuxdoom-1.10/r_main.c — partial (full setup, no
+// per-frame R_RenderPlayerView body until r_segs / r_things port).
 //
-// Carries the BSP-descent functions (R_PointOnSide, R_PointOnSegSide,
-// R_PointInSubsector) that p_maputl/p_mobj/p_telept all need, plus
-// the global counter (validcount) and the renderer-side scalars
-// (centery, centerx, extralight) read by r_draw.
+// BSP-descent helpers (R_PointOnSide, R_PointOnSegSide,
+// R_PointInSubsector) used by p_maputl / p_mobj / p_telept, plus the
+// renderer scalars and tables built at level start (viewangletox /
+// xtoviewangle / yslope / distscale / scalelight / zlight) and the
+// per-frame setup (R_SetupFrame).
 //
-// The remaining ~870 lines (R_PointToAngle, R_PointToDist,
-// R_InitTables, R_InitTextureMapping, R_InitLightTables,
-// R_ExecuteSetViewSize, R_Init, R_SetupFrame, R_RenderPlayerView)
-// land alongside the renderer cluster (r_bsp/r_segs/r_things).
+// R_ScaleFromGlobalAngle is provided so r_segs's R_StoreWallRange
+// can scale wall textures once that ports.
+//
+// R_Init / R_RenderPlayerView orchestrate everything; both bodies
+// are full but skip the deferred R_DrawPlanes pixel-fill and
+// R_DrawMasked sprite-paint until those ports complete.
 package doom.render;
 
 import doom.fixed.Fixed;
+import doom.play.Player;
+import doom.play.PSetup;
+import doom.system.Doomdef;
 
 public final class RMain {
+
+    // r_main.c line 48 — view-cone half-angle. The view cone covers
+    // FIELDOFVIEW finescale units (= 90° at FIELDOFVIEW=2048,
+    // FINEANGLES=8192).
+    public static final int FIELDOFVIEW = 2048;
+
+    // r_main.c — light bands.
+    public static final int LIGHTLEVELS    = 16;
+    public static final int LIGHTSEGSHIFT  = 4;
+    public static final int MAXLIGHTSCALE  = 48;
+    public static final int LIGHTSCALESHIFT = 12;
+    public static final int MAXLIGHTZ      = 128;
+    public static final int LIGHTZSHIFT    = 20;
+
+    // r_main.c — colormap depth. matches r_data.c.
+    public static final int NUMCOLORMAPS = 32;
+
+    // r_main.c — per-distance light damping factor.
+    public static final int DISTMAP = 2;
 
     // r_main.c line 103 — vertical centre of the screen (viewheight / 2).
     // Set by R_ExecuteSetViewSize; read by R_DrawColumn/R_DrawFuzzColumn.
@@ -68,6 +94,76 @@ public final class RMain {
     // Built by R_InitTextureMapping; r_bsp reads it to map seg-end
     // angles to pixel columns.
     public static final int[] viewangletox = new int[Tables.FINEANGLES / 2];
+
+    // r_main.c — inverse of viewangletox. Indexed by screen-x, returns
+    // the smallest viewangle that maps back to that x. Built by
+    // R_InitTextureMapping.
+    public static final int[] xtoviewangle = new int[Doomdef.SCREENWIDTH + 1];
+
+    // r_main.c — fixed-point centre + projection. Set by
+    // R_ExecuteSetViewSize.
+    public static int centerxfrac; // fixed_t
+    public static int centeryfrac; // fixed_t
+    public static int projection;  // fixed_t
+
+    // r_main.c — view-vector cosine / sine, set by R_SetupFrame.
+    // Read by r_segs / r_things.
+    public static int viewcos; // fixed_t
+    public static int viewsin; // fixed_t
+
+    // r_main.c — current player whose view is rendering.
+    public static Player viewplayer;
+
+    // r_main.c — 0 = high detail, 1 = low detail. Set by
+    // R_ExecuteSetViewSize from setdetail.
+    public static int detailshift;
+
+    // r_main.c — frame counter, bumped by R_SetupFrame each tic.
+    // Diagnostic only.
+    public static int framecount;
+
+    // r_main.c — per-tic angle nudge, set by HOM debug overlay.
+    public static int viewangleoffset;
+
+    // r_main.c — light-table-of-tables. scalelight / scalelightfixed
+    // map (light-band, screen-row-distance) → (colormap byte[]).
+    // The C stores them as `lighttable_t**`; the Java port keeps the
+    // colormap base array (RData.colormaps) and stores the offset
+    // into it as an int per slot.
+    public static final int[][] scalelight     = new int[LIGHTLEVELS][MAXLIGHTSCALE];
+    public static final int[]   scalelightfixed = new int[MAXLIGHTSCALE];
+    public static final int[][] zlight          = new int[LIGHTLEVELS][MAXLIGHTZ];
+
+    // r_main.c — viewer's screen-tint colormap offset (>= 0 →
+    // forced to that map, e.g. invul/light-amp; -1 = use scalelight
+    // / zlight). The C stores `lighttable_t*` (NULL = -1); Java
+    // tracks the integer offset into RData.colormaps + a "active"
+    // flag.
+    public static int fixedcolormap; // offset into RData.colormaps, -1 = inactive
+
+    // r_main.c — current wall-light row pointer, set by r_segs's
+    // R_RenderSegLoop based on lighting band + scaledviewwidth.
+    // Stored as the int[] row from scalelight (or scalelightfixed).
+    public static int[] walllights;
+
+    // r_main.c — psprite scaling, computed by R_ExecuteSetViewSize.
+    public static int pspritescale;  // fixed_t
+    public static int pspriteiscale; // fixed_t
+
+    // r_main.c — per-row inverse scale and per-column distance scale.
+    // R_MapPlane uses them to compute texture xfrac/yfrac per row.
+    public static final int[] yslope    = new int[Doomdef.SCREENHEIGHT];
+    public static final int[] distscale = new int[Doomdef.SCREENWIDTH];
+
+    // r_main.c — per-column initial sprite-clip ceiling (= viewheight
+    // at default). Read by r_things during sprite drawing.
+    public static final short[] screenheightarray = new short[Doomdef.SCREENWIDTH];
+
+    // r_main.c — view-size queue. R_SetViewSize sets these so the
+    // change applies at the next R_ExecuteSetViewSize.
+    public static boolean setsizeneeded;
+    public static int     setblocks;
+    public static int     setdetail;
 
     //
     // R_PointOnSide
@@ -310,6 +406,362 @@ public final class RMain {
         }
 
         return doom.play.PSetup.subsectors[nodenum & ~Node.NF_SUBSECTOR];
+    }
+
+    //
+    // R_AddPointToBox
+    // Expand a given bbox so that it encloses a given point.
+    //
+    // r_main.c lines 138–152.
+    public static void rAddPointToBox(int x, int y, int[] box) {
+        if (x < box[doom.play.MBbox.BOXLEFT]) {
+            box[doom.play.MBbox.BOXLEFT] = x;
+        }
+        if (x > box[doom.play.MBbox.BOXRIGHT]) {
+            box[doom.play.MBbox.BOXRIGHT] = x;
+        }
+        if (y < box[doom.play.MBbox.BOXBOTTOM]) {
+            box[doom.play.MBbox.BOXBOTTOM] = y;
+        }
+        if (y > box[doom.play.MBbox.BOXTOP]) {
+            box[doom.play.MBbox.BOXTOP] = y;
+        }
+    }
+
+    //
+    // R_InitTables — no-op in the C (the inline computation is
+    // `#if 0`'d out and tables.c provides the actual data, loaded
+    // here via Tables.dat). Kept as an empty stub so R_Init's
+    // orchestration shape matches the C.
+    public static void rInitTables() {
+        // tables already loaded from Tables.dat at class-init time
+    }
+
+    //
+    // R_InitPointToAngle — also no-op (`#if 0` in the C).
+    public static void rInitPointToAngle() {
+        // tantoangle[] already loaded from Tables.dat
+    }
+
+    //
+    // R_InitTextureMapping
+    //
+    // r_main.c lines 544–603. Builds viewangletox[] and xtoviewangle[]
+    // tables that map between view angles and screen-x columns. Uses
+    // the per-class tan() lookup (finetangent) to do a flat-projection
+    // mapping with focal length set so FIELDOFVIEW spans the full
+    // screen width.
+    public static void rInitTextureMapping() {
+        int i;
+        int x;
+        int t;
+        int focallength;
+
+        // Calc focallength so FIELDOFVIEW angles covers SCREENWIDTH.
+        focallength = Fixed.div(centerxfrac,
+                Tables.finetangent[Tables.FINEANGLES / 4 + FIELDOFVIEW / 2]);
+
+        for (i = 0; i < Tables.FINEANGLES / 2; i++) {
+            if (Tables.finetangent[i] > Fixed.FRACUNIT * 2) {
+                t = -1;
+            } else if (Tables.finetangent[i] < -Fixed.FRACUNIT * 2) {
+                t = viewwidth + 1;
+            } else {
+                t = Fixed.mul(Tables.finetangent[i], focallength);
+                t = (centerxfrac - t + Fixed.FRACUNIT - 1) >> Fixed.FRACBITS;
+
+                if (t < -1) {
+                    t = -1;
+                } else if (t > viewwidth + 1) {
+                    t = viewwidth + 1;
+                }
+            }
+            viewangletox[i] = t;
+        }
+
+        // Scan viewangletox[] to generate xtoviewangle[]:
+        //  xtoviewangle will give the smallest view angle
+        //  that maps to x.
+        for (x = 0; x <= viewwidth; x++) {
+            i = 0;
+            while (viewangletox[i] > x) {
+                i++;
+            }
+            xtoviewangle[x] = (i << Tables.ANGLETOFINESHIFT) - Tables.ANG90;
+        }
+
+        // Take out the fencepost cases from viewangletox.
+        for (i = 0; i < Tables.FINEANGLES / 2; i++) {
+            // C: t = FixedMul(...) ; t = centerx - t; — computed but
+            // never read. The post-fixup just clamps the -1 / +1
+            // sentinels back to the valid range.
+            if (viewangletox[i] == -1) {
+                viewangletox[i] = 0;
+            } else if (viewangletox[i] == viewwidth + 1) {
+                viewangletox[i] = viewwidth;
+            }
+        }
+
+        clipangle = xtoviewangle[0];
+    }
+
+    //
+    // R_InitLightTables
+    // Initializes zlight[][]. scalelight[][] is built per view-size
+    // change in R_ExecuteSetViewSize.
+    //
+    // r_main.c lines 614–642.
+    public static void rInitLightTables() {
+        int i;
+        int j;
+        int level;
+        int startmap;
+        int scale;
+
+        for (i = 0; i < LIGHTLEVELS; i++) {
+            startmap = ((LIGHTLEVELS - 1 - i) * 2) * NUMCOLORMAPS / LIGHTLEVELS;
+            for (j = 0; j < MAXLIGHTZ; j++) {
+                scale = Fixed.div((Doomdef.SCREENWIDTH / 2) * Fixed.FRACUNIT,
+                        (j + 1) << LIGHTZSHIFT);
+                scale >>= LIGHTSCALESHIFT;
+                level = startmap - scale / DISTMAP;
+
+                if (level < 0) {
+                    level = 0;
+                }
+                if (level >= NUMCOLORMAPS) {
+                    level = NUMCOLORMAPS - 1;
+                }
+
+                // C: zlight[i][j] = colormaps + level*256.
+                // Java: store the byte-offset into RData.colormaps.
+                zlight[i][j] = level * 256;
+            }
+        }
+    }
+
+    //
+    // R_SetViewSize
+    // Queue a view-size change for the next refresh.
+    //
+    // r_main.c lines 657–665.
+    public static void rSetViewSize(int blocks, int detail) {
+        setsizeneeded = true;
+        setblocks = blocks;
+        setdetail = detail;
+    }
+
+    //
+    // R_ExecuteSetViewSize
+    //
+    // r_main.c lines 671–761. Big setup step: derives every per-
+    // view-size global from setblocks/setdetail. Calls
+    // R_InitTextureMapping and R_InitBuffer; rebuilds scalelight[][]
+    // (zlight[][] is independent of view size, built once in
+    // R_InitLightTables).
+    public static void rExecuteSetViewSize() {
+        int cosadj;
+        int dy;
+        int i;
+        int j;
+        int level;
+        int startmap;
+
+        setsizeneeded = false;
+
+        if (setblocks == 11) {
+            RDraw.scaledviewwidth = Doomdef.SCREENWIDTH;
+            RDraw.viewheight = Doomdef.SCREENHEIGHT;
+        } else {
+            RDraw.scaledviewwidth = setblocks * 32;
+            RDraw.viewheight = (setblocks * 168 / 10) & ~7;
+        }
+
+        detailshift = setdetail;
+        viewwidth = RDraw.scaledviewwidth >> detailshift;
+
+        centery = RDraw.viewheight / 2;
+        centerx = viewwidth / 2;
+        centerxfrac = centerx << Fixed.FRACBITS;
+        centeryfrac = centery << Fixed.FRACBITS;
+        projection = centerxfrac;
+
+        // colfunc / spanfunc dispatch: r_draw has both detailshift
+        // variants. The Java port doesn't use a function-pointer
+        // trampoline since the renderer hot path is not a
+        // bottleneck — RDraw.rDrawColumn / rDrawSpan are picked at
+        // call sites. Bind viewwidth + scaledviewwidth so RDraw can
+        // see them.
+        RDraw.viewwidth = viewwidth;
+
+        RDraw.rInitBuffer(RDraw.scaledviewwidth, RDraw.viewheight);
+
+        rInitTextureMapping();
+
+        // psprite scales
+        pspritescale = Fixed.FRACUNIT * viewwidth / Doomdef.SCREENWIDTH;
+        pspriteiscale = Fixed.FRACUNIT * Doomdef.SCREENWIDTH / viewwidth;
+
+        // thing clipping
+        for (i = 0; i < viewwidth; i++) {
+            screenheightarray[i] = (short) RDraw.viewheight;
+        }
+
+        // planes
+        for (i = 0; i < RDraw.viewheight; i++) {
+            dy = ((i - RDraw.viewheight / 2) << Fixed.FRACBITS) + Fixed.FRACUNIT / 2;
+            dy = Math.abs(dy);
+            yslope[i] = Fixed.div(
+                    (viewwidth << detailshift) / 2 * Fixed.FRACUNIT, dy);
+        }
+
+        for (i = 0; i < viewwidth; i++) {
+            cosadj = Math.abs(Tables.finecosine(
+                    xtoviewangle[i] >>> Tables.ANGLETOFINESHIFT));
+            distscale[i] = Fixed.div(Fixed.FRACUNIT, cosadj);
+        }
+
+        // Calculate the light levels to use for each level / scale
+        // combination.
+        for (i = 0; i < LIGHTLEVELS; i++) {
+            startmap = ((LIGHTLEVELS - 1 - i) * 2) * NUMCOLORMAPS / LIGHTLEVELS;
+            for (j = 0; j < MAXLIGHTSCALE; j++) {
+                level = startmap - j * Doomdef.SCREENWIDTH
+                        / (viewwidth << detailshift) / DISTMAP;
+
+                if (level < 0) {
+                    level = 0;
+                }
+                if (level >= NUMCOLORMAPS) {
+                    level = NUMCOLORMAPS - 1;
+                }
+
+                scalelight[i][j] = level * 256;
+            }
+        }
+    }
+
+    //
+    // R_Init
+    //
+    // r_main.c lines 773–794. The C orchestrator. The Java port
+    // skips R_InitData (already done from RData.rInitData when the
+    // WAD loads) and the printf chatter.
+    //
+    // detailLevel / screenblocks come from m_misc default settings;
+    // for now both default to "high detail, full-screen view".
+    public static void rInit() {
+        rInitPointToAngle();
+        rInitTables();
+        rSetViewSize(/*screenblocks=*/ 11, /*detailLevel=*/ 0);
+        rExecuteSetViewSize();
+        RPlane.rInitPlanes();
+        rInitLightTables();
+        RSky.rInitSkyMap();
+        RDraw.rInitTranslationTables();
+
+        framecount = 0;
+    }
+
+    //
+    // R_SetupFrame
+    //
+    // r_main.c lines 830–863. Per-tic eye-vector update. The C
+    // sets walllights = scalelightfixed when fixedcolormap is
+    // active; the Java port stores the colormap-offset table.
+    public static void rSetupFrame(Player player) {
+        int i;
+
+        viewplayer = player;
+        viewx = player.mo.x;
+        viewy = player.mo.y;
+        viewangle = player.mo.angle + viewangleoffset;
+        extralight = player.extralight;
+
+        viewz = player.viewz;
+
+        viewsin = Tables.finesine[(viewangle >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK];
+        viewcos = Tables.finecosine((viewangle >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK);
+
+        sscount = 0;
+
+        if (player.fixedcolormap != 0) {
+            // C: fixedcolormap = colormaps + player.fixedcolormap * 256.
+            fixedcolormap = player.fixedcolormap * 256;
+            walllights = scalelightfixed;
+            for (i = 0; i < MAXLIGHTSCALE; i++) {
+                scalelightfixed[i] = fixedcolormap;
+            }
+        } else {
+            fixedcolormap = -1;
+        }
+
+        framecount++;
+        validcount++;
+    }
+
+    //
+    // R_RenderPlayerView
+    //
+    // r_main.c lines 870–898.
+    public static void rRenderPlayerView(Player player) {
+        rSetupFrame(player);
+
+        // Clear buffers.
+        RBsp.rClearClipSegs();
+        RBsp.rClearDrawSegs();
+        RPlane.rClearPlanes();
+        RThings.rClearSprites();
+
+        // C: NetUpdate () — defer until d_net ports.
+
+        // The head node is the last node output.
+        RBsp.rRenderBSPNode(PSetup.numnodes - 1);
+
+        RPlane.rDrawPlanes();
+        RThings.rDrawMasked();
+    }
+
+    //
+    // R_ScaleFromGlobalAngle
+    // Returns the texture mapping scale for the current line at the
+    // given angle. rw_distance must be calculated first.
+    //
+    // r_main.c lines 453–502. r_segs is currently a stub, but
+    // R_ScaleFromGlobalAngle is referenced through the C as a public
+    // r_main entry — keep it on RMain so the eventual r_segs port
+    // can call into it without restructuring.
+    public static int rScaleFromGlobalAngle(int visangle) {
+        int scale;
+        int anglea;
+        int angleb;
+        int sinea;
+        int sineb;
+        int num;
+        int den;
+
+        anglea = Tables.ANG90 + (visangle - viewangle);
+        angleb = Tables.ANG90 + (visangle - RSegs.rwNormalangle);
+
+        // both sines are allways positive
+        sinea = Tables.finesine[(anglea >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK];
+        sineb = Tables.finesine[(angleb >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK];
+        num = Fixed.mul(projection, sineb) << detailshift;
+        den = Fixed.mul(RSegs.rwDistance, sinea);
+
+        if (den > num >> 16) {
+            scale = Fixed.div(num, den);
+
+            if (scale > 64 * Fixed.FRACUNIT) {
+                scale = 64 * Fixed.FRACUNIT;
+            } else if (scale < 256) {
+                scale = 256;
+            }
+        } else {
+            scale = 64 * Fixed.FRACUNIT;
+        }
+
+        return scale;
     }
 
     private RMain() {

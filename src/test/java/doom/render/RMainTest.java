@@ -1,6 +1,7 @@
 package doom.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -301,5 +302,170 @@ class RMainTest {
         // allow ~1/256 of the value.
         assertTrue(diff < ideal / 256,
                 "dist " + dist + " not near 5*FRACUNIT (off by " + diff + ")");
+    }
+
+    // ----- R_AddPointToBox -----
+
+    @Test
+    void addPointToBoxExpandsAllFour() {
+        int[] box = new int[4];
+        box[doom.play.MBbox.BOXLEFT]   = 0;
+        box[doom.play.MBbox.BOXRIGHT]  = 0;
+        box[doom.play.MBbox.BOXBOTTOM] = 0;
+        box[doom.play.MBbox.BOXTOP]    = 0;
+
+        RMain.rAddPointToBox(50, 80, box);
+        assertEquals(80, box[doom.play.MBbox.BOXTOP]);
+        assertEquals(50, box[doom.play.MBbox.BOXRIGHT]);
+
+        RMain.rAddPointToBox(-30, -10, box);
+        assertEquals(-30, box[doom.play.MBbox.BOXLEFT]);
+        assertEquals(-10, box[doom.play.MBbox.BOXBOTTOM]);
+    }
+
+    // ----- R_SetViewSize / R_ExecuteSetViewSize -----
+
+    // Setting a queued view-size triggers the size-needed flag.
+    @Test
+    void setViewSizeQueuesChange() {
+        RMain.setsizeneeded = false;
+        RMain.rSetViewSize(11, 0);
+        assertTrue(RMain.setsizeneeded);
+        assertEquals(11, RMain.setblocks);
+        assertEquals(0, RMain.setdetail);
+    }
+
+    // R_ExecuteSetViewSize at blocks=11/detail=0 yields full-screen
+    // high-detail values: viewwidth=320, viewheight=200, centerx=160,
+    // centerxfrac=160<<16, projection=centerxfrac.
+    @Test
+    void executeSetViewSizeFullScreenHighDetail() {
+        RMain.rSetViewSize(11, 0);
+        RMain.rExecuteSetViewSize();
+
+        assertFalse(RMain.setsizeneeded);
+        assertEquals(320, RMain.viewwidth);
+        assertEquals(200, RDraw.viewheight);
+        assertEquals(160, RMain.centerx);
+        assertEquals(100, RMain.centery);
+        assertEquals(160 << Fixed.FRACBITS, RMain.centerxfrac);
+        assertEquals(RMain.centerxfrac, RMain.projection);
+        assertEquals(0, RMain.detailshift);
+        // pspritescale = FRACUNIT * viewwidth / SCREENWIDTH = FRACUNIT.
+        assertEquals(Fixed.FRACUNIT, RMain.pspritescale);
+        // pspriteiscale matches.
+        assertEquals(Fixed.FRACUNIT, RMain.pspriteiscale);
+    }
+
+    // viewangletox[] gets populated and clipangle is sane.
+    @Test
+    void executeSetViewSizePopulatesViewangletox() {
+        RMain.rSetViewSize(11, 0);
+        RMain.rExecuteSetViewSize();
+
+        // viewangletox[0] should be near 0 (left edge).
+        // It's updated by the fence-post fixup at the end of
+        // R_InitTextureMapping.
+        assertTrue(RMain.viewangletox[0] >= 0,
+                "viewangletox[0] >= 0, was " + RMain.viewangletox[0]);
+        // clipangle is xtoviewangle[0], set positive (the angle of
+        // the leftmost screen column).
+        assertTrue(RMain.clipangle != 0);
+        // xtoviewangle[viewwidth] is the rightmost — should be the
+        // negation of clipangle's general magnitude.
+        assertEquals(-RMain.clipangle, RMain.xtoviewangle[RMain.viewwidth]);
+    }
+
+    // ----- R_InitLightTables -----
+
+    @Test
+    void initLightTablesPopulatesZlight() {
+        RMain.rInitLightTables();
+        // Spot-check: zlight[15][0] is the brightest band, near
+        // viewer; zlight[0][127] is the darkest band, far away.
+        // Both should be valid colormap offsets (0..(NUMCOLORMAPS-1)*256).
+        int max = (RMain.NUMCOLORMAPS - 1) * 256;
+        for (int i = 0; i < RMain.LIGHTLEVELS; i++) {
+            for (int j = 0; j < RMain.MAXLIGHTZ; j++) {
+                int off = RMain.zlight[i][j];
+                assertTrue(off >= 0 && off <= max,
+                        "zlight[" + i + "][" + j + "] = " + off + " out of range");
+                // Multiple of 256 (one colormap row).
+                assertEquals(0, off & 255);
+            }
+        }
+    }
+
+    // ----- R_SetupFrame -----
+
+    // The basic per-frame copy: view origin, angle, extralight all
+    // pulled from the player.
+    @Test
+    void setupFrameCopiesPlayerViewVector() {
+        doom.play.Mobj mo = new doom.play.Mobj();
+        mo.x = 100 * Fixed.FRACUNIT;
+        mo.y = 200 * Fixed.FRACUNIT;
+        mo.angle = doom.render.Tables.ANG90;
+
+        doom.play.Player p = new doom.play.Player();
+        p.mo = mo;
+        p.viewz = 41 * Fixed.FRACUNIT;
+        p.extralight = 2;
+        p.fixedcolormap = 0;
+
+        int beforeFrame = RMain.framecount;
+        int beforeValid = RMain.validcount;
+        RMain.viewangleoffset = 0;
+
+        RMain.rSetupFrame(p);
+
+        assertSame(p, RMain.viewplayer);
+        assertEquals(100 * Fixed.FRACUNIT, RMain.viewx);
+        assertEquals(200 * Fixed.FRACUNIT, RMain.viewy);
+        assertEquals(doom.render.Tables.ANG90, RMain.viewangle);
+        assertEquals(41 * Fixed.FRACUNIT, RMain.viewz);
+        assertEquals(2, RMain.extralight);
+        assertEquals(0, RMain.sscount);
+        assertEquals(beforeFrame + 1, RMain.framecount);
+        assertEquals(beforeValid + 1, RMain.validcount);
+        // fixedcolormap inactive (-1) when player.fixedcolormap == 0.
+        assertEquals(-1, RMain.fixedcolormap);
+    }
+
+    @Test
+    void setupFrameWithFixedColormapWritesScalelightfixed() {
+        doom.play.Mobj mo = new doom.play.Mobj();
+        mo.x = 0; mo.y = 0; mo.angle = 0;
+
+        doom.play.Player p = new doom.play.Player();
+        p.mo = mo;
+        p.viewz = 0;
+        p.fixedcolormap = 1;  // light-amp visor
+
+        RMain.rSetupFrame(p);
+
+        // 1 * 256 == byte-offset into RData.colormaps for row 1.
+        assertEquals(256, RMain.fixedcolormap);
+        // walllights repointed to scalelightfixed.
+        assertSame(RMain.scalelightfixed, RMain.walllights);
+        // Every scalelightfixed slot now equals fixedcolormap.
+        for (int i = 0; i < RMain.MAXLIGHTSCALE; i++) {
+            assertEquals(256, RMain.scalelightfixed[i]);
+        }
+    }
+
+    // ----- Light-band constants match C -----
+
+    @Test
+    void lightConstantsMatchCSource() {
+        assertEquals(16, RMain.LIGHTLEVELS);
+        assertEquals(4, RMain.LIGHTSEGSHIFT);
+        assertEquals(48, RMain.MAXLIGHTSCALE);
+        assertEquals(12, RMain.LIGHTSCALESHIFT);
+        assertEquals(128, RMain.MAXLIGHTZ);
+        assertEquals(20, RMain.LIGHTZSHIFT);
+        assertEquals(32, RMain.NUMCOLORMAPS);
+        assertEquals(2048, RMain.FIELDOFVIEW);
+        assertEquals(2, RMain.DISTMAP);
     }
 }
