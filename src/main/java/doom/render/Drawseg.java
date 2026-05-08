@@ -8,6 +8,12 @@ package doom.render;
 
 public final class Drawseg {
 
+    // r_segs.c — silhouette codes packed into Drawseg.silhouette.
+    public static final int SIL_NONE   = 0;
+    public static final int SIL_BOTTOM = 1;
+    public static final int SIL_TOP    = 2;
+    public static final int SIL_BOTH   = 3;
+
     public Seg curline;
     public int x1;
     public int x2;

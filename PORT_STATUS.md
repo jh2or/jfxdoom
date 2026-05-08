@@ -42,7 +42,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | r_main.c    | `doom.render.RMain`        | Hard | Partial | 898 / ~. BSP descent (`R_PointOnSide` + `R_PointOnSegSide` + `R_PointInSubsector`) + angle/distance helpers (`R_PointToAngle`, `R_PointToAngle2`, `R_PointToDist`) + the per-frame setup chain: `R_AddPointToBox`, `R_InitTables` (no-op like the C, table data preloaded from Tables.dat), `R_InitPointToAngle` (no-op), `R_InitTextureMapping` (builds viewangletox / xtoviewangle / clipangle), `R_InitLightTables` (builds zlight[][] from RData.colormaps), `R_SetViewSize` / `R_ExecuteSetViewSize` (full body — viewwidth / viewheight / centerxfrac / projection / yslope / distscale / scalelight / pspritescale, calls RDraw.rInitBuffer + R_InitTextureMapping), `R_Init` (orchestrator, skips printf chatter), `R_SetupFrame` (per-tic player-vector copy + fixedcolormap → scalelightfixed wiring), `R_RenderPlayerView` (clears RBsp/RPlane/RThings buffers, walks BSP, draws planes / masked — pixel-write side currently no-ops via the RPlane/RSegs/RThings stubs), `R_ScaleFromGlobalAngle` (used by r_segs once it ports). RMain stays Partial only because the colfunc/spanfunc dispatch table the C uses for the detail-shift switch is inlined into RDraw call sites (Java doesn't need the function-pointer trampoline). Light constants + FIELDOFVIEW / DISTMAP land here. RSegs gains `rwNormalangle` / `rwDistance` stubs so R_ScaleFromGlobalAngle compiles cleanly. |
 | r_bsp.c     | `doom.render.RBsp`         | Hard | Verified | 580 / ~. Full port: BSP traversal (R_RenderBSPNode + R_Subsector), seg clipping (R_AddLine + R_ClipSolidWallSegment + R_ClipPassWallSegment), bbox visibility (R_CheckBBox + checkcoord LUT), and the per-frame clip-list / drawseg list reset (R_ClearDrawSegs + R_ClearClipSegs). The C `goto clipsolid:` / `goto clippass:` in R_AddLine and `goto crunch:` in R_ClipSolidWallSegment translate as labelled boolean toggles per CLAUDE.md §2. New `Drawseg` (drawseg_t) struct in render. New cliprange / drawseg arrays on RBsp. Angle-comparison wraparound uses `Integer.compareUnsigned` (same pattern as PUser / PEnemy). |
 | r_plane.c   | `doom.render.RPlane`       | Hard | Verified | 453 / ~. Full port: visplane allocation (Visplane / visplanes[] / R_FindPlane / R_CheckPlane), per-frame setup (R_ClearPlanes — basexscale/baseyscale derived from viewangle), span dispatch (R_MakeSpans), per-row span generation (R_MapPlane: cachedheight/distance/xstep/ystep with row caching, ds globals populated from yslope/distscale/xtoviewangle/zlight, dispatches to RDraw.rDrawSpan/rDrawSpanLow), and end-of-frame paint (R_DrawPlanes: walks visplanes, dispatches sky columns through RData.rGetColumn + RDraw.rDrawColumn or regular flats through W_CacheLumpNum + R_MakeSpans). The detail-shift dispatch (rDrawColumn vs rDrawColumnLow) is inlined at call sites instead of using a function-pointer trampoline (deviation 31). Z_ChangeTag(PU_CACHE) demote calls dropped — Java GC handles cache release once dsSource is overwritten on the next frame (same rationale as deviation 7). |
-| r_segs.c    | `doom.render.RSegs`        | Hard | Partial | Stub: R_StoreWallRange appends a no-fill drawseg so the BSP walk produces a populated drawsegs[] list for sprite clipping; columns paint nothing. Full column-by-column wall renderer lands later. Pointer-arithmetic heavy. |
+| r_segs.c    | `doom.render.RSegs`        | Hard | Verified | 746 / ~. Full port: R_StoreWallRange (per-seg setup — rwDistance via R_PointToDist + perpendicular projection, scale at both ends via R_ScaleFromGlobalAngle, silhouette + sprite-clip array assignment, midtexture pegging, light-band pick from frontsector.lightlevel + extralight + horizontal/vertical bias, masked-midtexture column-buffer slice into RPlane.openings, marker visplane carve via R_CheckPlane, world-edge stepping via centeryfrac>>4 fraction, sprite-clip rows memcpy'd from ceilingclip/floorclip into openings) + R_RenderSegLoop (per-column dispatch — calculates yl/yh from topfrac/bottomfrac, marks floor/ceiling visplane spans, computes texture column from rwCenterangle + xtoviewangle, picks light from rwScale, dispatches single/two-sided wall tiers through RDraw.rDrawColumn or rDrawColumnLow, saves masked-mid texturecolumn for later) + R_RenderMaskedSegRange (called by r_things' masked pass when ported — picks light, walks columns, dispatches RThings.rDrawMaskedColumn). The pointer-arithmetic-heavy `lastopening - rw_x` aliasing pattern translates as `(short[] base, int offset)` pairs on Drawseg per CLAUDE.md §5 (deviation 32). The C `goto` not needed; control flow is straight. RThings stub gains `negonearray`, `mfloorclip` / `mceilingclip` (clip-row references the masked path writes into), `spryscale` / `sprtopscreen`, and `rDrawMaskedColumn` no-op. Drawseg gains `SIL_NONE/SIL_BOTTOM/SIL_TOP/SIL_BOTH` constants. |
 | r_things.c  | `doom.render.RThings`      | Hard | Partial | Stub: R_AddSprites walks sec.thinglist via snext (no-op per mobj), R_DrawMasked / R_ClearSprites no-op. Vissprite allocation + back-to-front draw + drawseg-clip occlusion land later. Pointer-arithmetic heavy. |
 | r_draw.c    | `doom.render.RDraw`        | Hard | Verified | Column/span blitters. `(byte[],int)` pointer pairs replace `byte*` globals. See deviation 8. |
 | r_sky.c     | `doom.render.RSky`         | Standard | Verified | 63 / ~. Three globals + `R_InitSkyMap`. Commented-out `R_FlatNumForName` call in C preserved verbatim. |
@@ -375,6 +375,28 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+32. r_segs.c `lastopening` aliasing pattern:
+    - The C uses `lastopening` as a moving `short*` into the shared
+      `openings[MAXOPENINGS]` buffer. R_StoreWallRange carves slices
+      out of it for three things per drawseg: sprtopclip (top
+      sprite-clip row), sprbottomclip (bottom sprite-clip row), and
+      maskedtexturecol (per-column masked-texture x-offset). Each
+      slice is anchored with a base-offset trick — e.g.
+      `ds->maskedtexturecol = lastopening - rw_x;` so that
+      `maskedtexturecol[col]` resolves to
+      `openings[lastopening_at_alloc + (col - rw_x)]`. Reads /
+      writes index by absolute screen-x; the negative bias makes
+      the column ranges convenient.
+    - Java has no pointer arithmetic. Each slice on Drawseg is a
+      `(short[] base, int offset)` pair: `sprtopclip` /
+      `sprtopclipOffset`, `sprbottomclip` / `sprbottomclipOffset`,
+      `maskedtexturecol` / `maskedtexturecolOffset`. Reads do
+      `base[offset + col]`. The same backing array (RPlane.openings)
+      is shared; only the bookkeeping changes.
+    - `memcpy` of clip-row slices becomes `System.arraycopy` of
+      shorts (2 bytes per short in the C → 1 short[] entry in Java,
+      same width).
 
 31. Renderer `colfunc` / `spanfunc` function-pointer dispatch:
     - The C `r_main.c` keeps function pointers (`colfunc`,

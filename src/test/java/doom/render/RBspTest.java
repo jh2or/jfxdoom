@@ -22,6 +22,7 @@ class RBspTest {
         RMain.viewwidth = 320;
         RMain.clipangle = Tables.ANG90 / 2; // ~45° default fov
         RMain.sscount = 0;
+        RMain.fixedcolormap = -1;
 
         RBsp.rClearDrawSegs();
         RBsp.rClearClipSegs();
@@ -33,6 +34,80 @@ class RBspTest {
         for (int i = 0; i < RMain.viewangletox.length; i++) {
             RMain.viewangletox[i] = i;
         }
+    }
+
+    // Wire the minimum seg + sector state for tests that exercise
+    // RBsp.rClipSolidWallSegment / rClipPassWallSegment, which now
+    // dispatch into the real RSegs.rStoreWallRange. Vertices are
+    // offset from the origin so RMain.rPointToDist's Fixed.div(dx, dy)
+    // doesn't divide by zero (the C has the same invariant — segs
+    // never coincide with the viewer in real geometry). Floor/ceiling
+    // textures are out of bounds for RData (which isn't initialised
+    // in this unit test); the no-texture path through R_StoreWallRange
+    // is exercised by leaving midtexture==0 on the sidedef and
+    // making the seg single-sided so segtextured stays false.
+    private void setupCurline() {
+        Sector front = new Sector();
+        front.floorheight = 0;
+        front.ceilingheight = 200 * doom.fixed.Fixed.FRACUNIT;
+        front.floorpic = 0;
+        front.ceilingpic = 0;
+        front.lightlevel = 192;
+        Vertex v1 = new Vertex();
+        v1.x = 100 * doom.fixed.Fixed.FRACUNIT;
+        v1.y = 50 * doom.fixed.Fixed.FRACUNIT;
+        Vertex v2 = new Vertex();
+        v2.x = 200 * doom.fixed.Fixed.FRACUNIT;
+        v2.y = 50 * doom.fixed.Fixed.FRACUNIT;
+        Side sd = new Side();
+        sd.midtexture = 0;
+        sd.toptexture = 0;
+        sd.bottomtexture = 0;
+        sd.textureoffset = 0;
+        sd.rowoffset = 0;
+        sd.sector = front;
+        Line ld = new Line();
+        ld.flags = 0;
+        ld.special = 0;
+        ld.tag = 0;
+        Seg seg = new Seg();
+        seg.v1 = v1;
+        seg.v2 = v2;
+        seg.angle = 0;
+        seg.offset = 0;
+        seg.linedef = ld;
+        seg.sidedef = sd;
+        seg.frontsector = front;
+        seg.backsector = null;
+        RBsp.curline = seg;
+        RBsp.frontsector = front;
+        RBsp.backsector = null;
+
+        // Minimal RData state. R_StoreWallRange's single-sided
+        // branch reads texturetranslation[sidedef.midtexture] (=0)
+        // and textureheight[idx] when ML_DONTPEGBOTTOM is set;
+        // sidedef has no texture flags so the texture-pixel path
+        // (segtextured=false) skips the height read.
+        if (RData.texturetranslation == null) {
+            RData.texturetranslation = new int[1];
+            RData.textureheight = new int[1];
+        }
+
+        // R_StoreWallRange writes ceilingplane / floorplane via
+        // markceiling/markfloor — visplane allocator must be ready.
+        // Set viewz between front floor and ceiling so both planes
+        // are visible.
+        RMain.viewz = 41 * doom.fixed.Fixed.FRACUNIT;
+        RPlane.lastvisplane = 0;
+        RPlane.lastopening = 0;
+        for (int i = 0; i < RPlane.floorclip.length; i++) {
+            RPlane.floorclip[i] = (short) RDraw.viewheight;
+            RPlane.ceilingclip[i] = -1;
+        }
+        RBsp.floorplane = RPlane.rFindPlane(0,
+                front.floorpic, front.lightlevel);
+        RBsp.ceilingplane = RPlane.rFindPlane(0,
+                front.ceilingpic, front.lightlevel);
     }
 
     // R_ClearDrawSegs resets the next-free index.
@@ -58,6 +133,7 @@ class RBspTest {
     // entry between the sentinels and bumps the drawseg list.
     @Test
     void clipSolidWallSegmentInsertsNewClippost() {
+        setupCurline();
         RBsp.rClipSolidWallSegment(100, 200);
         // newend bumped to 3 (sentinels at 0 and 2; new clip at 1).
         assertEquals(3, RBsp.newend);
@@ -70,6 +146,7 @@ class RBspTest {
     // A second call adjacent to the first merges into one range.
     @Test
     void clipSolidWallSegmentMergesAdjacentRanges() {
+        setupCurline();
         RBsp.rClipSolidWallSegment(100, 200);
         RBsp.rClipSolidWallSegment(201, 250);
         // Both ranges merge into solidsegs[1].
@@ -83,6 +160,7 @@ class RBspTest {
     // nothing (no new drawseg).
     @Test
     void clipSolidWallSegmentContainedDoesNothing() {
+        setupCurline();
         RBsp.rClipSolidWallSegment(0, 300);
         int dsBefore = RBsp.dsP;
         RBsp.rClipSolidWallSegment(50, 100);
@@ -93,6 +171,7 @@ class RBspTest {
     // claim the column range (clip list unchanged).
     @Test
     void clipPassWallSegmentDoesNotClaimRange() {
+        setupCurline();
         RBsp.rClipPassWallSegment(100, 200);
         // Clip list unchanged from clear (still just sentinels).
         assertEquals(2, RBsp.newend);
