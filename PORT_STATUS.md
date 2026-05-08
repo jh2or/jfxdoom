@@ -76,7 +76,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file      | Java class           | Tier     | Status  | Notes                              |
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
 | s_sound.c   | `doom.sound.SSound`  | Standard | Partial | Stub: `sStartSound(Object, int)` as no-op so plane-movers (PCeilng, PDoors, PPlats, ...) can call it. Full mixer/attenuation/channel bookkeeping lands with i_sound. |
-| i_sound.c   | `doom.sound.ISound`  | Hard     | Pending | JavaFX audio backend, do last.     |
+| i_sound.c   | `doom.sound.ISound`  | Hard     | Partial | Stub: I_InitSound / I_ShutdownSound / I_InitMusic / I_ShutdownMusic / I_UpdateSound / I_SubmitSound no-op. Full body (WAD lump → PCM, MUS → MIDI, 8-channel mixer) lands with the JavaFX audio backend (javax.sound.sampled.SourceDataLine + javax.sound.midi.Sequencer). |
 | sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 17). |
 
 ## 6 — Game, menu, HUD, finale
@@ -108,9 +108,10 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file        | Java class               | Tier | Status  | Notes                                              |
 | ------------- | ------------------------ | ---- | ------- | -------------------------------------------------- |
 | i_main.c      | —                        | —    | n/a     | Replaced by `doom.ui.JfxDoomApp` JavaFX entry.     |
-| i_system.c    | `doom.system.ISystem`    | Standard | Pending |                                                |
-| i_video.c     | `doom.ui.IVideo`         | Hard | Pending | JavaFX `PixelBuffer<IntBuffer>` + `Canvas`.        |
+| i_system.c    | `doom.system.ISystem`    | Standard | Verified | 183 / ~. Full port: I_Error (typed DoomError throw), I_Tactile (no-op, matches Linux build), I_BaseTiccmd, I_GetHeapSize / I_ZoneBase (Java port has no slab — returns 0-length byte[]; ZZone uses JVM heap), I_GetTime (System.nanoTime()-based, returns 1/70th-second tics since first call), I_Init / I_Quit (dispatches into ISound / DNet / IVideo stubs — full bodies land with the JavaFX shell), I_WaitVBL (Thread.sleep), I_BeginRead / I_EndRead (no-ops, match Linux build), I_AllocLow (zero-init byte[]). |
+| i_video.c     | `doom.ui.IVideo`         | Hard | Partial | Stubs for the JavaFX shell hooks: I_InitGraphics / I_ShutdownGraphics / I_StartFrame / I_StartTic / I_UpdateNoBlit / I_FinishUpdate / I_SetPalette. I_ReadScreen (used by the screen-wipe path) is full. The actual JavaFX shell (PixelBuffer<IntBuffer> + Canvas + Scene event hooks) replaces these stubs in place when JfxDoomApp ports. |
 | i_net.c       | `doom.system.INet`       | Standard | Pending | Single-player stub first.                          |
+| d_net.c       | `doom.system.DNet`       | Standard | Partial | Single-player stub: D_QuitNetGame / NetUpdate / TryRunTics no-op. Full ticcmd-exchange protocol lands when multiplayer comes online. |
 
 ## Deviations from C worth flagging
 
