@@ -48,6 +48,11 @@ public class Mobj extends Thinker {
     // Orientation (p_mobj.h line 222).
     public int angle; // angle_t
 
+    // p_pspr.h lines 50–51 — frame-bit flags packed into mobj.frame /
+    // pspdef.state.frame.
+    public static final int FF_FULLBRIGHT = 0x8000;
+    public static final int FF_FRAMEMASK  = 0x7fff;
+
     // p_mobj.h lines 223–224 — current sprite + frame for the
     // renderer. P_SetMobjState writes these from the state row.
     public int sprite; // spritenum_t
