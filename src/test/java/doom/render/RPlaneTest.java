@@ -171,4 +171,128 @@ class RPlaneTest {
             // expected
         }
     }
+
+    // ---- R_MapPlane ----
+
+    // Sets ds globals from row + plane height + view-vector inputs.
+    @Test
+    void mapPlanePopulatesDsGlobals() {
+        // Need r_main scaffolding — viewangle/viewx/viewy/centerxfrac
+        // /xtoviewangle/yslope/distscale/zlight/fixedcolormap.
+        RMain.rSetViewSize(11, 0);
+        RMain.rExecuteSetViewSize();
+        RMain.rInitLightTables();
+
+        // Per-frame view vector.
+        RMain.viewx = 0;
+        RMain.viewy = 0;
+        RMain.viewangle = 0;
+        RMain.fixedcolormap = -1; // use light tables
+
+        // basexscale / baseyscale — derived from viewangle in
+        // R_ClearPlanes; ensure the cache reset.
+        RPlane.lastvisplane = 0;
+        RPlane.rClearPlanes();
+
+        // Pick a flat plane 100 fixed-units below the viewer.
+        RPlane.planeheight = 100 * Fixed.FRACUNIT;
+        // Wire planezlight to a non-null light row.
+        RPlane.planezlight = RMain.zlight[8];
+
+        // rDrawSpan reads dsSource (the 64×64 flat) and
+        // dsColormap; provide both so the dispatch doesn't AIOOBE.
+        // colormaps must have at least 33 rows × 256 entries.
+        if (RData.colormaps == null) {
+            RData.colormaps = new byte[34 * 256];
+        }
+        RDraw.dsSource = new byte[64 * 64];
+        RDraw.dsSourceOfs = 0;
+        // VVideo.screens[0] must exist for rDrawSpan to write into.
+        if (doom.ui.VVideo.screens[0] == null) {
+            doom.ui.VVideo.screens[0] =
+                    new byte[doom.system.Doomdef.SCREENWIDTH
+                           * doom.system.Doomdef.SCREENHEIGHT];
+        }
+
+        // Map a 1-pixel span on the screen middle.
+        int y = RDraw.viewheight / 2 + 10;  // below horizon
+        int x1 = RMain.viewwidth / 2;
+        int x2 = x1;
+        RPlane.rMapPlane(y, x1, x2);
+
+        // ds globals updated.
+        assertEquals(y, RDraw.dsY);
+        assertEquals(x1, RDraw.dsX1);
+        assertEquals(x2, RDraw.dsX2);
+        // dsColormap pointing at RData.colormaps with offset from
+        // planezlight.
+        assertSame(RData.colormaps, RDraw.dsColormap);
+    }
+
+    // ---- R_DrawPlanes (integration smoke test against E1M1) ----
+
+    @Test
+    void drawPlanesSmokesAgainstE1M1() throws java.io.IOException {
+        java.nio.file.Path wad = null;
+        for (String c : new String[] {
+                "reference-wads/DOOM.WAD",
+                "reference-wads/doom.wad",
+                "reference-wads/doom1.wad",
+                "reference-wads/DOOM1.WAD" }) {
+            if (java.nio.file.Files.exists(java.nio.file.Paths.get(c))) {
+                wad = java.nio.file.Paths.get(c).toAbsolutePath();
+                break;
+            }
+        }
+        if (wad == null) {
+            return;     // no WAD — skip silently
+        }
+
+        doom.wad.ZZone.zInit();
+        doom.wad.WWad.resetForTests();
+        doom.render.RData.resetForTests();
+        doom.wad.WWad.wInitFile(wad.toString());
+        doom.render.RData.rInitData();
+
+        // Framebuffer the spans paint into.
+        doom.ui.VVideo.vInit();
+
+        // Minimal renderer setup.
+        RMain.rSetViewSize(11, 0);
+        RMain.rExecuteSetViewSize();
+        RMain.rInitLightTables();
+        RSky.rInitSkyMap();
+
+        // Per-frame state.
+        RMain.viewx = 0;
+        RMain.viewy = 0;
+        RMain.viewz = 41 * Fixed.FRACUNIT;
+        RMain.viewangle = 0;
+        RMain.fixedcolormap = -1;
+        RMain.extralight = 0;
+
+        RPlane.rClearPlanes();
+        RBsp.rClearDrawSegs();
+
+        // Allocate one sky visplane spanning a few columns. Sky is
+        // simpler than a regular flat — uses dcSource (column ref
+        // from R_GetColumn on the sky texture) which is loaded by
+        // rInitData. A single column-row gets dispatched per column.
+        RPlane.Visplane vp = RPlane.rFindPlane(
+                /*height=*/ 0,
+                /*picnum=*/ RSky.skyflatnum,
+                /*lightlevel=*/ 0);
+        vp.minx = 100;
+        vp.maxx = 110;
+        for (int x = vp.minx; x <= vp.maxx; x++) {
+            // Provide a single-row span at row viewheight/2 + 5 so
+            // the column-walk has something to dispatch.
+            vp.top[x + 1]    = (byte) (RDraw.viewheight / 2 + 5);
+            vp.bottom[x + 1] = (byte) (RDraw.viewheight / 2 + 5);
+        }
+
+        // Should not throw — walks the visplane and paints a few
+        // sky rows.
+        RPlane.rDrawPlanes();
+    }
 }

@@ -1,34 +1,19 @@
-// Port of linuxdoom-1.10/r_plane.c — partial.
+// Port of linuxdoom-1.10/r_plane.c — full.
 //
 // Floor / ceiling rendering. Drawn as horizontal "spans" — one
 // per scan-line per visible flat — that step the texture-space
 // xfrac/yfrac across the row. Visplanes are per-frame allocations
 // (sliced from a fixed pool) that group adjacent screen columns
 // at the same height/picnum/lightlevel.
-//
-// Ported in this pass:
-//   - Visplane (visplane_t)
-//   - visplanes[] pool + lastvisplane / floorplane / ceilingplane
-//   - openings[] pool + lastopening (used by r_segs / r_things)
-//   - floorclip / ceilingclip (per-column upper / lower clip)
-//   - R_FindPlane  (visplane allocation + sky-flat collapse)
-//   - R_CheckPlane (visplane split or extend)
-//   - R_ClearPlanes (per-frame state reset)
-//   - R_MakeSpans  (column-walk → span dispatch)
-//
-// Deferred until r_main R_InitTextureMapping / R_InitLightTables
-// land:
-//   - R_MapPlane (needs xtoviewangle / yslope / distscale / zlight /
-//     fixedcolormap)
-//   - R_DrawPlanes' rendering body (needs xtoviewangle / colormaps[]
-//     / R_GetColumn / pspriteiscale / detailshift / centerxfrac)
-//
-// Until then the visplane allocation produces correct lists; only
-// the actual pixel writes are no-ops.
 package doom.render;
 
+import doom.fixed.Fixed;
 import doom.system.Doomdef;
 import doom.system.ISystem;
+import doom.wad.WWad;
+import doom.wad.ZZone;
+
+import java.io.IOException;
 
 public final class RPlane {
 
@@ -95,6 +80,11 @@ public final class RPlane {
     public static int basexscale;        // fixed_t
     public static int baseyscale;        // fixed_t
 
+    // r_plane.c line 82 — current plane's per-distance-band light row.
+    // Set by R_DrawPlanes before each visplane span sweep; read by
+    // R_MapPlane. Holds the light-band offset into RData.colormaps.
+    public static int[] planezlight;
+
     private RPlane() {
     }
 
@@ -106,15 +96,67 @@ public final class RPlane {
     }
 
     //
-    // R_MapPlane (stub).
+    // R_MapPlane
     //
-    // p_plane.c lines 121–178. Per-row span dispatcher: cache
+    // r_plane.c lines 121–178. Per-row span dispatcher: cache
     // distance / xstep / ystep for this y, derive xfrac/yfrac from
     // viewangle + xtoviewangle[x1], pick the colormap, hand off to
-    // RDraw.spanfunc. Implementation deferred until r_main provides
-    // xtoviewangle / yslope / distscale / zlight / fixedcolormap.
+    // RDraw.rDrawSpan.
     public static void rMapPlane(int y, int x1, int x2) {
-        // Intentionally empty until r_main scaffolding lands.
+        int angle;
+        int distance;
+        int length;
+        int index;
+
+        if (x2 < x1
+                || x1 < 0
+                || x2 >= RMain.viewwidth
+                || y > RDraw.viewheight) {
+            ISystem.iError("R_MapPlane: " + x1 + ", " + x2 + " at " + y);
+        }
+
+        if (planeheight != cachedheight[y]) {
+            cachedheight[y] = planeheight;
+            distance = cacheddistance[y] = Fixed.mul(planeheight, RMain.yslope[y]);
+            RDraw.dsXstep = cachedxstep[y] = Fixed.mul(distance, basexscale);
+            RDraw.dsYstep = cachedystep[y] = Fixed.mul(distance, baseyscale);
+        } else {
+            distance = cacheddistance[y];
+            RDraw.dsXstep = cachedxstep[y];
+            RDraw.dsYstep = cachedystep[y];
+        }
+
+        length = Fixed.mul(distance, RMain.distscale[x1]);
+        angle = ((RMain.viewangle + RMain.xtoviewangle[x1])
+                >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK;
+        RDraw.dsXfrac =  RMain.viewx + Fixed.mul(Tables.finecosine(angle), length);
+        RDraw.dsYfrac = -RMain.viewy - Fixed.mul(Tables.finesine[angle],   length);
+
+        if (RMain.fixedcolormap >= 0) {
+            RDraw.dsColormap = RData.colormaps;
+            RDraw.dsColormapOfs = RMain.fixedcolormap;
+        } else {
+            index = distance >>> RMain.LIGHTZSHIFT;
+
+            if (index >= RMain.MAXLIGHTZ) {
+                index = RMain.MAXLIGHTZ - 1;
+            }
+
+            RDraw.dsColormap = RData.colormaps;
+            RDraw.dsColormapOfs = planezlight[index];
+        }
+
+        RDraw.dsY = y;
+        RDraw.dsX1 = x1;
+        RDraw.dsX2 = x2;
+
+        // high or low detail — Java port inlines the dispatch
+        // (deviation: no spanfunc trampoline).
+        if (RMain.detailshift == 0) {
+            RDraw.rDrawSpan();
+        } else {
+            RDraw.rDrawSpanLow();
+        }
     }
 
     //
@@ -138,13 +180,13 @@ public final class RPlane {
             cachedheight[i] = 0;
         }
 
-        // basexscale / baseyscale derivation needs centerxfrac (set
-        // by R_InitTextureMapping). Until r_main lands, leave the
-        // scales at zero — R_MapPlane is stubbed too, so they're
-        // unused.
-        // C: angle = (viewangle - ANG90) >> ANGLETOFINESHIFT;
-        //    basexscale =  FixedDiv(finecosine[angle], centerxfrac);
-        //    baseyscale = -FixedDiv(finesine[angle],   centerxfrac);
+        // left to right mapping
+        int angle = ((RMain.viewangle - Tables.ANG90)
+                >>> Tables.ANGLETOFINESHIFT) & Tables.FINEMASK;
+
+        // scale will be unit scale at SCREENWIDTH/2 distance
+        basexscale =  Fixed.div(Tables.finecosine(angle), RMain.centerxfrac);
+        baseyscale = -Fixed.div(Tables.finesine[angle],   RMain.centerxfrac);
     }
 
 
@@ -281,14 +323,118 @@ public final class RPlane {
 
 
     //
-    // R_DrawPlanes (stub).
+    // R_DrawPlanes
+    // Called at the end of each frame.
     //
-    // r_plane.c lines 367–453. Walks the visplane list and either
-    // dispatches sky columns via R_GetColumn / colfunc or builds
-    // span stacks via R_MakeSpans. Defers until r_main scaffolding
-    // (xtoviewangle / pspriteiscale / detailshift / colormaps /
-    // skytexturemid / zlight / extralight gating) lands.
+    // r_plane.c lines 367–453.
     public static void rDrawPlanes() {
-        // Intentionally empty until r_main scaffolding lands.
+        Visplane pl;
+        int light;
+        int x;
+        int stop;
+        int angle;
+
+        if (RBsp.dsP > RBsp.MAXDRAWSEGS) {
+            ISystem.iError("R_DrawPlanes: drawsegs overflow (" + RBsp.dsP + ")");
+        }
+        if (lastvisplane > MAXVISPLANES) {
+            ISystem.iError("R_DrawPlanes: visplane overflow (" + lastvisplane + ")");
+        }
+        if (lastopening > MAXOPENINGS) {
+            ISystem.iError("R_DrawPlanes: opening overflow (" + lastopening + ")");
+        }
+
+        for (int p = 0; p < lastvisplane; p++) {
+            pl = visplanes[p];
+
+            if (pl.minx > pl.maxx) {
+                continue;
+            }
+
+
+            // sky flat
+            if (pl.picnum == RSky.skyflatnum) {
+                RDraw.dcIscale = RMain.pspriteiscale >> RMain.detailshift;
+
+                // Sky is allways drawn full bright,
+                //  i.e. colormaps[0] is used.
+                // Because of this hack, sky is not affected
+                //  by INVUL inverse mapping.
+                RDraw.dcColormap = RData.colormaps;
+                RDraw.dcColormapOfs = 0;
+                RDraw.dcTexturemid = RSky.skytexturemid;
+                for (x = pl.minx; x <= pl.maxx; x++) {
+                    RDraw.dcYl = pl.top[x + 1] & 0xff;
+                    RDraw.dcYh = pl.bottom[x + 1] & 0xff;
+
+                    if (RDraw.dcYl <= RDraw.dcYh) {
+                        angle = (RMain.viewangle + RMain.xtoviewangle[x])
+                                >>> RSky.ANGLETOSKYSHIFT;
+                        RDraw.dcX = x;
+                        try {
+                            RData.ColumnRef col =
+                                    RData.rGetColumn(RSky.skytexture, angle);
+                            RDraw.dcSource = col.data;
+                            RDraw.dcSourceOfs = col.offset;
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        // colfunc — Java port inlines the dispatch.
+                        if (RMain.detailshift == 0) {
+                            RDraw.rDrawColumn();
+                        } else {
+                            RDraw.rDrawColumnLow();
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // regular flat
+            int flatLump = RData.firstflat
+                    + RData.flattranslation[pl.picnum];
+            try {
+                RDraw.dsSource = WWad.wCacheLumpNum(flatLump, ZZone.PU_STATIC);
+                RDraw.dsSourceOfs = 0;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            planeheight = Math.abs(pl.height - RMain.viewz);
+            light = (pl.lightlevel >> RMain.LIGHTSEGSHIFT) + RMain.extralight;
+
+            if (light >= RMain.LIGHTLEVELS) {
+                light = RMain.LIGHTLEVELS - 1;
+            }
+
+            if (light < 0) {
+                light = 0;
+            }
+
+            planezlight = RMain.zlight[light];
+
+            // C: pl->top[pl->maxx+1] = 0xff; pl->top[pl->minx-1] = 0xff;
+            // The Java port indexes top[] with a +1 bias to absorb the
+            // C's pad-byte sentinel writes.
+            pl.top[pl.maxx + 1 + 1] = (byte) 0xff;
+            pl.top[pl.minx - 1 + 1] = (byte) 0xff;
+
+            stop = pl.maxx + 1;
+
+            for (x = pl.minx; x <= stop; x++) {
+                rMakeSpans(x,
+                        pl.top[x - 1 + 1] & 0xff,
+                        pl.bottom[x - 1 + 1] & 0xff,
+                        pl.top[x + 1]     & 0xff,
+                        pl.bottom[x + 1]  & 0xff);
+            }
+
+            // C: Z_ChangeTag(ds_source, PU_CACHE) — release the flat
+            // back to the cache so it can be evicted. The Java GC
+            // already releases unreferenced blocks once dsSource is
+            // overwritten on the next frame, so the demote call has
+            // no effect; skipped per the same rationale as deviation
+            // 7 (the WAD lump cache).
+        }
     }
 }

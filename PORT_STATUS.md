@@ -41,7 +41,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | r_data.c    | `doom.render.RData`        | Hard | Verified | Textures/flats/sprites/colormaps. `R_PrecacheLevel` stubbed (needs playsim). See deviation 7. |
 | r_main.c    | `doom.render.RMain`        | Hard | Partial | 898 / ~. BSP descent (`R_PointOnSide` + `R_PointOnSegSide` + `R_PointInSubsector`) + angle/distance helpers (`R_PointToAngle`, `R_PointToAngle2`, `R_PointToDist`) + the per-frame setup chain: `R_AddPointToBox`, `R_InitTables` (no-op like the C, table data preloaded from Tables.dat), `R_InitPointToAngle` (no-op), `R_InitTextureMapping` (builds viewangletox / xtoviewangle / clipangle), `R_InitLightTables` (builds zlight[][] from RData.colormaps), `R_SetViewSize` / `R_ExecuteSetViewSize` (full body — viewwidth / viewheight / centerxfrac / projection / yslope / distscale / scalelight / pspritescale, calls RDraw.rInitBuffer + R_InitTextureMapping), `R_Init` (orchestrator, skips printf chatter), `R_SetupFrame` (per-tic player-vector copy + fixedcolormap → scalelightfixed wiring), `R_RenderPlayerView` (clears RBsp/RPlane/RThings buffers, walks BSP, draws planes / masked — pixel-write side currently no-ops via the RPlane/RSegs/RThings stubs), `R_ScaleFromGlobalAngle` (used by r_segs once it ports). RMain stays Partial only because the colfunc/spanfunc dispatch table the C uses for the detail-shift switch is inlined into RDraw call sites (Java doesn't need the function-pointer trampoline). Light constants + FIELDOFVIEW / DISTMAP land here. RSegs gains `rwNormalangle` / `rwDistance` stubs so R_ScaleFromGlobalAngle compiles cleanly. |
 | r_bsp.c     | `doom.render.RBsp`         | Hard | Verified | 580 / ~. Full port: BSP traversal (R_RenderBSPNode + R_Subsector), seg clipping (R_AddLine + R_ClipSolidWallSegment + R_ClipPassWallSegment), bbox visibility (R_CheckBBox + checkcoord LUT), and the per-frame clip-list / drawseg list reset (R_ClearDrawSegs + R_ClearClipSegs). The C `goto clipsolid:` / `goto clippass:` in R_AddLine and `goto crunch:` in R_ClipSolidWallSegment translate as labelled boolean toggles per CLAUDE.md §2. New `Drawseg` (drawseg_t) struct in render. New cliprange / drawseg arrays on RBsp. Angle-comparison wraparound uses `Integer.compareUnsigned` (same pattern as PUser / PEnemy). |
-| r_plane.c   | `doom.render.RPlane`       | Hard | Partial | 453 / ~. Visplane allocation in full: `Visplane` (visplane_t with top[]/bottom[] sized SCREENWIDTH+2 to absorb the C's pad-byte sentinel writes), visplanes[MAXVISPLANES=128] pool, openings[MAXOPENINGS=SCREENWIDTH*64], floorclip / ceilingclip / spanstart / spanstop, cachedheight/distance/xstep/ystep, R_FindPlane (with sky-flat collapse), R_CheckPlane (extend-or-split), R_ClearPlanes (per-frame reset), R_MakeSpans (column-walk dispatch), R_InitPlanes (no-op like the C). Deferred: R_MapPlane (needs xtoviewangle / yslope / distscale / zlight / fixedcolormap from r_main scaffolding) and R_DrawPlanes' rendering body (needs xtoviewangle / colormaps / R_GetColumn / pspriteiscale / detailshift / centerxfrac). Both stay no-op so visplane allocation produces correct lists; only pixel writes are inert. |
+| r_plane.c   | `doom.render.RPlane`       | Hard | Verified | 453 / ~. Full port: visplane allocation (Visplane / visplanes[] / R_FindPlane / R_CheckPlane), per-frame setup (R_ClearPlanes — basexscale/baseyscale derived from viewangle), span dispatch (R_MakeSpans), per-row span generation (R_MapPlane: cachedheight/distance/xstep/ystep with row caching, ds globals populated from yslope/distscale/xtoviewangle/zlight, dispatches to RDraw.rDrawSpan/rDrawSpanLow), and end-of-frame paint (R_DrawPlanes: walks visplanes, dispatches sky columns through RData.rGetColumn + RDraw.rDrawColumn or regular flats through W_CacheLumpNum + R_MakeSpans). The detail-shift dispatch (rDrawColumn vs rDrawColumnLow) is inlined at call sites instead of using a function-pointer trampoline (deviation 31). Z_ChangeTag(PU_CACHE) demote calls dropped — Java GC handles cache release once dsSource is overwritten on the next frame (same rationale as deviation 7). |
 | r_segs.c    | `doom.render.RSegs`        | Hard | Partial | Stub: R_StoreWallRange appends a no-fill drawseg so the BSP walk produces a populated drawsegs[] list for sprite clipping; columns paint nothing. Full column-by-column wall renderer lands later. Pointer-arithmetic heavy. |
 | r_things.c  | `doom.render.RThings`      | Hard | Partial | Stub: R_AddSprites walks sec.thinglist via snext (no-op per mobj), R_DrawMasked / R_ClearSprites no-op. Vissprite allocation + back-to-front draw + drawseg-clip occlusion land later. Pointer-arithmetic heavy. |
 | r_draw.c    | `doom.render.RDraw`        | Hard | Verified | Column/span blitters. `(byte[],int)` pointer pairs replace `byte*` globals. See deviation 8. |
@@ -375,6 +375,24 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+31. Renderer `colfunc` / `spanfunc` function-pointer dispatch:
+    - The C `r_main.c` keeps function pointers (`colfunc`,
+      `basecolfunc`, `fuzzcolfunc`, `transcolfunc`, `spanfunc`)
+      that R_ExecuteSetViewSize binds to `R_DrawColumn` /
+      `R_DrawColumnLow` / `R_DrawSpan` / `R_DrawSpanLow` based on
+      the detailshift. Hot paths (R_MapPlane, R_DrawPlanes,
+      R_DrawSegLoop, R_DrawSprite) call through the pointer.
+    - Java's first-class `Runnable` would model this faithfully,
+      but the call sites are few (a couple per renderer module)
+      and inlining `if (detailshift == 0) RDraw.rDrawSpan(); else
+      RDraw.rDrawSpanLow();` is clearer to read and one less layer
+      of indirection. The C does the function-pointer dance to
+      avoid recompilation on resolution changes; Java doesn't have
+      that constraint.
+    - Per-call overhead is identical (one branch test on
+      detailshift). The choice is purely readability. R_MapPlane
+      and R_DrawPlanes both inline the dispatch.
 
 30. `p_saveg.c` save format diverges from the C:
     - The C `P_Archive*` family memcpy's full struct contents into
