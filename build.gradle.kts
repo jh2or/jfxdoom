@@ -1,6 +1,7 @@
 plugins {
     `java-library`
     application
+    id("org.openjfx.javafxplugin") version "0.1.0"
 }
 
 group = "doom"
@@ -24,9 +25,13 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+javafx {
+    version = "21.0.4"
+    modules("javafx.controls")
+}
+
 application {
-    // Placeholder — real main class will arrive with d_main port (§10 step 11).
-    mainClass = "doom.system.DMain"
+    mainClass = "doom.ui.JfxDoomApp"
 }
 
 tasks.test {

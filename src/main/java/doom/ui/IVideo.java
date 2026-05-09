@@ -41,9 +41,11 @@ public final class IVideo {
 
     // i_video.c — I_StartTic. Per-tic input poll. The C posts
     // keyboard / mouse events into D_PostEvent; the JavaFX shell
-    // bridges Scene.setOnKeyPressed → DEvent here.
+    // bridges Scene.setOnKeyPressed → DEvent here via the hook.
     public static void iStartTic() {
-        // intentionally empty
+        if (startTicHook != null) {
+            startTicHook.run();
+        }
     }
 
     // i_video.c — I_UpdateNoBlit. Mid-frame palette / wipe update,
@@ -53,12 +55,23 @@ public final class IVideo {
         // intentionally empty
     }
 
+    // Hooks the JavaFX shell registers when JfxDoomApp boots, so
+    // headless tests still get a no-op iFinishUpdate while the
+    // running game pumps screens[0] into a JavaFX Canvas. Same
+    // shape as the C function-pointer dispatch the renderer uses
+    // for colfunc/spanfunc — see deviation 31.
+    public static Runnable finishUpdateHook;
+    public static Runnable startTicHook;
+    public static java.util.function.Consumer<byte[]> setPaletteHook;
+
     // i_video.c — I_FinishUpdate. Pushes screens[0] (the 320×200
-    // palette-byte framebuffer) to the actual display. The JavaFX
-    // shell overrides; the stub is a no-op so headless tests can
-    // still drive the game loop.
+    // palette-byte framebuffer) to the actual display. Defers to
+    // the registered hook (the JavaFX shell sets it on boot);
+    // headless tests leave it null.
     public static void iFinishUpdate() {
-        // intentionally empty
+        if (finishUpdateHook != null) {
+            finishUpdateHook.run();
+        }
     }
 
     // i_video.c — I_SetPalette.
@@ -66,7 +79,9 @@ public final class IVideo {
     // R/G/B triples). The JavaFX shell maps it to a 256-entry
     // ARGB int[] for the PixelBuffer.
     public static void iSetPalette(byte[] palette) {
-        // intentionally empty
+        if (setPaletteHook != null) {
+            setPaletteHook.accept(palette);
+        }
     }
 
     private IVideo() {
