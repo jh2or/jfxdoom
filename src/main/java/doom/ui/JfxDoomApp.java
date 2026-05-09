@@ -23,6 +23,7 @@
 //   gradle run --args="-iwad reference-wads/DOOM.WAD -warp 1 1"
 package doom.ui;
 
+import doom.system.DEvent;
 import doom.system.DMain;
 import doom.system.Doomdef;
 import doom.wad.WWad;
@@ -36,6 +37,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.PixelBuffer;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
@@ -83,14 +85,21 @@ public final class JfxDoomApp extends Application {
         // G_Responder dispatch lands when m_menu / g_game port;
         // for now, ESC closes the window.
         scene.setOnKeyPressed(e -> {
-            switch (e.getCode()) {
-                case ESCAPE:
-                    stage.close();
-                    break;
-                default:
-                    // queued for future M_Responder / G_Responder
-                    break;
+            int code = mapKey(e.getCode());
+            if (code < 0) return;
+            // ESC also closes the window for now (no in-game menu).
+            if (e.getCode() == KeyCode.ESCAPE) {
+                stage.close();
+                return;
             }
+            DEvent ev = new DEvent(DEvent.EV_KEYDOWN, code);
+            DMain.dPostEvent(ev);
+        });
+        scene.setOnKeyReleased(e -> {
+            int code = mapKey(e.getCode());
+            if (code < 0) return;
+            DEvent ev = new DEvent(DEvent.EV_KEYUP, code);
+            DMain.dPostEvent(ev);
         });
 
         stage.setTitle("jfxdoom");
@@ -174,6 +183,40 @@ public final class JfxDoomApp extends Application {
             int g = bytes[i * 3 + 1] & 0xff;
             int b = bytes[i * 3 + 2] & 0xff;
             palette[i] = 0xff000000 | (r << 16) | (g << 8) | b;
+        }
+    }
+
+    // Translate a JavaFX KeyCode to the Doom keycode space
+    // (Doomdef.KEY_* + raw ASCII for letter / digit keys).
+    // Returns -1 for unmapped keys (modifiers, etc.).
+    private static int mapKey(KeyCode k) {
+        switch (k) {
+            case LEFT:        return Doomdef.KEY_LEFTARROW;
+            case RIGHT:       return Doomdef.KEY_RIGHTARROW;
+            case UP:          return Doomdef.KEY_UPARROW;
+            case DOWN:        return Doomdef.KEY_DOWNARROW;
+            case ESCAPE:      return Doomdef.KEY_ESCAPE;
+            case ENTER:       return Doomdef.KEY_ENTER;
+            case BACK_SPACE:  return Doomdef.KEY_BACKSPACE;
+            case PAUSE:       return Doomdef.KEY_PAUSE;
+            case SHIFT:       return Doomdef.KEY_RSHIFT;
+            case CONTROL:     return Doomdef.KEY_RCTRL;
+            case ALT:         return Doomdef.KEY_RALT;
+            case SPACE:       return Doomdef.KEY_SPACE;
+            case COMMA:       return Doomdef.KEY_COMMA;
+            case PERIOD:      return Doomdef.KEY_PERIOD;
+            default:
+                // Plain ASCII pass-through for letter / digit keys
+                // — Doom's responder reads gamekeydown[ch] for the
+                // weapon-change shortcuts ('1'..'7').
+                String s = k.getName();
+                if (s.length() == 1) {
+                    char c = Character.toLowerCase(s.charAt(0));
+                    if (c < Doomdef.NUMKEYS) {
+                        return c;
+                    }
+                }
+                return -1;
         }
     }
 }

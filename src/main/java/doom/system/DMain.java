@@ -32,7 +32,6 @@ package doom.system;
 import doom.play.PSetup;
 import doom.play.PSpec;
 import doom.play.PSwitch;
-import doom.play.PTick;
 import doom.play.Player;
 import doom.render.RData;
 import doom.render.RMain;
@@ -70,7 +69,48 @@ public final class DMain {
     // d_main.c line 119 — title-screen demo flag.
     public static boolean advancedemo;
 
+    // d_main.c lines 141–143 — event ring buffer.
+    public static final int MAXEVENTS = 64;
+    public static final DEvent[] events = new DEvent[MAXEVENTS];
+    public static int eventhead;
+    public static int eventtail;
+
+    static {
+        for (int i = 0; i < MAXEVENTS; i++) {
+            events[i] = new DEvent();
+        }
+    }
+
     private DMain() {
+    }
+
+    //
+    // D_PostEvent
+    // Called by the I/O layer (JfxDoomApp) when input is detected.
+    //
+    // d_main.c lines 150–154.
+    public static void dPostEvent(DEvent ev) {
+        DEvent slot = events[eventhead];
+        slot.type = ev.type;
+        slot.data1 = ev.data1;
+        slot.data2 = ev.data2;
+        slot.data3 = ev.data3;
+        eventhead = (eventhead + 1) & (MAXEVENTS - 1);
+    }
+
+    //
+    // D_ProcessEvents
+    //
+    // d_main.c lines 161–177. Send all pending events down the
+    // responder chain (M_Responder → G_Responder; the M_Responder
+    // half waits on m_menu — for now G_Responder gets everything).
+    public static void dProcessEvents() {
+        while (eventtail != eventhead) {
+            DEvent ev = events[eventtail];
+            // M_Responder dispatch deferred.
+            GGame.gResponder(ev);
+            eventtail = (eventtail + 1) & (MAXEVENTS - 1);
+        }
     }
 
     //
@@ -245,13 +285,17 @@ public final class DMain {
         IVideo.iStartFrame();
         IVideo.iStartTic();
 
-        // dProcessEvents() — deferred (needs M_Responder / G_Responder).
+        // Drain queued input events (JavaFX shell posts them via
+        // dPostEvent on each Scene key press / release).
+        dProcessEvents();
 
-        // Single-tic: just pump the playsim once. The C's TryRunTics
-        // does multi-tic catch-up; single-player Java uses the
-        // JavaFX AnimationTimer's 35Hz schedule to keep the engine
-        // tick-locked.
-        PTick.pTicker();
+        // Single-tic: pump the playsim once via G_Ticker, which
+        // builds the consoleplayer's ticcmd from gamekeydown[],
+        // copies into players[].cmd, and calls P_Ticker. The C's
+        // TryRunTics does multi-tic catch-up; single-player Java
+        // uses the JavaFX AnimationTimer's 35 Hz schedule to keep
+        // the engine tick-locked.
+        GGame.gTicker();
 
         dDisplay();
 

@@ -57,8 +57,26 @@ public final class Doomdef {
     // doomdef.h lines 253–271 — key codes. More land as their
     // consumers port (m_menu, hu_stuff, g_game). Only the keys already
     // referenced by ported modules live here.
-    public static final int KEY_ENTER = 13;
+    public static final int KEY_ENTER     = 13;
     public static final int KEY_BACKSPACE = 127;
+
+    // d_event.h key codes consumed by G_Responder.
+    public static final int KEY_RIGHTARROW = 0xae;
+    public static final int KEY_LEFTARROW  = 0xac;
+    public static final int KEY_UPARROW    = 0xad;
+    public static final int KEY_DOWNARROW  = 0xaf;
+    public static final int KEY_ESCAPE     = 27;
+    public static final int KEY_F12        = (0x80 + 0x58);
+    public static final int KEY_PAUSE      = 0xff;
+    public static final int KEY_RSHIFT     = (0x80 + 0x36);
+    public static final int KEY_RCTRL      = (0x80 + 0x1d);
+    public static final int KEY_RALT       = (0x80 + 0x38);
+    public static final int KEY_SPACE      = ' ';
+    public static final int KEY_COMMA      = ',';
+    public static final int KEY_PERIOD     = '.';
+
+    // g_game.c — key-state table size.
+    public static final int NUMKEYS = 256;
 
     // doomdef.h lines 215–224 — powertype_t. Indexed by Player.powers[].
     public static final int pw_invulnerability = 0;
