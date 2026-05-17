@@ -42,13 +42,20 @@ public final class GGame {
         }
     }
 
-    // g_game.c lines 38–54 — gameaction_t.
-    // The full enum has more entries (ga_loadlevel, ga_savegame, ...);
-    // only the two values flipped by the EV_ exit dispatchers live here
-    // until the surrounding game-loop machinery ports.
+    // g_game.c lines 38–54 — gameaction_t. The full enum.
     public static final int ga_nothing      = 0;
-    public static final int ga_completed    = 1;
-    public static final int ga_secretexit   = 2;
+    public static final int ga_loadlevel    = 1;
+    public static final int ga_newgame      = 2;
+    public static final int ga_loadgame     = 3;
+    public static final int ga_savegame     = 4;
+    public static final int ga_playdemo     = 5;
+    public static final int ga_completed    = 6;
+    public static final int ga_victory      = 7;
+    public static final int ga_worlddone    = 8;
+    public static final int ga_screenshot   = 9;
+    // Aliased back into ga_completed by G_Ticker; PSwitch /
+    // PSpec dispatchers latch it via gSecretExitLevel.
+    public static final int ga_secretexit   = 10;
 
     // g_game.c — gameaction latch. G_DoCompleted reads it to choose
     // between normal-exit and secret-exit transitions.
@@ -280,15 +287,161 @@ public final class GGame {
         }
     }
 
+    // g_game.c — secret-exit + level-completion latches the
+    // gameaction switch reads. secretexit is already declared
+    // above; ga_completed shortcuts to ga_loadlevel until the
+    // intermission (wi_stuff) ports.
+    public static int startepisode = 1;
+    public static int startmap     = 1;
+    public static int startskill   = Doomstat.sk_medium;
+
+    //
+    // G_InitNew
+    //
+    // g_game.c lines 1393–1469. Queues a level load. Caller sets
+    // skill + episode + map; G_Ticker picks ga_loadlevel up on the
+    // next tic.
+    public static void gInitNew(int skill, int episode, int map) {
+        Doomstat.gameskill = skill;
+        Doomstat.gameepisode = episode;
+        Doomstat.gamemap = map;
+        startskill = skill;
+        startepisode = episode;
+        startmap = map;
+        Doomstat.respawnmonsters = (skill == Doomstat.sk_nightmare);
+        gameaction = ga_loadlevel;
+    }
+
+    //
+    // G_DoLoadLevel
+    //
+    // g_game.c lines 445–497. Sets the per-map sky, flips dead
+    // players to PST_REBORN, calls P_SetupLevel, resets per-tic
+    // input state.
+    public static void gDoLoadLevel() {
+        // Sky-flat number — looked up by name (lump "F_SKY1").
+        doom.render.RSky.skyflatnum = doom.render.RData.rFlatNumForName(
+                doom.render.RSky.SKYFLATNAME);
+
+        // Pick the sky texture per (gamemode, episode/map).
+        // Commercial / tnt / plut use SKY1 / SKY2 / SKY3 bands; for
+        // now the port handles commercial + the Doom 1 episodes
+        // (1=SKY1, 2=SKY2, 3=SKY3, 4=SKY4 in Ultimate Doom).
+        String skyname;
+        if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+            if (Doomstat.gamemap < 12) {
+                skyname = "SKY1";
+            } else if (Doomstat.gamemap < 21) {
+                skyname = "SKY2";
+            } else {
+                skyname = "SKY3";
+            }
+        } else {
+            // Doom 1: episode 1 → SKY1, episode 2 → SKY2, etc.
+            skyname = "SKY" + Doomstat.gameepisode;
+        }
+        doom.render.RSky.skytexture =
+                doom.render.RData.rTextureNumForName(skyname);
+
+        // Flip dead players to PST_REBORN; reset frags.
+        for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            if (playeringame[i] && players[i].playerstate == Player.PST_DEAD) {
+                players[i].playerstate = Player.PST_REBORN;
+            }
+            for (int j = 0; j < Doomdef.MAXPLAYERS; j++) {
+                players[i].frags[j] = 0;
+            }
+        }
+
+        try {
+            doom.play.PSetup.pSetupLevel(Doomstat.gameepisode,
+                    Doomstat.gamemap, 0, Doomstat.gameskill);
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+        gameaction = ga_nothing;
+
+        // Clear per-tic input state so a held key from the previous
+        // level doesn't carry over.
+        for (int i = 0; i < Doomdef.NUMKEYS; i++) {
+            gamekeydown[i] = false;
+        }
+        sendpause = sendsave = false;
+        Doomstat.paused = false;
+    }
+
+    //
+    // G_DoCompleted — shortcut.
+    //
+    // g_game.c lines 1020–1144. The C runs through the intermission
+    // first (sets up WI_Start state, transitions to GS_INTERMISSION,
+    // builds the WI_End → G_WorldDone hop). Without wi_stuff
+    // ported, the Java shortcut bumps gamemap by 1 and queues a
+    // direct ga_loadlevel.
+    public static void gDoCompleted() {
+        if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+            // Doom 2: map 1..32. Cap at 32; game over after.
+            if (Doomstat.gamemap >= 32) {
+                gameaction = ga_victory;
+                return;
+            }
+            Doomstat.gamemap++;
+        } else {
+            // Doom 1: episode 1..4, map 1..9. After M8 (or M9 if
+            // taking the secret exit), episode++ and map=1.
+            if (Doomstat.gamemap >= 8) {
+                if (Doomstat.gameepisode >= 4) {
+                    gameaction = ga_victory;
+                    return;
+                }
+                Doomstat.gameepisode++;
+                Doomstat.gamemap = 1;
+            } else {
+                Doomstat.gamemap++;
+            }
+        }
+        gameaction = ga_loadlevel;
+    }
+
     //
     // G_Ticker
     //
-    // g_game.c lines 605–748. Per-tic dispatcher. The C handles
-    // gameaction transitions (ga_loadlevel / ga_completed / etc.)
-    // before reading per-player ticcmds; the Java port skips that
-    // until G_DoLoadLevel etc. port. Builds the consoleplayer's
-    // ticcmd via gBuildTiccmd then pumps PTick.pTicker.
+    // g_game.c lines 605–748. Per-tic dispatcher with full
+    // gameaction transition switch.
     public static void gTicker() {
+        // Process pending game-action transitions before the tick.
+        while (gameaction != ga_nothing) {
+            switch (gameaction) {
+                case ga_loadlevel:
+                    gDoLoadLevel();
+                    break;
+                case ga_completed:
+                    gDoCompleted();
+                    break;
+                case ga_victory:
+                    // F_StartFinale deferred (waits on f_finale).
+                    // For now just stay in-game.
+                    gameaction = ga_nothing;
+                    break;
+                case ga_secretexit:
+                    secretexit = 1;
+                    gameaction = ga_completed;
+                    break;
+                case ga_newgame:
+                case ga_loadgame:
+                case ga_savegame:
+                case ga_playdemo:
+                case ga_worlddone:
+                case ga_screenshot:
+                    // All waiting on g_game's bigger pieces.
+                    gameaction = ga_nothing;
+                    break;
+                default:
+                    gameaction = ga_nothing;
+                    break;
+            }
+        }
+
         // Build the local seat's ticcmd from input state and copy
         // into players[consoleplayer].cmd. Other seats' ticcmds
         // would arrive via netcmds[] in multiplayer — single-player
@@ -297,8 +450,7 @@ public final class GGame {
             gBuildTiccmd(players[consoleplayer].cmd);
         }
 
-        // Special-button latches: BT_SPECIAL clears via P_PlayerThink,
-        // but the pause / save dispatch lives here.
+        // Special-button latches.
         for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
             if (!playeringame[i]) continue;
             if ((players[i].cmd.buttons & Doomdef.BT_SPECIAL) != 0) {

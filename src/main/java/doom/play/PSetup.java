@@ -534,6 +534,72 @@ public final class PSetup {
     }
 
     //
+    // P_SetupLevel
+    //
+    // p_setup.c lines 593–693. Full level-load orchestrator: clears
+    // thinkers, loads geometry, loads THINGS (spawning monsters /
+    // items / player), runs sector-special spawn (PSpec.pSpawnSpecials),
+    // resets per-level counters.
+    //
+    // Deferred parts (waits on their named module):
+    //   - S_Start  (sound channel reset — SSound is a stub)
+    //   - R_PrecacheLevel (sprite / flat / texture precache)
+    //   - G_DeathMatchSpawnPlayer iteration (deferred until full
+    //     g_game ports — single-player skips it cleanly)
+    //
+    // `playermask` is the bit-set of seats to populate (deathmatch
+    // multiplayer); single-player passes 0 and the function just
+    // pumps player 0 via the THINGS-lump spawn path.
+    public static void pSetupLevel(int episode, int map, int playermask,
+            int skill) throws IOException {
+        // Reset per-level counters.
+        doom.system.Doomstat.totalkills = 0;
+        doom.system.Doomstat.totalitems = 0;
+        doom.system.Doomstat.totalsecret = 0;
+
+        // Per-player stats reset (matches C lines 605–613).
+        for (int i = 0; i < doom.system.Doomdef.MAXPLAYERS; i++) {
+            doom.system.GGame.players[i].killcount = 0;
+            doom.system.GGame.players[i].secretcount = 0;
+            doom.system.GGame.players[i].itemcount = 0;
+        }
+
+        // Reset thinker chain so old mobjs / floor-movers from the
+        // previous level don't linger.
+        doom.play.PTick.pInitThinkers();
+        doom.play.PTick.leveltime = 0;
+
+        // Pick the lumpnum based on (episode, map) per game mode.
+        int lumpnum;
+        if (doom.system.Doomstat.gamemode == doom.system.Doomstat.GameMode.commercial) {
+            String name;
+            if (map < 10) {
+                name = "MAP0" + map;
+            } else {
+                name = "MAP" + map;
+            }
+            lumpnum = doom.wad.WWad.wGetNumForName(name);
+        } else {
+            lumpnum = doom.wad.WWad.wGetNumForName(
+                    "E" + episode + "M" + map);
+        }
+
+        // Geometry + THINGS.
+        pSetupLevelGeometry(lumpnum);
+        pLoadThings(lumpnum + ML_THINGS);
+
+        // Sector specials (lights, scrolls, door-close-30, etc.).
+        PSpec.pSpawnSpecials();
+
+        // S_Start / R_PrecacheLevel — deferred.
+
+        // Update gamestate.
+        doom.system.Doomstat.gamemap = map;
+        doom.system.Doomstat.gameepisode = episode;
+        doom.system.Doomstat.gameskill = skill;
+    }
+
+    //
     // pSetupLevelGeometry: the geometry-only chunk of P_SetupLevel.
     // Loads the eight geometry lumps + REJECT for the given map base
     // lump and runs P_GroupLines. Does NOT load THINGS, run

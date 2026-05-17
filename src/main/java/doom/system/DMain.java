@@ -29,7 +29,6 @@
 //     simplified (synchronous: one tic per frame).
 package doom.system;
 
-import doom.play.PSetup;
 import doom.play.PSpec;
 import doom.play.PSwitch;
 import doom.play.Player;
@@ -246,27 +245,20 @@ public final class DMain {
 
         // Auto-start a level if -warp / -episode / -skill given.
         if (autostart) {
-            int lumpnum;
-            if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
-                lumpnum = WWad.wGetNumForName(String.format("MAP%02d", startmap));
-            } else {
-                lumpnum = WWad.wGetNumForName(
-                        String.format("E%dM%d", startepisode, startmap));
-            }
-            Doomstat.gamemap = startmap;
-            Doomstat.gameepisode = startepisode;
-            Doomstat.gameskill = startskill;
             // Seed playeringame[0]=true so the playsim has at
             // least one active seat (D_CheckNetGame's job in the
             // C; the Java single-player port hardcodes it).
             GGame.playeringame[0] = true;
             GGame.consoleplayer = 0;
 
-            // P_SetupLevel (geometry + things). Full P_SetupLevel
-            // would also call S_Start, R_PrecacheLevel,
-            // G_DeathMatchSpawnPlayer; deferred.
-            PSetup.pSetupLevelGeometry(lumpnum);
-            PSetup.pLoadThings(lumpnum + PSetup.ML_THINGS);
+            // Queue a level load via G_InitNew → ga_loadlevel.
+            // The first dDoomLoop call's gTicker pumps the
+            // ga_loadlevel transition which runs gDoLoadLevel →
+            // PSetup.pSetupLevel.
+            GGame.gInitNew(startskill, startepisode, startmap);
+            // Drain the gameaction transition now so the engine
+            // is in GS_LEVEL state before the first frame.
+            GGame.gTicker();
         }
     }
 

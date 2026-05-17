@@ -181,4 +181,67 @@ class GGameTest {
         // Queue drained.
         assertEquals(DMain.eventhead, DMain.eventtail);
     }
+
+    // ---- gameaction transitions ----
+
+    // gInitNew queues ga_loadlevel and stamps skill/episode/map.
+    @Test
+    void initNewQueuesLevelLoad() {
+        GGame.gameaction = GGame.ga_nothing;
+        GGame.gInitNew(Doomstat.sk_hard, 2, 3);
+        assertEquals(Doomstat.sk_hard, Doomstat.gameskill);
+        assertEquals(2, Doomstat.gameepisode);
+        assertEquals(3, Doomstat.gamemap);
+        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+    }
+
+    // sk_nightmare auto-enables respawnmonsters.
+    @Test
+    void initNewNightmareSetsRespawnMonsters() {
+        Doomstat.respawnmonsters = false;
+        GGame.gInitNew(Doomstat.sk_nightmare, 1, 1);
+        assertTrue(Doomstat.respawnmonsters);
+    }
+
+    // gDoCompleted advances gamemap (Doom 1) and queues ga_loadlevel.
+    @Test
+    void doCompletedAdvancesMapAndQueuesLoadlevel() {
+        Doomstat.gamemode = Doomstat.GameMode.shareware;
+        Doomstat.gameepisode = 1;
+        Doomstat.gamemap = 3;
+        GGame.gDoCompleted();
+        assertEquals(4, Doomstat.gamemap);
+        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+    }
+
+    // End-of-episode (Doom 1, map 8) bumps episode and resets map=1.
+    @Test
+    void doCompletedEndOfEpisodeBumpsEpisode() {
+        Doomstat.gamemode = Doomstat.GameMode.registered;
+        Doomstat.gameepisode = 1;
+        Doomstat.gamemap = 8;
+        GGame.gDoCompleted();
+        assertEquals(2, Doomstat.gameepisode);
+        assertEquals(1, Doomstat.gamemap);
+        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+    }
+
+    // Doom 2 (commercial) advances map 1..32.
+    @Test
+    void doCompletedCommercialAdvancesMap() {
+        Doomstat.gamemode = Doomstat.GameMode.commercial;
+        Doomstat.gamemap = 5;
+        GGame.gDoCompleted();
+        assertEquals(6, Doomstat.gamemap);
+        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+    }
+
+    // After map 30 / map 32 (Doom 2) → ga_victory.
+    @Test
+    void doCompletedCommercialMap32TriggersVictory() {
+        Doomstat.gamemode = Doomstat.GameMode.commercial;
+        Doomstat.gamemap = 32;
+        GGame.gDoCompleted();
+        assertEquals(GGame.ga_victory, GGame.gameaction);
+    }
 }
