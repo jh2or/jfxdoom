@@ -295,6 +295,48 @@ public final class GGame {
     public static int startmap     = 1;
     public static int startskill   = Doomstat.sk_medium;
 
+    // g_game.c lines 1328–1330 — deferred-init parameters latched by
+    // G_DeferedInitNew and consumed by G_DoNewGame on the next tic.
+    public static int dSkill   = Doomstat.sk_medium;
+    public static int dEpisode = 1;
+    public static int dMap     = 1;
+
+    //
+    // G_DeferedInitNew
+    //
+    // g_game.c lines 1332–1342. Latches the requested start state and
+    // sets gameaction = ga_newgame so gTicker fires gDoNewGame on the
+    // next pass. Used by ST_Responder's `idclev` cheat.
+    public static void gDeferedInitNew(int skill, int episode, int map) {
+        dSkill     = skill;
+        dEpisode   = episode;
+        dMap       = map;
+        gameaction = ga_newgame;
+    }
+
+    //
+    // G_DoNewGame
+    //
+    // g_game.c lines 1345–1358. Tears down netgame / deathmatch /
+    // demo flags, restores single-player defaults, then calls
+    // G_InitNew with the deferred parameters.
+    public static void gDoNewGame() {
+        // demoplayback / netdemo deferred (demo system not ported).
+        Doomstat.netgame    = false;
+        Doomstat.deathmatch = 0;
+        playeringame[1] = playeringame[2] = playeringame[3] = false;
+        // The C separately clears `respawnparm` (the -respawn cmdline
+        // flag) and `respawnmonsters` (which gInitNew re-derives from
+        // skill). The Java port only carries respawnmonsters; gInitNew
+        // overwrites it below so no clear here is needed.
+        Doomstat.respawnmonsters = false;
+        Doomstat.fastparm        = false;
+        Doomstat.nomonsters      = false;
+        consoleplayer = 0;
+        gInitNew(dSkill, dEpisode, dMap);
+        gameaction = ga_nothing;
+    }
+
     //
     // G_InitNew
     //
@@ -428,6 +470,8 @@ public final class GGame {
                     gameaction = ga_completed;
                     break;
                 case ga_newgame:
+                    gDoNewGame();
+                    break;
                 case ga_loadgame:
                 case ga_savegame:
                 case ga_playdemo:
@@ -468,9 +512,11 @@ public final class GGame {
         // always pumps the playsim — the only state currently
         // implemented.
         PTick.pTicker();
-        // ST_Ticker / AM_Ticker still deferred. HU_Ticker advances
-        // the pickup-message timer + drains player.message into
-        // the SText widget.
+        // ST_Ticker drives the face animation, palette flash counter,
+        // and the per-tic widget-state refresh. HU_Ticker advances the
+        // pickup-message timer + drains player.message into the SText
+        // widget. AM_Ticker still deferred (automap not ported).
+        doom.ui.StStuff.stTicker();
         doom.ui.HuStuff.huTicker();
         PTick.gametic++;
     }

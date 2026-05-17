@@ -92,7 +92,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | hu_lib.c    | `doom.ui.HuLib`        | Standard | Verified | 294 / ~. Text-line / scrolling / input widgets. `boolean*` "on" pointers translate as `boolean[]` holders (see deviation 19). `SHORT()` is a no-op since `Patch.width/height` are already parsed int. |
 | hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Partial | Pickup-message path: STCFN033..STCFN095 font load, huStart, huTicker (drains `player.message` into the SText widget, ticks the HU_MSGTIMEOUT counter), huDrawer, huErase. Wired into `DMain.dDoomMain` (huInit) + autostart (huStart) + dDisplay (huDrawer); `GGame.gTicker` pumps huTicker each tic. Chat widget, level-title banner, `shiftxform`, HU_Responder deferred (waits on m_menu / multiplayer chat). `huStart` has a Java-only `huFont[0]==null` early-return so playsim unit tests that exercise pSpawnPlayer without booting the engine don't crash — deviation 34. |
 | st_lib.c    | `doom.ui.StLib`        | Standard | Verified | 262 / ~. Number/Percent/MultIcon/BinIcon widgets. `int*`/`boolean*` caller-owned holders translate as `int[1]`/`boolean[1]` (deviation 19). `SHORT()` is a no-op since Patch fields are pre-parsed int. BG=4 (status-bar layer) distinct from HuLib's BG=1. |
-| st_stuff.c  | `doom.ui.StStuff`      | Standard | Partial | Stub: `ST_HEIGHT`/`ST_WIDTH`/`ST_Y` constants for st_lib. Status-bar logic lands when its player/sound deps arrive. |
+| st_stuff.c  | `doom.ui.StStuff`      | Standard | Verified | 1471 / ~. Full status-bar code: stInit loads tallnum / shortnum / STBAR / STARMS / STFBn / STKEYSn / STFST/TR/TL/OUCH/EVL/KILL/GOD0/DEAD0 face strip, allocates screens[4] as ST_WIDTH×ST_HEIGHT. stStart initialises Number/Percent/MultIcon/BinIcon widgets pointing at per-frame `int[1]`/`boolean[1]` views the C exposes via `&plyr->field` pointers; stUpdateWidgets refreshes those views each tic (deviation 35). stTicker advances stClock, samples M_Random for face-jitter, and bumps stUpdateFaceWidget through dead → evil-grin → ouch / turn → rampage → godface → straight priority ladder (with full unsigned `angle_t` comparison via `Integer.compareUnsigned` for the turn-face-toward-attacker branch). stDoPaletteStuff drives the damage / bonus / radiation palette shifts through `IVideo.iSetPalette` against the PLAYPAL sub-palettes. stDrawer dispatches stDoRefresh / stDiffDraw with full refresh-on-firsttime semantics. stResponder owns the cheat decoder — iddqd / idfa / idkfa / mus / noclip / idspispopd / idclip / behold[vsirial] / idchoppers / idmypos / idclev — feeds into player.message + cheats / weaponowned / cards / powers state. `(int *) &plyr->weaponowned[i+1]` boolean-to-int cast translates as `armsOwnedView[i][0] = plyr.weaponowned[i+1] ? 1 : 0;` (deviation 35). Wired into `DMain.dDoomMain` (stInit + autostart stStart), `DMain.dDisplay` (stDrawer), `DMain.dProcessEvents` (stResponder), `GGame.gTicker` (stTicker). Same Java-only `sbar==null` test guard as huStart (deviation 34). |
 | wi_stuff.c  | `doom.ui.WiStuff`      | Standard | Pending |
 | am_map.c    | `doom.ui.AmMap`        | Standard | Partial | Stub only: `automapactive` flag for hu_lib's erase path. Full automap lands later. |
 | f_finale.c  | `doom.ui.FFinale`      | Standard | Pending |
@@ -376,6 +376,27 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+35. st_stuff.c widget bool→int holders:
+    - The C wires status-bar widgets to live game state with
+      `STlib_initMultIcon(&w_arms[i], ..., (int *) &plyr->weaponowned[i+1], ...)`
+      — casting the address of a `boolean` to an `int*` so the
+      widget can re-read ownership every frame. Same trick for
+      `&plyr->ammo[k]`, `&plyr->health`, `&plyr->armorpoints`,
+      `&plyr->cards[i]`, `&plyr->readyweapon`.
+    - Java has no `&boolean`. The Java port keeps a per-widget
+      `int[1]` (or `boolean[1]`) "view" on `StStuff` —
+      `armsOwnedView[6][1]`, `keyboxesView[3][1]`, `healthView[1]`,
+      `armorView[1]`, `ammoView[4][1]`, `maxAmmoView[4][1]`,
+      `readyAmmoView[1]`, `faceIndexView[1]`, `fragsCountView[1]`,
+      `stStatusbarOn`, `stArmsOn`, `stFragsOn`, `stNotDeathmatch`
+      — and `stUpdateWidgets` copies live player state into them
+      each tic. The widget paint code reads `view[0]` and gets the
+      current value, matching C semantics exactly.
+    - Same convention as HuLib/StLib's caller-owned holders
+      (deviation 19). The extra copy is one indirection per tic and
+      keeps the same `[0]` access pattern the existing widget
+      drawers already use.
 
 34. hu_stuff.c `huStart` font-unloaded guard:
     - The C `HU_Start` assumes `HU_Init` already ran and the font

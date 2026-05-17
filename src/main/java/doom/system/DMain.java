@@ -106,7 +106,11 @@ public final class DMain {
     public static void dProcessEvents() {
         while (eventtail != eventhead) {
             DEvent ev = events[eventtail];
-            // M_Responder dispatch deferred.
+            // M_Responder dispatch deferred (m_menu not ported).
+            // ST_Responder runs ahead of G_Responder so the cheat
+            // decoder can intercept its key sequences; both always
+            // return false in this build so events fall through.
+            doom.ui.StStuff.stResponder(ev);
             GGame.gResponder(ev);
             eventtail = (eventtail + 1) & (MAXEVENTS - 1);
         }
@@ -241,8 +245,10 @@ public final class DMain {
         // stub).
 
         // HU_Init: load the font + initialise the message widget.
-        // ST_Init still deferred (full status bar).
         doom.ui.HuStuff.huInit();
+
+        // ST_Init: load status-bar graphics + allocate the BG layer.
+        doom.ui.StStuff.stInit();
 
         // Auto-start a level if -warp / -episode / -skill given.
         if (autostart) {
@@ -263,6 +269,9 @@ public final class DMain {
             // Wake the HUD message widget now that the player
             // exists.
             doom.ui.HuStuff.huStart();
+            // Wake the status bar (initialises widgets pointing at
+            // the live player state).
+            doom.ui.StStuff.stStart();
         }
     }
 
@@ -317,6 +326,12 @@ public final class DMain {
         if (p != null && p.mo != null) {
             RMain.rRenderPlayerView(p);
         }
+
+        // Status bar (health / ammo / face / keys / armor). Drawn
+        // before HUD overlay so the pickup-message banner paints on
+        // top. fullscreen=false matches the C default until -nofbar
+        // or oversized view ports.
+        doom.ui.StStuff.stDrawer(false, false);
 
         // HUD overlay (pickup-message banner). Painted into the
         // same framebuffer as the BSP view above; full HU_Drawer

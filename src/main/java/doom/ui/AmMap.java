@@ -7,6 +7,12 @@ package doom.ui;
 
 public final class AmMap {
 
+    // am_map.h lines 26–28 — st_stuff's ST_Responder filters automap
+    // mode-flip events by checking these tagged event_t.data1 values.
+    public static final int AM_MSGHEADER  = ('a' << 24) + ('m' << 16);
+    public static final int AM_MSGENTERED = AM_MSGHEADER | ('e' << 8);
+    public static final int AM_MSGEXITED  = AM_MSGHEADER | ('x' << 8);
+
     // am_map.c — set by AM_Start / cleared by AM_Stop. Other modules
     // (hu_lib, st_stuff, r_main) read it as a pure external.
     public static boolean automapactive;

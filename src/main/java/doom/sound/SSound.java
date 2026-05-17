@@ -26,6 +26,12 @@ public final class SSound {
         // intentional no-op
     }
 
+    // s_sound.c — S_ChangeMusic(musicnum, looping). Used by the
+    // ST_Responder "mus" cheat. Stub until the music pump lands.
+    public static void sChangeMusic(int musicnum, int looping) {
+        // intentional no-op
+    }
+
     private SSound() {
     }
 }

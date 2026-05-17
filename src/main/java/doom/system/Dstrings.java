@@ -38,6 +38,21 @@ public final class Dstrings {
     public static final String PD_REDK    = "You need a red key to open this door";
     public static final String PD_YELLOWK = "You need a yellow key to open this door";
 
+    // d_englsh.h lines 339–354 — status-bar cheat acknowledgements.
+    // Consumed by ST_Responder.
+    public static final String STSTR_MUS      = "Music Change";
+    public static final String STSTR_NOMUS    = "IMPOSSIBLE SELECTION";
+    public static final String STSTR_DQDON    = "Degreelessness Mode On";
+    public static final String STSTR_DQDOFF   = "Degreelessness Mode Off";
+    public static final String STSTR_KFAADDED = "Very Happy Ammo Added";
+    public static final String STSTR_FAADDED  = "Ammo (no keys) Added";
+    public static final String STSTR_NCON     = "No Clipping Mode ON";
+    public static final String STSTR_NCOFF    = "No Clipping Mode OFF";
+    public static final String STSTR_BEHOLD   = "inVuln, Str, Inviso, Rad, Allmap, or Lite-amp";
+    public static final String STSTR_BEHOLDX  = "Power-up Toggled";
+    public static final String STSTR_CHOPPERS = "... doesn't suck - GM";
+    public static final String STSTR_CLEV     = "Changing Level...";
+
     // dstrings.c lines 35–67 — endmsg[NUM_QUITMESSAGES+1].
     //
     // The C source is missing two commas in the initializer. In C,
