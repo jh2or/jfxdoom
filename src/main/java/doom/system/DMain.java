@@ -240,8 +240,9 @@ public final class DMain {
         // S_Init: sound channel allocation. Deferred (SSound is a
         // stub).
 
-        // HU_Init / ST_Init: HUD + status bar. Deferred until
-        // those modules port.
+        // HU_Init: load the font + initialise the message widget.
+        // ST_Init still deferred (full status bar).
+        doom.ui.HuStuff.huInit();
 
         // Auto-start a level if -warp / -episode / -skill given.
         if (autostart) {
@@ -259,6 +260,9 @@ public final class DMain {
             // Drain the gameaction transition now so the engine
             // is in GS_LEVEL state before the first frame.
             GGame.gTicker();
+            // Wake the HUD message widget now that the player
+            // exists.
+            doom.ui.HuStuff.huStart();
         }
     }
 
@@ -313,6 +317,11 @@ public final class DMain {
         if (p != null && p.mo != null) {
             RMain.rRenderPlayerView(p);
         }
+
+        // HUD overlay (pickup-message banner). Painted into the
+        // same framebuffer as the BSP view above; full HU_Drawer
+        // (chat / level title) lands when those widgets port.
+        doom.ui.HuStuff.huDrawer();
 
         IVideo.iUpdateNoBlit();
         IVideo.iFinishUpdate();

@@ -90,7 +90,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | m_misc.c    | `doom.system.MMisc`    | Standard | Partial | 57 / ~. Just `M_WriteFile` + `M_ReadFile` — the rest (defaults, screenshot, draw-text) needs unported globals. `mReadFile` returns `byte[]` directly in place of the C's `byte**` out-param + length return; see deviation 18. |
 | m_cheat.c   | `doom.play.MCheat`     | Trivial  | Verified | 101 / ~. `cheat_xlate_table` is `int[256]`; `cheatseq_t.p` uses sentinel `-1` to express C's NULL "not yet initialized". See deviation 9. |
 | hu_lib.c    | `doom.ui.HuLib`        | Standard | Verified | 294 / ~. Text-line / scrolling / input widgets. `boolean*` "on" pointers translate as `boolean[]` holders (see deviation 19). `SHORT()` is a no-op since `Patch.width/height` are already parsed int. |
-| hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Pending |
+| hu_stuff.c  | `doom.ui.HuStuff`      | Standard | Partial | Pickup-message path: STCFN033..STCFN095 font load, huStart, huTicker (drains `player.message` into the SText widget, ticks the HU_MSGTIMEOUT counter), huDrawer, huErase. Wired into `DMain.dDoomMain` (huInit) + autostart (huStart) + dDisplay (huDrawer); `GGame.gTicker` pumps huTicker each tic. Chat widget, level-title banner, `shiftxform`, HU_Responder deferred (waits on m_menu / multiplayer chat). `huStart` has a Java-only `huFont[0]==null` early-return so playsim unit tests that exercise pSpawnPlayer without booting the engine don't crash — deviation 34. |
 | st_lib.c    | `doom.ui.StLib`        | Standard | Verified | 262 / ~. Number/Percent/MultIcon/BinIcon widgets. `int*`/`boolean*` caller-owned holders translate as `int[1]`/`boolean[1]` (deviation 19). `SHORT()` is a no-op since Patch fields are pre-parsed int. BG=4 (status-bar layer) distinct from HuLib's BG=1. |
 | st_stuff.c  | `doom.ui.StStuff`      | Standard | Partial | Stub: `ST_HEIGHT`/`ST_WIDTH`/`ST_Y` constants for st_lib. Status-bar logic lands when its player/sound deps arrive. |
 | wi_stuff.c  | `doom.ui.WiStuff`      | Standard | Pending |
@@ -376,6 +376,26 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+34. hu_stuff.c `huStart` font-unloaded guard:
+    - The C `HU_Start` assumes `HU_Init` already ran and the font
+      patches are loaded — every code path in D_DoomMain calls
+      HU_Init before any HU_Start can fire. Several playsim unit
+      tests (PMobjTest.spawnPlayerWiresPlayerAndMobj, etc.) drive
+      `P_SpawnPlayer` directly without booting the engine, so the
+      font array is still all-null when pSpawnPlayer reaches the
+      `HuStuff.huStart()` wake-up call → NPE in
+      `HuLib.huLibInitSText` on `font[0].height`.
+    - The Java port adds a one-line `if (huFont[0] == null) return;`
+      early-return at the top of `huStart` (after the leading
+      `huStop` so reentrant calls still reset). The check is
+      unreachable in the real boot sequence; it only matters for
+      partial-engine tests. Same spirit as PEnemy.pLookForPlayers's
+      `playeringame[0]=true` test invariant — accommodating Java
+      tests that skip the C's full init order.
+    - HuStuff itself stays C-faithful: real-game behavior is
+      unchanged because huFont[0] is always non-null after
+      `DMain.dDoomMain` runs `HuStuff.huInit()`.
 
 33. r_things.c sprite-rotate tri-state:
     - The C `spriteframe_t.rotate` is declared `boolean` but used

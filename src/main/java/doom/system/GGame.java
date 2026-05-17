@@ -468,6 +468,10 @@ public final class GGame {
         // always pumps the playsim — the only state currently
         // implemented.
         PTick.pTicker();
+        // ST_Ticker / AM_Ticker still deferred. HU_Ticker advances
+        // the pickup-message timer + drains player.message into
+        // the SText widget.
+        doom.ui.HuStuff.huTicker();
         PTick.gametic++;
     }
 
