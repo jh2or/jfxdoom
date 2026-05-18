@@ -253,14 +253,17 @@ public final class DMain {
         PSpec.pInitPicAnims();
         RThings.rInitSprites(doom.play.Info.sprnames);
 
-        // I_Init: audio init (deferred), tactile (no-op).
+        // I_Init: audio init (tactile is a no-op).
         ISystem.iInit();
+        doom.sound.ISound.iInitSound();
+        doom.sound.ISound.iInitMusic();
 
         // D_CheckNetGame: single-player no-op.
         DNet.dQuitNetGame();        // closes any leftover state
 
-        // S_Init: sound channel allocation. Deferred (SSound is a
-        // stub).
+        // S_Init: allocate the 16-channel mixer + caches.
+        doom.sound.SSound.sInit(doom.sound.SSound.snd_SfxVolume,
+                                doom.sound.SSound.snd_MusicVolume);
 
         // HU_Init: load the font + initialise the message widget.
         doom.ui.HuStuff.huInit();

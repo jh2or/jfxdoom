@@ -504,6 +504,10 @@ public final class GGame {
         Doomstat.usergame   = true;
         Doomstat.viewactive = true;
 
+        // S_Start — kill any leftover SFX channels and queue the
+        // per-map music.
+        doom.sound.SSound.sStart();
+
         // Clear per-tic input state so a held key from the previous
         // level doesn't carry over.
         for (int i = 0; i < Doomdef.NUMKEYS; i++) {
@@ -731,6 +735,11 @@ public final class GGame {
                 int sub = players[i].cmd.buttons & Doomdef.BT_SPECIALMASK;
                 if (sub == Doomdef.BTS_PAUSE) {
                     Doomstat.paused = !Doomstat.paused;
+                    if (Doomstat.paused) {
+                        doom.sound.SSound.sPauseSound();
+                    } else {
+                        doom.sound.SSound.sResumeSound();
+                    }
                 }
                 // BTS_SAVEGAME deferred (G_DoSaveGame not in scope)
             }
@@ -748,11 +757,15 @@ public final class GGame {
                 // widget + ticks the message timeout. AM_Ticker
                 // updates the pan / zoom / follow-player state when
                 // the automap is showing. M_Ticker animates the
-                // menu skull cursor.
+                // menu skull cursor. S_UpdateSounds re-runs the
+                // per-channel distance / pan attenuation against
+                // the consoleplayer's current position.
                 doom.ui.StStuff.stTicker();
                 doom.ui.HuStuff.huTicker();
                 doom.ui.AmMap.amTicker();
                 doom.ui.MMenu.mTicker();
+                doom.sound.SSound.sUpdateSounds(
+                        players[consoleplayer].mo);
                 break;
             case Doomstat.GS_INTERMISSION:
                 doom.ui.WiStuff.wiTicker();

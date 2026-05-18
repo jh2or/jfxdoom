@@ -75,8 +75,8 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 
 | C file      | Java class           | Tier     | Status  | Notes                              |
 | ----------- | -------------------- | -------- | ------- | ---------------------------------- |
-| s_sound.c   | `doom.sound.SSound`  | Standard | Partial | Stub: `sStartSound(Object, int)` as no-op so plane-movers (PCeilng, PDoors, PPlats, ...) can call it. Full mixer/attenuation/channel bookkeeping lands with i_sound. |
-| i_sound.c   | `doom.sound.ISound`  | Hard     | Partial | Stub: I_InitSound / I_ShutdownSound / I_InitMusic / I_ShutdownMusic / I_UpdateSound / I_SubmitSound no-op. Full body (WAD lump → PCM, MUS → MIDI, 8-channel mixer) lands with the JavaFX audio backend (javax.sound.sampled.SourceDataLine + javax.sound.midi.Sequencer). |
+| s_sound.c   | `doom.sound.SSound`  | Standard | Verified | 879 / ~. Full mixer wrapper. sInit allocates the 16-channel table + clears the per-sfx cache. sStart kills any in-flight SFX and selects the per-map music (Doom 2: mus_runnin+gamemap-1; Doom 1: mus_e1m1 base offset by episode/map, E4 picks from the spmus[] curated table). sStartSoundAtVolume + sStartSound: priority + pitch perturb (sawup..sawhit ±8 range, others ±16, except itemup/tink which stay neutral), distance + stereo attenuation via sAdjustSoundParams (Graphics-Gems approx-Euclidean fixed-point distance + listener angle → sep), and sGetChannel pick (free-slot → same-origin override → priority kickout). sUpdateSounds re-runs the per-tic audibility re-check and feeds new vol/sep/pitch to ISound.iUpdateSoundParams. sChangeMusic / sStartMusic / sStopMusic dispatch through ISound.iRegisterSong / iPlaySong / iStopSong (stubs until MUS→MIDI lands). sPauseSound / sResumeSound bridge the BTS_PAUSE special-button latch. C `void* origin` → Java `Object` with instanceof downcast for Mobj / Degenmobj (Sector.soundorg) — see deviation 37. C function-pointer `S_AdjustSoundParams` out-params → `int[1]` holders for vol/sep/pitch. C `>=` priority comparison in sGetChannel preserved verbatim despite the upside-down "kick lower priority" semantics (CLAUDE.md §2). |
+| i_sound.c   | `doom.sound.ISound`  | Hard     | Verified | 985 / ~. JavaFX audio backend — rewires the C's Linux DMX / SNDSERV glue onto javax.sound.sampled. iInitSound opens a 22050 Hz / 16-bit / stereo `SourceDataLine` and starts it. iSetChannels allocates the per-channel mixer table (matches ISound.NUM_CHANNELS = 16). iGetSfxLumpNum maps Sfxinfo→"DS<name>" WAD lookup. iStartSound lazy-decodes the DMX-format lump (3-byte pad + 1-byte format=3 + 2-byte rate + 4-byte length + N 8-bit unsigned PCM samples + 16-byte trailer), caches the DmxBlob on Sfxinfo.data, picks the first free channel (or kicks the oldest by handle), stores the source samples + cursor + L/R gains. iStopSound / iSoundIsPlaying / iUpdateSoundParams manage the channel table by monotonic handle. iSubmitSound mixes all active channels once per tic (SAMPLES_PER_TIC = 22050/35 = 630 frames) — 8-bit unsigned → signed 16-bit conversion + integer-saturating add — and writes the interleaved L/R buffer to the SourceDataLine (non-blocking; drops frames if the buffer is full). Music dispatch (iRegisterSong / iPlaySong / iStopSong / iSetMusicVolume) stays no-op until MUS→MIDI converter lands. Catches `IOException | ISystem.DoomError` on lump load so unit tests without a WAD don't crash — deviation 34. Architecturally diverges from the C (deviation 36): the C does software mixing into a DMX buffer pumped by UDP socket; the Java port mixes inline + hands a single shared SourceDataLine. |
 | sounds.c    | `doom.sound.Sounds`  | Trivial  | Verified | 228 / ~. `sfxenum_t`/`musicenum_t` as `public static final int` constants; `S_sfx[sfx_chgun].link` self-reference patched up after array fill (see deviation 17). |
 
 ## 6 — Game, menu, HUD, finale
@@ -376,6 +376,41 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+37. s_sound.c `void* origin` → `Object` listener with instanceof:
+    - The C passes either a `mobj_t*` or a `degenmobj_t*` (a
+      sector's `soundorg` trio of x/y/z) as the SFX origin via a
+      `void*`. Both structs share an x/y/z prefix, so the C reads
+      them through casts.
+    - Java has no inheritance between Mobj and Degenmobj (the
+      two classes live in different packages and don't share a
+      base). The Java port types the parameter as `Object` and
+      uses `instanceof` checks in `originX` / `originY` helpers
+      to read x/y. PCeilng / PDoors / PPlats / PFloor pass
+      `sector.soundorg`; PPspr / PMobj pass `mobj`. Same call
+      shape as the C; just runtime-typed instead of pointer-cast.
+
+36. i_sound.c JavaFX backend architecture:
+    - The C `i_sound.c` is Linux DMX driver glue + a UDP-socket
+      sound-server (`sndserver`) for out-of-process mixing. It
+      reads PCM samples into a private buffer that the DMX kernel
+      driver picks up.
+    - Java has no DMX equivalent. The port replaces the entire
+      backend with `javax.sound.sampled.SourceDataLine`: open a
+      single 22050 Hz / 16-bit / stereo line, mix all 16 channels
+      inline once per tic (SAMPLES_PER_TIC = 630 frames), write
+      the interleaved L/R buffer non-blocking. SFX lumps are
+      lazily DMX-decoded on first play and cached on
+      `Sfxinfo.data` as `DmxBlob(samples, rate)`. Pitch
+      perturbation lives on the SSound side via the same `pitch`
+      field; the JavaFX mixer doesn't act on it (matches the C
+      Linux build, which also ignores pitch).
+    - The C `int handle` identifies a playing sound in the DMX
+      buffer. The Java port keeps the same shape with a monotonic
+      `nextHandle` counter; channels store their owning handle so
+      `iStopSound(handle)` / `iSoundIsPlaying(handle)` / 
+      `iUpdateSoundParams(handle, ...)` translate exactly. Music
+      dispatch stays no-op until a MUS→MIDI converter ports.
 
 35. st_stuff.c widget bool→int holders:
     - The C wires status-bar widgets to live game state with
