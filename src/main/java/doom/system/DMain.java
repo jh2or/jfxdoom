@@ -108,11 +108,18 @@ public final class DMain {
             DEvent ev = events[eventtail];
             // M_Responder dispatch deferred (m_menu not ported).
             // During GS_FINALE the cast call eats keypresses (forces
-            // the death frame on the active caster). Otherwise the
-            // event falls through ST_Responder (cheat decoder) and
-            // G_Responder (gamekeydown[]).
+            // the death frame on the active caster). When the
+            // automap is active (or being toggled), AmMap eats input
+            // first so its pan / zoom / mark keys don't bleed into
+            // the playsim. Otherwise the event falls through
+            // ST_Responder (cheat decoder) and G_Responder
+            // (gamekeydown[]).
             if (Doomstat.gamestate == Doomstat.GS_FINALE
                     && doom.ui.FFinale.fResponder(ev)) {
+                eventtail = (eventtail + 1) & (MAXEVENTS - 1);
+                continue;
+            }
+            if (doom.ui.AmMap.amResponder(ev)) {
                 eventtail = (eventtail + 1) & (MAXEVENTS - 1);
                 continue;
             }
@@ -333,9 +340,15 @@ public final class DMain {
         // f_wipe lands those branches stay as direct paints.
         switch (Doomstat.gamestate) {
             case Doomstat.GS_LEVEL: {
-                Player p = GGame.players[GGame.consoleplayer];
-                if (p != null && p.mo != null) {
-                    RMain.rRenderPlayerView(p);
+                if (doom.ui.AmMap.automapactive) {
+                    // Automap replaces the player-view paint; the
+                    // status bar still draws below it.
+                    doom.ui.AmMap.amDrawer();
+                } else {
+                    Player p = GGame.players[GGame.consoleplayer];
+                    if (p != null && p.mo != null) {
+                        RMain.rRenderPlayerView(p);
+                    }
                 }
                 // Status bar (health / ammo / face / keys / armor).
                 // Drawn before HUD overlay so the pickup-message

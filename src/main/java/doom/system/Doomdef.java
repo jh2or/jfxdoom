@@ -59,6 +59,7 @@ public final class Doomdef {
     // referenced by ported modules live here.
     public static final int KEY_ENTER     = 13;
     public static final int KEY_BACKSPACE = 127;
+    public static final int KEY_TAB       = 9;
 
     // d_event.h key codes consumed by G_Responder.
     public static final int KEY_RIGHTARROW = 0xae;

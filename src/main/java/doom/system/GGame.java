@@ -639,9 +639,12 @@ public final class GGame {
                 // ST_Ticker drives the face animation, palette flash
                 // counter, and per-tic widget-state refresh.
                 // HU_Ticker drains player.message into the SText
-                // widget + ticks the message timeout.
+                // widget + ticks the message timeout. AM_Ticker
+                // updates the pan / zoom / follow-player state when
+                // the automap is showing.
                 doom.ui.StStuff.stTicker();
                 doom.ui.HuStuff.huTicker();
+                doom.ui.AmMap.amTicker();
                 break;
             case Doomstat.GS_INTERMISSION:
                 doom.ui.WiStuff.wiTicker();
