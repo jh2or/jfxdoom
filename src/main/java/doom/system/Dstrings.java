@@ -38,6 +38,34 @@ public final class Dstrings {
     public static final String PD_REDK    = "You need a red key to open this door";
     public static final String PD_YELLOWK = "You need a yellow key to open this door";
 
+    // d_englsh.h lines 38–75 — M_Menu prompts + acknowledgement
+    // banners. PRESSKEY / PRESSYN are footer fragments that the C
+    // appends to most prompts.
+    public static final String PRESSKEY  = "press a key.";
+    public static final String PRESSYN   = "press y or n.";
+    public static final String LOADNET   = "you can't do load while in a net game!\n\n" + PRESSKEY;
+    public static final String QLOADNET  = "you can't quickload during a netgame!\n\n" + PRESSKEY;
+    public static final String QSAVESPOT = "you haven't picked a quicksave slot yet!\n\n" + PRESSKEY;
+    public static final String SAVEDEAD  = "you can't save if you aren't playing!\n\n" + PRESSKEY;
+    public static final String QSPROMPT  = "quicksave over your game named\n\n'%s'?\n\n" + PRESSYN;
+    public static final String QLPROMPT  = "do you want to quickload the game named\n\n'%s'?\n\n" + PRESSYN;
+    public static final String NEWGAME   = "you can't start a new game\nwhile in a network game.\n\n" + PRESSKEY;
+    public static final String NIGHTMARE = "are you sure? this skill level\nisn't even remotely fair.\n\n" + PRESSYN;
+    public static final String SWSTRING  = "this is the shareware version of doom.\n\nyou need to order the entire trilogy.\n\n" + PRESSKEY;
+    public static final String MSGOFF    = "Messages OFF";
+    public static final String MSGON     = "Messages ON";
+    public static final String NETEND    = "you can't end a netgame!\n\n" + PRESSKEY;
+    public static final String ENDGAME   = "are you sure you want to end the game?\n\n" + PRESSYN;
+    public static final String DOSY      = "(press y to quit)";
+    public static final String DETAILHI  = "High detail";
+    public static final String DETAILLO  = "Low detail";
+    public static final String GAMMALVL0 = "Gamma correction OFF";
+    public static final String GAMMALVL1 = "Gamma correction level 1";
+    public static final String GAMMALVL2 = "Gamma correction level 2";
+    public static final String GAMMALVL3 = "Gamma correction level 3";
+    public static final String GAMMALVL4 = "Gamma correction level 4";
+    public static final String EMPTYSTRING = "empty slot";
+
     // d_englsh.h lines 339–354 — status-bar cheat acknowledgements.
     // Consumed by ST_Responder.
     public static final String STSTR_MUS      = "Music Change";

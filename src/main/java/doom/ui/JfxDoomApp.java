@@ -87,11 +87,6 @@ public final class JfxDoomApp extends Application {
         scene.setOnKeyPressed(e -> {
             int code = mapKey(e.getCode());
             if (code < 0) return;
-            // ESC also closes the window for now (no in-game menu).
-            if (e.getCode() == KeyCode.ESCAPE) {
-                stage.close();
-                return;
-            }
             DEvent ev = new DEvent(DEvent.EV_KEYDOWN, code);
             DMain.dPostEvent(ev);
         });

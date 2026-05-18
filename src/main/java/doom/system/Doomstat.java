@@ -104,6 +104,12 @@ public final class Doomstat {
     // observed. -1 forces a wipe on the next D_Display pass.
     public static int wipegamestate = GS_LEVEL;
 
+    // doomstat.h — true while a level is loaded and the user is
+    // playing (not at the title screen / intermission). M_SaveGame
+    // / M_EndGame gate on this so save/end-game refuse to fire on
+    // the title screen.
+    public static boolean usergame;
+
     private Doomstat() {
     }
 }

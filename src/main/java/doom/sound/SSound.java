@@ -19,6 +19,22 @@ package doom.sound;
 
 public final class SSound {
 
+    // s_sound.c — sound + music volumes (0..15). The C menu reads
+    // and writes these directly; the real mixer (deferred) consumes
+    // them.
+    public static int snd_SfxVolume   = 8;
+    public static int snd_MusicVolume = 8;
+
+    // s_sound.c — S_SetSfxVolume / S_SetMusicVolume. Stubs until
+    // the audio backend lands.
+    public static void sSetSfxVolume(int vol) {
+        snd_SfxVolume = vol;
+    }
+
+    public static void sSetMusicVolume(int vol) {
+        snd_MusicVolume = vol;
+    }
+
     // s_sound.c lines 331–... — S_StartSound(origin, sfx_id).
     // Stub: no-op. The faithful implementation needs i_sound + the
     // channel mixer + attenuation math, none of which are ported.

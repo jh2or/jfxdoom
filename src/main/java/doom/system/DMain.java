@@ -106,14 +106,19 @@ public final class DMain {
     public static void dProcessEvents() {
         while (eventtail != eventhead) {
             DEvent ev = events[eventtail];
-            // M_Responder dispatch deferred (m_menu not ported).
-            // During GS_FINALE the cast call eats keypresses (forces
-            // the death frame on the active caster). When the
-            // automap is active (or being toggled), AmMap eats input
-            // first so its pan / zoom / mark keys don't bleed into
-            // the playsim. Otherwise the event falls through
-            // ST_Responder (cheat decoder) and G_Responder
-            // (gamekeydown[]).
+            // Responder priority (matches the C d_main.c chain):
+            //   1. M_Responder — menu navigation / F-keys eat all
+            //      input when the menu is up or an F-shortcut fires.
+            //   2. F_Responder (during GS_FINALE) — cast call eats
+            //      keypresses (forces the death frame).
+            //   3. AM_Responder — automap pan / zoom / mark keys
+            //      when active.
+            //   4. ST_Responder — cheat decoder.
+            //   5. G_Responder — gamekeydown[] for the playsim.
+            if (doom.ui.MMenu.mResponder(ev)) {
+                eventtail = (eventtail + 1) & (MAXEVENTS - 1);
+                continue;
+            }
             if (Doomstat.gamestate == Doomstat.GS_FINALE
                     && doom.ui.FFinale.fResponder(ev)) {
                 eventtail = (eventtail + 1) & (MAXEVENTS - 1);
@@ -263,6 +268,11 @@ public final class DMain {
         // ST_Init: load status-bar graphics + allocate the BG layer.
         doom.ui.StStuff.stInit();
 
+        // M_Init: wire the menu state machine (no patches loaded
+        // until the user opens a menu — they're cached on first
+        // V_DrawPatchDirect call).
+        doom.ui.MMenu.mInit();
+
         // Auto-start a level if -warp / -episode / -skill given.
         if (autostart) {
             // Seed playeringame[0]=true so the playsim has at
@@ -371,6 +381,11 @@ public final class DMain {
             default:
                 break;
         }
+
+        // Menu overlay always paints last so it sits on top of the
+        // live view + status bar + HUD. M_Drawer no-ops when the
+        // menu is closed.
+        doom.ui.MMenu.mDrawer();
 
         IVideo.iUpdateNoBlit();
         IVideo.iFinishUpdate();

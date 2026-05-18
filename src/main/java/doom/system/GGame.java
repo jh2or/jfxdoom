@@ -314,6 +314,104 @@ public final class GGame {
         gameaction = ga_newgame;
     }
 
+    // g_game.c — ga_loadgame / ga_savegame deferred parameters
+    // (filename + slot description). Latched by gLoadGame /
+    // gSaveGame and consumed by gDoLoadGame / gDoSaveGame on the
+    // next tic.
+    public static String saveName;    // savegame file path
+    public static int    saveSlot;
+    public static String saveDescription;
+
+    /**
+     * G_LoadGame — queues a save-restore from `name`.
+     * g_game.c lines 1206–1213.
+     */
+    public static void gLoadGame(String name) {
+        saveName = name;
+        gameaction = ga_loadgame;
+    }
+
+    /**
+     * G_SaveGame — queues a save-write to `slot` with `description`.
+     * g_game.c lines 1262–1269.
+     */
+    public static void gSaveGame(int slot, String description) {
+        saveSlot = slot;
+        saveDescription = description;
+        gameaction = ga_savegame;
+    }
+
+    /**
+     * G_DoSaveGame — actually writes the save file. Run from
+     * gTicker's ga_savegame transition. Java port uses
+     * `PSaveg.save()` + a length-prefixed file format: first byte
+     * is the description length, then the description, then the
+     * PSaveg byte stream.
+     */
+    public static void gDoSaveGame() {
+        try {
+            byte[] body = doom.play.PSaveg.save();
+            byte[] desc = saveDescription == null
+                    ? new byte[0]
+                    : saveDescription.getBytes("UTF-8");
+            byte[] out = new byte[1 + desc.length + body.length];
+            out[0] = (byte) Math.min(255, desc.length);
+            System.arraycopy(desc, 0, out, 1, out[0] & 0xff);
+            System.arraycopy(body, 0, out, 1 + (out[0] & 0xff), body.length);
+            java.nio.file.Files.write(java.nio.file.Paths.get(saveName), out);
+            players[consoleplayer].message = "game saved.";
+        } catch (java.io.IOException e) {
+            players[consoleplayer].message = "save failed: " + e.getMessage();
+        }
+        gameaction = ga_nothing;
+    }
+
+    /**
+     * G_DoLoadGame — actually reads the save file. Run from gTicker's
+     * ga_loadgame transition. Strips the description prefix, then
+     * hands the body to PSaveg.load().
+     */
+    public static void gDoLoadGame() {
+        try {
+            byte[] all = java.nio.file.Files.readAllBytes(
+                    java.nio.file.Paths.get(saveName));
+            int descLen = all[0] & 0xff;
+            byte[] body = new byte[all.length - 1 - descLen];
+            System.arraycopy(all, 1 + descLen, body, 0, body.length);
+            doom.play.PSaveg.load(body);
+            players[consoleplayer].message = "game loaded.";
+        } catch (java.io.IOException e) {
+            players[consoleplayer].message = "load failed: " + e.getMessage();
+        }
+        gameaction = ga_nothing;
+    }
+
+    /**
+     * G_ReadSaveFileDescription — peek the description prefix of a
+     * save file without actually loading the body. Used by the menu
+     * to populate the load-game slot strings.
+     */
+    public static String gReadSaveFileDescription(String path) {
+        try {
+            java.nio.file.Path p = java.nio.file.Paths.get(path);
+            if (!java.nio.file.Files.exists(p)) return null;
+            byte[] header = java.nio.file.Files.readAllBytes(p);
+            if (header.length < 1) return null;
+            int descLen = header[0] & 0xff;
+            if (header.length < 1 + descLen) return null;
+            return new String(header, 1, descLen, "UTF-8");
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * G_ScreenShot — stub. g_game.c line 970.
+     */
+    public static void gScreenShot() {
+        gameaction = ga_screenshot;
+    }
+
     //
     // G_DoNewGame
     //
@@ -402,6 +500,9 @@ public final class GGame {
             throw new RuntimeException(e);
         }
         gameaction = ga_nothing;
+        Doomstat.gamestate  = Doomstat.GS_LEVEL;
+        Doomstat.usergame   = true;
+        Doomstat.viewactive = true;
 
         // Clear per-tic input state so a held key from the previous
         // level doesn't carry over.
@@ -598,10 +699,15 @@ public final class GGame {
                     gameaction = ga_loadlevel;
                     break;
                 case ga_loadgame:
+                    gDoLoadGame();
+                    break;
                 case ga_savegame:
+                    gDoSaveGame();
+                    break;
                 case ga_playdemo:
                 case ga_screenshot:
-                    // All waiting on g_game's bigger pieces.
+                    // ga_screenshot / demo playback waiting on more
+                    // dependent ports.
                     gameaction = ga_nothing;
                     break;
                 default:
@@ -641,10 +747,12 @@ public final class GGame {
                 // HU_Ticker drains player.message into the SText
                 // widget + ticks the message timeout. AM_Ticker
                 // updates the pan / zoom / follow-player state when
-                // the automap is showing.
+                // the automap is showing. M_Ticker animates the
+                // menu skull cursor.
                 doom.ui.StStuff.stTicker();
                 doom.ui.HuStuff.huTicker();
                 doom.ui.AmMap.amTicker();
+                doom.ui.MMenu.mTicker();
                 break;
             case Doomstat.GS_INTERMISSION:
                 doom.ui.WiStuff.wiTicker();
