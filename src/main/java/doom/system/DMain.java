@@ -347,7 +347,7 @@ public final class DMain {
                 break;
             }
             case Doomstat.GS_INTERMISSION:
-                // WI_Drawer still deferred (wi_stuff not ported).
+                doom.ui.WiStuff.wiDrawer();
                 break;
             case Doomstat.GS_FINALE:
                 doom.ui.FFinale.fDrawer();

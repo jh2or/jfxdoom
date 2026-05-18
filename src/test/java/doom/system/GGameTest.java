@@ -203,45 +203,49 @@ class GGameTest {
         assertTrue(Doomstat.respawnmonsters);
     }
 
-    // gDoCompleted advances gamemap (Doom 1) and queues ga_loadlevel.
+    // gDoCompleted populates wminfo with the routing for the next
+    // Doom 1 map. The intermission may then succeed (with WAD) or
+    // degrade to ga_worlddone (no WAD); these tests only verify the
+    // wminfo population that happens unconditionally beforehand.
     @Test
-    void doCompletedAdvancesMapAndQueuesLoadlevel() {
+    void doCompletedPopulatesWmInfoForDoom1MidEpisode() {
         Doomstat.gamemode = Doomstat.GameMode.shareware;
         Doomstat.gameepisode = 1;
         Doomstat.gamemap = 3;
+        GGame.secretexit = 0;
         GGame.gDoCompleted();
-        assertEquals(4, Doomstat.gamemap);
-        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+        assertEquals(0, GGame.wminfo.epsd);        // 0-based
+        assertEquals(2, GGame.wminfo.last);        // gamemap-1
+        assertEquals(3, GGame.wminfo.next);        // gamemap (0-based next)
     }
 
-    // End-of-episode (Doom 1, map 8) bumps episode and resets map=1.
+    // End-of-episode (Doom 1, map 8) → ga_victory (cast call / finale).
     @Test
-    void doCompletedEndOfEpisodeBumpsEpisode() {
+    void doCompletedDoom1Map8TriggersVictory() {
         Doomstat.gamemode = Doomstat.GameMode.registered;
         Doomstat.gameepisode = 1;
         Doomstat.gamemap = 8;
         GGame.gDoCompleted();
-        assertEquals(2, Doomstat.gameepisode);
-        assertEquals(1, Doomstat.gamemap);
-        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+        assertEquals(GGame.ga_victory, GGame.gameaction);
     }
 
-    // Doom 2 (commercial) advances map 1..32.
+    // Doom 2: gDoCompleted on map 5 routes wminfo.next = gamemap.
     @Test
-    void doCompletedCommercialAdvancesMap() {
+    void doCompletedCommercialRoutesNextMap() {
         Doomstat.gamemode = Doomstat.GameMode.commercial;
         Doomstat.gamemap = 5;
+        GGame.secretexit = 0;
         GGame.gDoCompleted();
-        assertEquals(6, Doomstat.gamemap);
-        assertEquals(GGame.ga_loadlevel, GGame.gameaction);
+        assertEquals(5, GGame.wminfo.next);  // gamemap (0-based next slot)
     }
 
-    // After map 30 / map 32 (Doom 2) → ga_victory.
+    // Doom 2 secret exit on map 15 routes to map 31 (0-based 30).
     @Test
-    void doCompletedCommercialMap32TriggersVictory() {
+    void doCompletedCommercialSecretExitRoutesToMap31() {
         Doomstat.gamemode = Doomstat.GameMode.commercial;
-        Doomstat.gamemap = 32;
+        Doomstat.gamemap = 15;
+        GGame.secretexit = 1;
         GGame.gDoCompleted();
-        assertEquals(GGame.ga_victory, GGame.gameaction);
+        assertEquals(30, GGame.wminfo.next);
     }
 }

@@ -124,6 +124,11 @@ public class Player {
     // flash). Indexed by PPspr.ps_weapon / ps_flash.
     public Pspdef[] psprites = makePsprites();
 
+    // d_player.h line 164 — true after exiting a secret level.
+    // G_DoCompleted reads this to splat the secret-level node on
+    // the Doom 1 world map.
+    public boolean didsecret;
+
     private static Pspdef[] makePsprites() {
         Pspdef[] arr = new Pspdef[2 /* PPspr.NUMPSPRITES */];
         for (int i = 0; i < arr.length; i++) {

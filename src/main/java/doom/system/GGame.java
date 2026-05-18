@@ -412,37 +412,123 @@ public final class GGame {
         Doomstat.paused = false;
     }
 
+    // g_game.c lines 977–984 — DOOM 1 par-time table (seconds /
+    // episode / map). Index 0 of each sub-array is dead (par tables
+    // index from 1; the C source includes the leading 0 too).
+    public static final int[][] pars = {
+            { 0 },
+            { 0, 30,  75, 120,  90, 165, 180, 180,  30, 165 },
+            { 0, 90,  90,  90, 120,  90, 360, 240,  30, 170 },
+            { 0, 90,  45,  90, 150,  90,  90, 165,  30, 135 },
+    };
+
+    // g_game.c lines 987–993 — DOOM 2 par-time table.
+    public static final int[] cpars = {
+             30,  90, 120, 120,  90, 150, 120, 120, 270,  90,  //  1-10
+            210, 150, 150, 150, 210, 150, 420, 150, 210, 150,  // 11-20
+            240, 150, 180, 150, 150, 300, 330, 420, 300, 180,  // 21-30
+            120,  30                                            // 31-32
+    };
+
+    // g_game.c — single shared wminfo passed to WI_Start. The C
+    // declares it file-static; the Java port keeps the same shape so
+    // the C-style `&wminfo` pointer pattern translates cleanly.
+    public static final doom.ui.Wbstartstruct wminfo = new doom.ui.Wbstartstruct();
+
     //
-    // G_DoCompleted — shortcut.
+    // G_DoCompleted
     //
-    // g_game.c lines 1020–1144. The C runs through the intermission
-    // first (sets up WI_Start state, transitions to GS_INTERMISSION,
-    // builds the WI_End → G_WorldDone hop). Without wi_stuff
-    // ported, the Java shortcut bumps gamemap by 1 and queues a
-    // direct ga_loadlevel.
+    // g_game.c lines 1020–1141. Full intermission hand-off: snapshot
+    // each player's stats into wminfo, work out `last` / `next` map
+    // (with secret-level routing for both Doom 1 and Doom 2), latch
+    // gamestate=GS_INTERMISSION, call WI_Start.
     public static void gDoCompleted() {
-        if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
-            // Doom 2: map 1..32. Cap at 32; game over after.
-            if (Doomstat.gamemap >= 32) {
+        int i;
+        gameaction = ga_nothing;
+
+        // G_PlayerFinishLevel: take away cards / powers / message.
+        // Deferred — needs the full G_PlayerFinishLevel port. The
+        // intermission doesn't read those fields, so skip for now.
+
+        if (doom.ui.AmMap.automapactive) {
+            doom.ui.AmMap.amStop();
+        }
+
+        // Doom 1 end-of-episode victory short-circuit (map 8 → cast
+        // call / finale, map 9 → mark secret-cleared).
+        if (Doomstat.gamemode != Doomstat.GameMode.commercial) {
+            if (Doomstat.gamemap == 8) {
                 gameaction = ga_victory;
                 return;
             }
-            Doomstat.gamemap++;
-        } else {
-            // Doom 1: episode 1..4, map 1..9. After M8 (or M9 if
-            // taking the secret exit), episode++ and map=1.
-            if (Doomstat.gamemap >= 8) {
-                if (Doomstat.gameepisode >= 4) {
-                    gameaction = ga_victory;
-                    return;
+            if (Doomstat.gamemap == 9) {
+                for (i = 0; i < Doomdef.MAXPLAYERS; i++) {
+                    players[i].didsecret = true;
                 }
-                Doomstat.gameepisode++;
-                Doomstat.gamemap = 1;
-            } else {
-                Doomstat.gamemap++;
             }
         }
-        gameaction = ga_loadlevel;
+
+        wminfo.didsecret = players[consoleplayer].didsecret;
+        wminfo.epsd      = Doomstat.gameepisode - 1;
+        wminfo.last      = Doomstat.gamemap - 1;
+
+        // wminfo.next is 0-based (gamemap is 1-based).
+        if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+            if (secretexit != 0) {
+                switch (Doomstat.gamemap) {
+                    case 15: wminfo.next = 30; break;
+                    case 31: wminfo.next = 31; break;
+                    default: wminfo.next = Doomstat.gamemap; break;
+                }
+            } else {
+                switch (Doomstat.gamemap) {
+                    case 31:
+                    case 32: wminfo.next = 15; break;
+                    default: wminfo.next = Doomstat.gamemap; break;
+                }
+            }
+        } else {
+            if (secretexit != 0) {
+                wminfo.next = 8;  // go to secret level
+            } else if (Doomstat.gamemap == 9) {
+                // returning from secret level
+                switch (Doomstat.gameepisode) {
+                    case 1: wminfo.next = 3; break;
+                    case 2: wminfo.next = 5; break;
+                    case 3: wminfo.next = 6; break;
+                    case 4: wminfo.next = 2; break;
+                    default: break;
+                }
+            } else {
+                wminfo.next = Doomstat.gamemap;
+            }
+        }
+
+        wminfo.maxkills  = Doomstat.totalkills;
+        wminfo.maxitems  = Doomstat.totalitems;
+        wminfo.maxsecret = Doomstat.totalsecret;
+        wminfo.maxfrags  = 0;
+        if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+            wminfo.partime = 35 * cpars[Doomstat.gamemap - 1];
+        } else {
+            wminfo.partime = 35 * pars[Doomstat.gameepisode][Doomstat.gamemap];
+        }
+        wminfo.pnum = consoleplayer;
+
+        for (i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            wminfo.plyr[i].in      = playeringame[i];
+            wminfo.plyr[i].skills  = players[i].killcount;
+            wminfo.plyr[i].sitems  = players[i].itemcount;
+            wminfo.plyr[i].ssecret = players[i].secretcount;
+            wminfo.plyr[i].stime   = doom.play.PTick.leveltime;
+            System.arraycopy(players[i].frags, 0,
+                    wminfo.plyr[i].frags, 0, Doomdef.MAXPLAYERS);
+        }
+
+        Doomstat.gamestate  = Doomstat.GS_INTERMISSION;
+        Doomstat.viewactive = false;
+        doom.ui.AmMap.automapactive = false;
+        doom.ui.WiStuff.wiStart(wminfo);
     }
 
     //
@@ -473,10 +559,42 @@ public final class GGame {
                     gDoNewGame();
                     break;
                 case ga_worlddone:
-                    // Doom 2 finale press-key skips inter-mission to
-                    // the next level. Mirrors C's gDoWorldDone:
-                    // gamestate→GS_LEVEL + ga_loadlevel.
+                    // g_game.c lines 1147–1185: G_WorldDone advances
+                    // gamemap/episode using the same routing wminfo
+                    // computed (secretexit → secret level; secret
+                    // exit → main path). The full C also fires F_StartFinale
+                    // for Doom 2 cutscene maps (6, 11, 20, 30, 15, 31)
+                    // — handled here so commercial post-map cutscenes
+                    // still play after the intermission.
+                    gameaction = ga_nothing;
                     Doomstat.gamestate = Doomstat.GS_LEVEL;
+                    if (secretexit != 0) {
+                        players[consoleplayer].didsecret = true;
+                    }
+                    if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+                        switch (Doomstat.gamemap) {
+                            case 15:
+                            case 31:
+                                if (secretexit == 0) break;
+                                /* fall through */
+                            case 6:
+                            case 11:
+                            case 20:
+                            case 30:
+                                doom.ui.FFinale.fStartFinale();
+                                return;
+                            default:
+                                break;
+                        }
+                    }
+                    // Apply the (already-computed) wminfo.next +
+                    // wminfo.epsd back onto gameepisode / gamemap (the
+                    // intermission used 0-based values; gInitNew
+                    // expects 1-based). gInitNew also resets
+                    // secretexit indirectly via gameaction.
+                    Doomstat.gameepisode = wminfo.epsd + 1;
+                    Doomstat.gamemap     = wminfo.next + 1;
+                    secretexit = 0;
                     gameaction = ga_loadlevel;
                     break;
                 case ga_loadgame:
@@ -525,10 +643,12 @@ public final class GGame {
                 doom.ui.StStuff.stTicker();
                 doom.ui.HuStuff.huTicker();
                 break;
+            case Doomstat.GS_INTERMISSION:
+                doom.ui.WiStuff.wiTicker();
+                break;
             case Doomstat.GS_FINALE:
                 doom.ui.FFinale.fTicker();
                 break;
-            case Doomstat.GS_INTERMISSION:
             case Doomstat.GS_DEMOSCREEN:
             default:
                 break;
