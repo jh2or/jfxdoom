@@ -461,9 +461,9 @@ public final class GGame {
                     gDoCompleted();
                     break;
                 case ga_victory:
-                    // F_StartFinale deferred (waits on f_finale).
-                    // For now just stay in-game.
-                    gameaction = ga_nothing;
+                    // F_StartFinale flips gamestate=GS_FINALE and
+                    // clears gameaction itself.
+                    doom.ui.FFinale.fStartFinale();
                     break;
                 case ga_secretexit:
                     secretexit = 1;
@@ -472,10 +472,16 @@ public final class GGame {
                 case ga_newgame:
                     gDoNewGame();
                     break;
+                case ga_worlddone:
+                    // Doom 2 finale press-key skips inter-mission to
+                    // the next level. Mirrors C's gDoWorldDone:
+                    // gamestate→GS_LEVEL + ga_loadlevel.
+                    Doomstat.gamestate = Doomstat.GS_LEVEL;
+                    gameaction = ga_loadlevel;
+                    break;
                 case ga_loadgame:
                 case ga_savegame:
                 case ga_playdemo:
-                case ga_worlddone:
                 case ga_screenshot:
                     // All waiting on g_game's bigger pieces.
                     gameaction = ga_nothing;
@@ -506,18 +512,27 @@ public final class GGame {
             }
         }
 
-        // The C dispatches based on gamestate (GS_LEVEL → P_Ticker,
-        // GS_INTERMISSION → WI_Ticker, etc.). Without gamestate
-        // wiring (waits on wi_stuff / f_finale), the Java port
-        // always pumps the playsim — the only state currently
-        // implemented.
-        PTick.pTicker();
-        // ST_Ticker drives the face animation, palette flash counter,
-        // and the per-tic widget-state refresh. HU_Ticker advances the
-        // pickup-message timer + drains player.message into the SText
-        // widget. AM_Ticker still deferred (automap not ported).
-        doom.ui.StStuff.stTicker();
-        doom.ui.HuStuff.huTicker();
+        // Gamestate-based per-tic dispatch. GS_INTERMISSION still
+        // deferred (wi_stuff not ported); the level → finale path
+        // skips it. AM_Ticker also deferred.
+        switch (Doomstat.gamestate) {
+            case Doomstat.GS_LEVEL:
+                PTick.pTicker();
+                // ST_Ticker drives the face animation, palette flash
+                // counter, and per-tic widget-state refresh.
+                // HU_Ticker drains player.message into the SText
+                // widget + ticks the message timeout.
+                doom.ui.StStuff.stTicker();
+                doom.ui.HuStuff.huTicker();
+                break;
+            case Doomstat.GS_FINALE:
+                doom.ui.FFinale.fTicker();
+                break;
+            case Doomstat.GS_INTERMISSION:
+            case Doomstat.GS_DEMOSCREEN:
+            default:
+                break;
+        }
         PTick.gametic++;
     }
 

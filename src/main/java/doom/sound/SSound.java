@@ -32,6 +32,12 @@ public final class SSound {
         // intentional no-op
     }
 
+    // s_sound.c — S_StartMusic(musicnum). Used by F_Ticker's E3
+    // bunny-scroll music kick-in. Stub for now.
+    public static void sStartMusic(int musicnum) {
+        // intentional no-op
+    }
+
     private SSound() {
     }
 }

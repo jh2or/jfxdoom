@@ -53,6 +53,175 @@ public final class Dstrings {
     public static final String STSTR_CHOPPERS = "... doesn't suck - GM";
     public static final String STSTR_CLEV     = "Changing Level...";
 
+    // d_englsh.h lines 357–434 — Doom 1 end-of-episode finale text
+    // (E1TEXT..E4TEXT). Consumed by F_StartFinale.
+    public static final String E1TEXT =
+            "Once you beat the big badasses and\n" +
+            "clean out the moon base you're supposed\n" +
+            "to win, aren't you? Aren't you? Where's\n" +
+            "your fat reward and ticket home? What\n" +
+            "the hell is this? It's not supposed to\n" +
+            "end this way!\n" +
+            "\n" +
+            "It stinks like rotten meat, but looks\n" +
+            "like the lost Deimos base.  Looks like\n" +
+            "you're stuck on The Shores of Hell.\n" +
+            "The only way out is through.\n" +
+            "\n" +
+            "To continue the DOOM experience, play\n" +
+            "The Shores of Hell and its amazing\n" +
+            "sequel, Inferno!\n";
+
+    public static final String E2TEXT =
+            "You've done it! The hideous cyber-\n" +
+            "demon lord that ruled the lost Deimos\n" +
+            "moon base has been slain and you\n" +
+            "are triumphant! But ... where are\n" +
+            "you? You clamber to the edge of the\n" +
+            "moon and look down to see the awful\n" +
+            "truth.\n" +
+            "\n" +
+            "Deimos floats above Hell itself!\n" +
+            "You've never heard of anyone escaping\n" +
+            "from Hell, but you'll make the bastards\n" +
+            "sorry they ever heard of you! Quickly,\n" +
+            "you rappel down to  the surface of\n" +
+            "Hell.\n" +
+            "\n" +
+            "Now, it's on to the final chapter of\n" +
+            "DOOM! -- Inferno.";
+
+    public static final String E3TEXT =
+            "The loathsome spiderdemon that\n" +
+            "masterminded the invasion of the moon\n" +
+            "bases and caused so much death has had\n" +
+            "its ass kicked for all time.\n" +
+            "\n" +
+            "A hidden doorway opens and you enter.\n" +
+            "You've proven too tough for Hell to\n" +
+            "contain, and now Hell at last plays\n" +
+            "fair -- for you emerge from the door\n" +
+            "to see the green fields of Earth!\n" +
+            "Home at last.\n" +
+            "\n" +
+            "You wonder what's been happening on\n" +
+            "Earth while you were battling evil\n" +
+            "unleashed. It's good that no Hell-\n" +
+            "spawn could have come through that\n" +
+            "door with you ...";
+
+    public static final String E4TEXT =
+            "the spider mastermind must have sent forth\n" +
+            "its legions of hellspawn before your\n" +
+            "final confrontation with that terrible\n" +
+            "beast from hell.  but you stepped forward\n" +
+            "and brought forth eternal damnation and\n" +
+            "suffering upon the horde as a true hero\n" +
+            "would in the face of something so evil.\n" +
+            "\n" +
+            "besides, someone was gonna pay for what\n" +
+            "happened to daisy, your pet rabbit.\n" +
+            "\n" +
+            "but now, you see spread before you more\n" +
+            "potential pain and gibbitude as a nation\n" +
+            "of demons run amok among our cities.\n" +
+            "\n" +
+            "next stop, hell on earth!";
+
+    // d_englsh.h lines 436–525 — Doom 2 inter-mission text screens
+    // (C1TEXT..C6TEXT), fired between specific map boundaries.
+    public static final String C1TEXT =
+            "YOU HAVE ENTERED DEEPLY INTO THE INFESTED\n" +
+            "STARPORT. BUT SOMETHING IS WRONG. THE\n" +
+            "MONSTERS HAVE BROUGHT THEIR OWN REALITY\n" +
+            "WITH THEM, AND THE STARPORT'S TECHNOLOGY\n" +
+            "IS BEING SUBVERTED BY THEIR PRESENCE.\n" +
+            "\n" +
+            "AHEAD, YOU SEE AN OUTPOST OF HELL, A\n" +
+            "FORTIFIED ZONE. IF YOU CAN GET PAST IT,\n" +
+            "YOU CAN PENETRATE INTO THE HAUNTED HEART\n" +
+            "OF THE STARBASE AND FIND THE CONTROLLING\n" +
+            "SWITCH WHICH HOLDS EARTH'S POPULATION\n" +
+            "HOSTAGE.";
+
+    public static final String C2TEXT =
+            "YOU HAVE WON! YOUR VICTORY HAS ENABLED\n" +
+            "HUMANKIND TO EVACUATE EARTH AND ESCAPE\n" +
+            "THE NIGHTMARE.  NOW YOU ARE THE ONLY\n" +
+            "HUMAN LEFT ON THE FACE OF THE PLANET.\n" +
+            "CANNIBAL MUTATIONS, CARNIVOROUS ALIENS,\n" +
+            "AND EVIL SPIRITS ARE YOUR ONLY NEIGHBORS.\n" +
+            "YOU SIT BACK AND WAIT FOR DEATH, CONTENT\n" +
+            "THAT YOU HAVE SAVED YOUR SPECIES.\n" +
+            "\n" +
+            "BUT THEN, EARTH CONTROL BEAMS DOWN A\n" +
+            "MESSAGE FROM SPACE: \"SENSORS HAVE LOCATED\n" +
+            "THE SOURCE OF THE ALIEN INVASION. IF YOU\n" +
+            "GO THERE, YOU MAY BE ABLE TO BLOCK THEIR\n" +
+            "ENTRY.  THE ALIEN BASE IS IN THE HEART OF\n" +
+            "YOUR OWN HOME CITY, NOT FAR FROM THE\n" +
+            "STARPORT.\" SLOWLY AND PAINFULLY YOU GET\n" +
+            "UP AND RETURN TO THE FRAY.";
+
+    public static final String C3TEXT =
+            "YOU ARE AT THE CORRUPT HEART OF THE CITY,\n" +
+            "SURROUNDED BY THE CORPSES OF YOUR ENEMIES.\n" +
+            "YOU SEE NO WAY TO DESTROY THE CREATURES'\n" +
+            "ENTRYWAY ON THIS SIDE, SO YOU CLENCH YOUR\n" +
+            "TEETH AND PLUNGE THROUGH IT.\n" +
+            "\n" +
+            "THERE MUST BE A WAY TO CLOSE IT ON THE\n" +
+            "OTHER SIDE. WHAT DO YOU CARE IF YOU'VE\n" +
+            "GOT TO GO THROUGH HELL TO GET TO IT?";
+
+    public static final String C4TEXT =
+            "THE HORRENDOUS VISAGE OF THE BIGGEST\n" +
+            "DEMON YOU'VE EVER SEEN CRUMBLES BEFORE\n" +
+            "YOU, AFTER YOU PUMP YOUR ROCKETS INTO\n" +
+            "HIS EXPOSED BRAIN. THE MONSTER SHRIVELS\n" +
+            "UP AND DIES, ITS THRASHING LIMBS\n" +
+            "DEVASTATING UNTOLD MILES OF HELL'S\n" +
+            "SURFACE.\n" +
+            "\n" +
+            "YOU'VE DONE IT. THE INVASION IS OVER.\n" +
+            "EARTH IS SAVED. HELL IS A WRECK. YOU\n" +
+            "WONDER WHERE BAD FOLKS WILL GO WHEN THEY\n" +
+            "DIE, NOW. WIPING THE SWEAT FROM YOUR\n" +
+            "FOREHEAD YOU BEGIN THE LONG TREK BACK\n" +
+            "HOME. REBUILDING EARTH OUGHT TO BE A\n" +
+            "LOT MORE FUN THAN RUINING IT WAS.\n";
+
+    public static final String C5TEXT =
+            "CONGRATULATIONS, YOU'VE FOUND THE SECRET\n" +
+            "LEVEL! LOOKS LIKE IT'S BEEN BUILT BY\n" +
+            "HUMANS, RATHER THAN DEMONS. YOU WONDER\n" +
+            "WHO THE INMATES OF THIS CORNER OF HELL\n" +
+            "WILL BE.";
+
+    public static final String C6TEXT =
+            "CONGRATULATIONS, YOU'VE FOUND THE\n" +
+            "SUPER SECRET LEVEL!  YOU'D BETTER\n" +
+            "BLAZE THROUGH THIS ONE!\n";
+
+    // d_englsh.h lines 676–693 — character cast names (Doom 2 finale).
+    public static final String CC_ZOMBIE  = "ZOMBIEMAN";
+    public static final String CC_SHOTGUN = "SHOTGUN GUY";
+    public static final String CC_HEAVY   = "HEAVY WEAPON DUDE";
+    public static final String CC_IMP     = "IMP";
+    public static final String CC_DEMON   = "DEMON";
+    public static final String CC_LOST    = "LOST SOUL";
+    public static final String CC_CACO    = "CACODEMON";
+    public static final String CC_HELL    = "HELL KNIGHT";
+    public static final String CC_BARON   = "BARON OF HELL";
+    public static final String CC_ARACH   = "ARACHNOTRON";
+    public static final String CC_PAIN    = "PAIN ELEMENTAL";
+    public static final String CC_REVEN   = "REVENANT";
+    public static final String CC_MANCU   = "MANCUBUS";
+    public static final String CC_ARCH    = "ARCH-VILE";
+    public static final String CC_SPIDER  = "THE SPIDER MASTERMIND";
+    public static final String CC_CYBER   = "THE CYBERDEMON";
+    public static final String CC_HERO    = "OUR HERO";
+
     // dstrings.c lines 35–67 — endmsg[NUM_QUITMESSAGES+1].
     //
     // The C source is missing two commas in the initializer. In C,

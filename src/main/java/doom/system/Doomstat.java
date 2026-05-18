@@ -81,6 +81,29 @@ public final class Doomstat {
     // tag/action.
     public static int gameepisode;
 
+    // doomdef.h lines 127–133 — gamestate_t. The C uses an enum;
+    // the Java port carries the values as int constants so the
+    // existing switch statements translate unchanged.
+    public static final int GS_LEVEL        = 0;
+    public static final int GS_INTERMISSION = 1;
+    public static final int GS_FINALE       = 2;
+    public static final int GS_DEMOSCREEN   = 3;
+
+    // doomstat.h line 193 — current game state, set by the various
+    // start/exit handlers (G_DoLoadLevel → GS_LEVEL,
+    // F_StartFinale → GS_FINALE, etc.). D_Display dispatches the
+    // top-level drawer based on it.
+    public static int gamestate = GS_LEVEL;
+
+    // doomstat.h line 137 — true while the playsim is the active
+    // backdrop. F_StartFinale clears it so the play view stops
+    // updating during the end-of-episode text screen.
+    public static boolean viewactive;
+
+    // doomstat.h lines 251–253 — last gamestate the wipe machinery
+    // observed. -1 forces a wipe on the next D_Display pass.
+    public static int wipegamestate = GS_LEVEL;
+
     private Doomstat() {
     }
 }

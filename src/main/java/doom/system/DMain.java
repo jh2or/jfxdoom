@@ -107,9 +107,15 @@ public final class DMain {
         while (eventtail != eventhead) {
             DEvent ev = events[eventtail];
             // M_Responder dispatch deferred (m_menu not ported).
-            // ST_Responder runs ahead of G_Responder so the cheat
-            // decoder can intercept its key sequences; both always
-            // return false in this build so events fall through.
+            // During GS_FINALE the cast call eats keypresses (forces
+            // the death frame on the active caster). Otherwise the
+            // event falls through ST_Responder (cheat decoder) and
+            // G_Responder (gamekeydown[]).
+            if (Doomstat.gamestate == Doomstat.GS_FINALE
+                    && doom.ui.FFinale.fResponder(ev)) {
+                eventtail = (eventtail + 1) & (MAXEVENTS - 1);
+                continue;
+            }
             doom.ui.StStuff.stResponder(ev);
             GGame.gResponder(ev);
             eventtail = (eventtail + 1) & (MAXEVENTS - 1);
@@ -322,21 +328,36 @@ public final class DMain {
             RMain.rExecuteSetViewSize();
         }
 
-        Player p = GGame.players[GGame.consoleplayer];
-        if (p != null && p.mo != null) {
-            RMain.rRenderPlayerView(p);
+        // Top-level gamestate dispatch. The full C body interleaves
+        // wipegamestate / viewactive / borderdraw bookkeeping; until
+        // f_wipe lands those branches stay as direct paints.
+        switch (Doomstat.gamestate) {
+            case Doomstat.GS_LEVEL: {
+                Player p = GGame.players[GGame.consoleplayer];
+                if (p != null && p.mo != null) {
+                    RMain.rRenderPlayerView(p);
+                }
+                // Status bar (health / ammo / face / keys / armor).
+                // Drawn before HUD overlay so the pickup-message
+                // banner paints on top.
+                doom.ui.StStuff.stDrawer(false, false);
+                // HUD overlay (pickup-message banner). Full HU_Drawer
+                // (chat / level title) lands when those widgets port.
+                doom.ui.HuStuff.huDrawer();
+                break;
+            }
+            case Doomstat.GS_INTERMISSION:
+                // WI_Drawer still deferred (wi_stuff not ported).
+                break;
+            case Doomstat.GS_FINALE:
+                doom.ui.FFinale.fDrawer();
+                break;
+            case Doomstat.GS_DEMOSCREEN:
+                // D_PageDrawer (title-screen demo loop) deferred.
+                break;
+            default:
+                break;
         }
-
-        // Status bar (health / ammo / face / keys / armor). Drawn
-        // before HUD overlay so the pickup-message banner paints on
-        // top. fullscreen=false matches the C default until -nofbar
-        // or oversized view ports.
-        doom.ui.StStuff.stDrawer(false, false);
-
-        // HUD overlay (pickup-message banner). Painted into the
-        // same framebuffer as the BSP view above; full HU_Drawer
-        // (chat / level title) lands when those widgets port.
-        doom.ui.HuStuff.huDrawer();
 
         IVideo.iUpdateNoBlit();
         IVideo.iFinishUpdate();
