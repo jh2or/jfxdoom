@@ -570,7 +570,8 @@ public final class MMenu {
         if (ch != 'y') return;
         currentMenu.lastOn = itemOn;
         mClearMenus();
-        // D_StartTitle deferred (no title screen yet).
+        // Bounce back to the title-screen demo loop.
+        DMain.dStartTitle();
     }
 
     public static void mEndGame(int choice) {

@@ -65,8 +65,15 @@ public final class DMain {
     public static int     startmap;
     public static boolean autostart;
 
-    // d_main.c line 119 — title-screen demo flag.
+    // d_main.c lines 119 / 414–416 — title-screen demo loop state.
+    // The C cycles through TITLEPIC → demo1 → CREDIT → demo2 →
+    // TITLEPIC/HELP2 → demo3 → [retail] demo4. Demo playback is
+    // deferred (G_DeferedPlayDemo not ported); the Java port walks
+    // the static-page subset of the cycle.
     public static boolean advancedemo;
+    public static int     demosequence;
+    public static int     pagetic;
+    public static String  pagename;
 
     // d_main.c lines 141–143 — event ring buffer.
     public static final int MAXEVENTS = 64;
@@ -298,6 +305,10 @@ public final class DMain {
             // Wake the status bar (initialises widgets pointing at
             // the live player state).
             doom.ui.StStuff.stStart();
+        } else {
+            // No -warp / -episode / -skill on the command line:
+            // bring up the title-screen demo loop.
+            dStartTitle();
         }
     }
 
@@ -319,6 +330,13 @@ public final class DMain {
         // Drain queued input events (JavaFX shell posts them via
         // dPostEvent on each Scene key press / release).
         dProcessEvents();
+
+        // Title-screen demo loop: drain the advance latch before
+        // the per-tic dispatch so a page-time-out flips to the
+        // next page on the same frame.
+        if (advancedemo) {
+            dDoAdvanceDemo();
+        }
 
         // Single-tic: pump the playsim once via G_Ticker, which
         // builds the consoleplayer's ticcmd from gamekeydown[],
@@ -379,7 +397,7 @@ public final class DMain {
                 doom.ui.FFinale.fDrawer();
                 break;
             case Doomstat.GS_DEMOSCREEN:
-                // D_PageDrawer (title-screen demo loop) deferred.
+                dPageDrawer();
                 break;
             default:
                 break;
@@ -392,5 +410,109 @@ public final class DMain {
 
         IVideo.iUpdateNoBlit();
         IVideo.iFinishUpdate();
+    }
+
+    //
+    // D_PageTicker
+    // d_main.c lines 423–427.
+    public static void dPageTicker() {
+        if (--pagetic < 0) {
+            dAdvanceDemo();
+        }
+    }
+
+    //
+    // D_PageDrawer
+    // d_main.c lines 434–437.
+    public static void dPageDrawer() {
+        if (pagename == null) return;
+        try {
+            byte[] lump = doom.wad.WWad.wCacheLumpName(pagename,
+                    doom.wad.ZZone.PU_CACHE);
+            doom.ui.VVideo.vDrawPatch(0, 0, 0,
+                    doom.render.Patch.fromLump(lump));
+        } catch (java.io.IOException | ISystem.DoomError e) {
+            // Page art missing — paint nothing.
+        }
+    }
+
+    //
+    // D_AdvanceDemo
+    // d_main.c lines 444–447. Just latches the flag; the loop driver
+    // calls dDoAdvanceDemo on the next tick.
+    public static void dAdvanceDemo() {
+        advancedemo = true;
+    }
+
+    //
+    // D_DoAdvanceDemo
+    // d_main.c lines 454–518. Cycle through the demo sequence.
+    // Demo playback (G_DeferedPlayDemo) is deferred — the Java port
+    // skips the demo cases and pumps straight on to the next page.
+    public static void dDoAdvanceDemo() {
+        GGame.players[GGame.consoleplayer].playerstate = doom.play.Player.PST_LIVE;
+        advancedemo = false;
+        Doomstat.usergame = false;
+        Doomstat.paused = false;
+        GGame.gameaction = GGame.ga_nothing;
+
+        int wrap = (Doomstat.gamemode == Doomstat.GameMode.retail) ? 7 : 6;
+        demosequence = (demosequence + 1) % wrap;
+
+        switch (demosequence) {
+            case 0:
+                pagetic = (Doomstat.gamemode == Doomstat.GameMode.commercial)
+                        ? 35 * 11 : 170;
+                Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
+                pagename = "TITLEPIC";
+                if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+                    doom.sound.SSound.sStartMusic(doom.sound.Sounds.mus_dm2ttl);
+                } else {
+                    doom.sound.SSound.sStartMusic(doom.sound.Sounds.mus_intro);
+                }
+                break;
+            case 1:
+                // G_DeferedPlayDemo("demo1") — skip the demo, loop
+                // through to the next page on the next tic.
+                advancedemo = true;
+                break;
+            case 2:
+                pagetic = 200;
+                Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
+                pagename = "CREDIT";
+                break;
+            case 3:
+                advancedemo = true;
+                break;
+            case 4:
+                Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
+                if (Doomstat.gamemode == Doomstat.GameMode.commercial) {
+                    pagetic = 35 * 11;
+                    pagename = "TITLEPIC";
+                    doom.sound.SSound.sStartMusic(doom.sound.Sounds.mus_dm2ttl);
+                } else {
+                    pagetic = 200;
+                    pagename = (Doomstat.gamemode == Doomstat.GameMode.retail)
+                            ? "CREDIT" : "HELP2";
+                }
+                break;
+            case 5:
+                advancedemo = true;
+                break;
+            case 6:
+                advancedemo = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    //
+    // D_StartTitle
+    // d_main.c lines 525–530.
+    public static void dStartTitle() {
+        GGame.gameaction = GGame.ga_nothing;
+        demosequence = -1;
+        dAdvanceDemo();
     }
 }

@@ -774,6 +774,8 @@ public final class GGame {
                 doom.ui.FFinale.fTicker();
                 break;
             case Doomstat.GS_DEMOSCREEN:
+                doom.system.DMain.dPageTicker();
+                break;
             default:
                 break;
         }
