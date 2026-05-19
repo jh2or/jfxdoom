@@ -20,19 +20,29 @@
 //     bit / stereo `SourceDataLine` once per tic (28ms = 630
 //     frames). Mixing is integer-saturating add of signed samples.
 //
-// Music (MUS → MIDI conversion) is deferred — iRegisterSong /
-// iPlaySong / iStopSong / iSetMusicVolume stay as no-ops.
+// Music plays through `javax.sound.midi.Sequencer` driven by the
+// JVM's bundled General MIDI synth — iRegisterSong converts the
+// MUS lump to a MIDI byte stream (see MusToMidi), loads it into
+// the sequencer, and iPlaySong starts playback. iSetMusicVolume
+// taps the synth's master-gain controller.
 package doom.sound;
 
 import doom.system.ISystem;
 import doom.wad.WWad;
 import doom.wad.ZZone;
 
+import javax.sound.midi.MidiSystem;
+import javax.sound.midi.MidiUnavailableException;
+import javax.sound.midi.Sequence;
+import javax.sound.midi.Sequencer;
+import javax.sound.midi.ShortMessage;
+import javax.sound.midi.Synthesizer;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
 public final class ISound {
@@ -103,10 +113,45 @@ public final class ISound {
         }
     }
 
-    // i_sound.c — I_InitMusic / I_ShutdownMusic stubs (MUS→MIDI
-    // deferred).
-    public static void iInitMusic()      { }
-    public static void iShutdownMusic()  { }
+    // Music subsystem state.
+    private static Sequencer    musicSequencer;
+    private static Synthesizer  musicSynth;
+    private static Sequence     musicSequence;
+    private static int          musicHandleSeq = 1;
+    private static int          currentMusicHandle;
+
+    // i_sound.c — I_InitMusic. Open the JVM default Sequencer +
+    // Synthesizer and wire them together. The Sequencer broadcasts
+    // events to the Synthesizer via a shared transmitter.
+    public static void iInitMusic() {
+        if (musicSequencer != null) return;
+        try {
+            musicSequencer = MidiSystem.getSequencer(false);
+            musicSequencer.open();
+            musicSynth = MidiSystem.getSynthesizer();
+            musicSynth.open();
+            musicSequencer.getTransmitter().setReceiver(musicSynth.getReceiver());
+        } catch (MidiUnavailableException e) {
+            // No MIDI device — silent music. Same shape as iInitSound
+            // bailing on LineUnavailableException.
+            musicSequencer = null;
+            musicSynth = null;
+        }
+    }
+
+    // i_sound.c — I_ShutdownMusic.
+    public static void iShutdownMusic() {
+        if (musicSequencer != null) {
+            try { musicSequencer.stop(); } catch (Exception ignored) {}
+            musicSequencer.close();
+            musicSequencer = null;
+        }
+        if (musicSynth != null) {
+            musicSynth.close();
+            musicSynth = null;
+        }
+        musicSequence = null;
+    }
 
     //
     // I_SetChannels
@@ -277,16 +322,91 @@ public final class ISound {
     }
 
     //
-    // Music — s_sound.c → I_*Song. Stubs until the MUS→MIDI
-    // converter ports.
+    // Music — s_sound.c → I_*Song.
     //
-    public static void iSetMusicVolume(int volume)        { }
-    public static void iPauseSong(int handle)             { }
-    public static void iResumeSong(int handle)            { }
-    public static int  iRegisterSong(Object data)         { return 0; }
-    public static void iPlaySong(int handle, int looping) { }
-    public static void iStopSong(int handle)              { }
-    public static void iUnRegisterSong(int handle)        { }
+    // The C model: I_RegisterSong is called once per song, returns
+    // a handle; subsequent I_PlaySong / I_StopSong / I_PauseSong /
+    // I_ResumeSong / I_UnRegisterSong route by handle. The Java
+    // port holds one Sequence at a time (Doom never plays two
+    // songs concurrently) and stamps a monotonic handle so the
+    // s_sound.c bookkeeping still matches.
+
+    public static void iSetMusicVolume(int volume) {
+        if (musicSynth == null) return;
+        // Doom volume is 0..127. Apply a uniform gain via CC 7
+        // (channel volume) on every channel so the synth respects
+        // it regardless of GM master-volume support.
+        try {
+            javax.sound.midi.Receiver rx = musicSynth.getReceiver();
+            for (int ch = 0; ch < 16; ch++) {
+                ShortMessage m = new ShortMessage();
+                m.setMessage(ShortMessage.CONTROL_CHANGE, ch, 7, volume & 0x7f);
+                rx.send(m, -1);
+            }
+        } catch (javax.sound.midi.InvalidMidiDataException
+                | javax.sound.midi.MidiUnavailableException e) {
+            // Best-effort — silently skip on a transient receiver
+            // failure.
+        }
+    }
+
+    public static void iPauseSong(int handle) {
+        if (musicSequencer == null || currentMusicHandle != handle) return;
+        if (musicSequencer.isRunning()) musicSequencer.stop();
+    }
+
+    public static void iResumeSong(int handle) {
+        if (musicSequencer == null || currentMusicHandle != handle) return;
+        if (!musicSequencer.isRunning()) musicSequencer.start();
+    }
+
+    /**
+     * I_RegisterSong — convert a MUS lump to a Sequence and stash
+     * it. {@code data} is the raw lump bytes (the C passes a
+     * void* which the DMX driver reads as MUS). Returns a handle
+     * the caller hands back to iPlaySong / iStopSong, or 0 if no
+     * sequencer is available or the lump isn't valid MUS.
+     */
+    public static int iRegisterSong(Object data) {
+        if (musicSequencer == null || !(data instanceof byte[])) return 0;
+        try {
+            byte[] midi = MusToMidi.convert((byte[]) data);
+            if (midi == null) return 0;
+            musicSequence = MidiSystem.getSequence(new ByteArrayInputStream(midi));
+        } catch (Exception e) {
+            return 0;
+        }
+        int h = musicHandleSeq++;
+        if (musicHandleSeq <= 0) musicHandleSeq = 1;
+        currentMusicHandle = h;
+        return h;
+    }
+
+    public static void iPlaySong(int handle, int looping) {
+        if (musicSequencer == null || musicSequence == null) return;
+        if (currentMusicHandle != handle) return;
+        try {
+            musicSequencer.setSequence(musicSequence);
+            musicSequencer.setLoopCount(looping != 0
+                    ? Sequencer.LOOP_CONTINUOUSLY : 0);
+            musicSequencer.setTickPosition(0);
+            musicSequencer.start();
+        } catch (javax.sound.midi.InvalidMidiDataException e) {
+            // Sequence didn't decode after all — leave silent.
+        }
+    }
+
+    public static void iStopSong(int handle) {
+        if (musicSequencer == null || currentMusicHandle != handle) return;
+        if (musicSequencer.isRunning()) musicSequencer.stop();
+    }
+
+    public static void iUnRegisterSong(int handle) {
+        if (currentMusicHandle == handle) {
+            musicSequence = null;
+            currentMusicHandle = 0;
+        }
+    }
 
     //
     // DMX sound-effect lump decoder.
