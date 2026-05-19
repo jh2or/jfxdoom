@@ -352,23 +352,40 @@ public final class DMain {
         ISound.iSubmitSound();
     }
 
+    // Screen-wipe transition state. The C blocks D_Display inside a
+    // tight wipe loop pumping wipeScreenWipe + I_FinishUpdate until
+    // done. Java runs at 35 Hz from the JavaFX AnimationTimer so the
+    // wipe is spread across consecutive dDoomLoop calls: when a
+    // gamestate transition is detected, wipeStartScreen captures
+    // screens[0] before the new view paints; once the new view is
+    // up, wipeEndScreen captures the target + restores the start so
+    // the per-frame wipeScreenWipe can melt from start → end.
+    public static boolean wipeActive;
+
     //
     // D_Display
     //
     // d_main.c lines 193–349. Massive routine in the C — handles
     // gamestate switch, screen-wipe machinery, HUD / automap /
     // intermission / finale drawers, status-bar redraw, view-size
-    // change response. The Java port currently dispatches the
-    // simplest path: render the player view if a player has been
-    // spawned.
+    // change response.
     public static void dDisplay() {
         if (RMain.setsizeneeded) {
             RMain.rExecuteSetViewSize();
         }
 
-        // Top-level gamestate dispatch. The full C body interleaves
-        // wipegamestate / viewactive / borderdraw bookkeeping; until
-        // f_wipe lands those branches stay as direct paints.
+        // Detect a gamestate transition: capture the current frame
+        // as the wipe's start before the new gamestate paints over
+        // it. wipegamestate==-1 forces a wipe (FFinale sets that to
+        // mark a transition into the static-art finale page).
+        boolean startingWipe = !wipeActive
+                && (Doomstat.gamestate != Doomstat.wipegamestate);
+        if (startingWipe) {
+            doom.ui.FWipe.wipeStartScreen(0, 0,
+                    Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT);
+        }
+
+        // Top-level gamestate dispatch.
         switch (Doomstat.gamestate) {
             case Doomstat.GS_LEVEL: {
                 if (doom.ui.AmMap.automapactive) {
@@ -407,6 +424,33 @@ public final class DMain {
         // live view + status bar + HUD. M_Drawer no-ops when the
         // menu is closed.
         doom.ui.MMenu.mDrawer();
+
+        // Latch the just-painted screen as the wipe's destination
+        // and arm the per-frame wipe pump. wipeEndScreen restores
+        // screens[0] to the original start image, so the actual
+        // melted view appears on subsequent dDoomLoop calls.
+        if (startingWipe) {
+            doom.ui.FWipe.wipeEndScreen(0, 0,
+                    Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT);
+            Doomstat.wipegamestate = Doomstat.gamestate;
+            wipeActive = true;
+        }
+
+        // While the wipe is running, advance it one tic per frame.
+        // The C blocks D_Display in a tight inner loop; the Java
+        // port slices the wipe across multiple dDoomLoop calls so
+        // the AnimationTimer cadence stays 35 Hz.
+        if (wipeActive) {
+            int done = doom.ui.FWipe.wipeScreenWipe(
+                    doom.ui.FWipe.WIPE_MELT, 0, 0,
+                    Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT, 1);
+            if (done != 0) {
+                wipeActive = false;
+            }
+            // Menu paints on top of the wipe too — matches the C
+            // comment "menu is drawn even on top of wipes".
+            doom.ui.MMenu.mDrawer();
+        }
 
         IVideo.iUpdateNoBlit();
         IVideo.iFinishUpdate();

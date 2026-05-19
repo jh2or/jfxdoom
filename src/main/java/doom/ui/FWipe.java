@@ -197,7 +197,15 @@ public final class FWipe {
     }
 
     // f_wipe.c lines 236–246 — wipe_StartScreen.
+    //
+    // Java-port note: the C runs each wipe inside a tight inner loop
+    // in D_Display so `go` always returns to false before D_Display
+    // exits. The Java port spreads the wipe across frames, which can
+    // leave `go` stuck true if the engine jumps gamestate mid-wipe
+    // (or if tests reset only their own state). Resetting it here on
+    // every fresh wipe-start keeps the state machine consistent.
     public static int wipeStartScreen(int x, int y, int width, int height) {
+        go = false;
         wipe_scr_start = VVideo.screens[2];
         IVideo.iReadScreen(wipe_scr_start);
         return 0;
