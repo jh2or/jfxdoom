@@ -413,6 +413,206 @@ public final class GGame {
     }
 
     //
+    // Demo recording / playback — g_game.c lines 1486–1687.
+    //
+    // The C uses a `byte*` cursor into a `byte[]` arena. The Java
+    // port keeps the same shape: `demoBuffer` is the arena,
+    // `demoP` is the next-byte cursor, `demoEnd` is the past-end
+    // sentinel (read-only after G_RecordDemo allocates).
+    //
+    public static final int DEMOMARKER = 0x80;
+    public static final int DEMOVERSION = 109;  // doomdef.h VERSION
+
+    public static byte[] demoBuffer;
+    public static int    demoP;
+    public static int    demoEnd;
+    public static boolean demorecording;
+    public static String demoName;
+    public static String defdemoname;
+
+    /**
+     * G_ReadDemoTiccmd — copy the next 4 bytes from the demo
+     * buffer into the supplied ticcmd. A DEMOMARKER byte ends
+     * playback. g_game.c lines 1491–1503.
+     */
+    public static void gReadDemoTiccmd(doom.play.Ticcmd cmd) {
+        if (demoBuffer == null) return;
+        if ((demoBuffer[demoP] & 0xff) == DEMOMARKER) {
+            gCheckDemoStatus();
+            return;
+        }
+        cmd.forwardmove = demoBuffer[demoP++];                // signed
+        cmd.sidemove    = demoBuffer[demoP++];                // signed
+        cmd.angleturn   = (demoBuffer[demoP++] & 0xff) << 8;  // unsigned, then up-scale
+        cmd.buttons     = demoBuffer[demoP++] & 0xff;
+    }
+
+    /**
+     * G_WriteDemoTiccmd — append the ticcmd (in 4-byte demo
+     * format) to the recording buffer. g_game.c lines 1506–1523.
+     * After the write, immediately re-read so the demo matches
+     * what the engine consumed (the angleturn truncation can
+     * differ).
+     */
+    public static void gWriteDemoTiccmd(doom.play.Ticcmd cmd) {
+        if (demoBuffer == null) return;
+        // 'q' aborts recording — preserved verbatim from the C.
+        if (gamekeydown['q']) {
+            gCheckDemoStatus();
+            return;
+        }
+        demoBuffer[demoP]     = (byte) cmd.forwardmove;
+        demoBuffer[demoP + 1] = (byte) cmd.sidemove;
+        demoBuffer[demoP + 2] = (byte) ((cmd.angleturn + 128) >> 8);
+        demoBuffer[demoP + 3] = (byte) cmd.buttons;
+        if (demoP > demoEnd - 16) {
+            // no more space
+            gCheckDemoStatus();
+            return;
+        }
+        gReadDemoTiccmd(cmd);  // re-read for exact-match playback
+    }
+
+    /**
+     * G_RecordDemo — allocate the demo buffer and arm recording.
+     * The header itself isn't written until G_BeginRecording
+     * fires (after G_InitNew sets up the level). g_game.c
+     * lines 1530–1546.
+     */
+    public static void gRecordDemo(String name) {
+        Doomstat.usergame = false;
+        demoName = name + ".lmp";
+        int maxsize = 0x20000;
+        int p = MArgv.checkParm("-maxdemo");
+        if (p > 0 && p < MArgv.myargc - 1) {
+            try { maxsize = Integer.parseInt(MArgv.myargv[p + 1]) * 1024; }
+            catch (NumberFormatException e) { /* keep default */ }
+        }
+        demoBuffer = new byte[maxsize];
+        demoEnd = maxsize;
+        demorecording = true;
+    }
+
+    /**
+     * G_BeginRecording — write the 9-byte demo header followed
+     * by the playeringame[] flags. Called by G_InitNew when
+     * demorecording is armed. g_game.c lines 1549–1567.
+     */
+    public static void gBeginRecording() {
+        if (demoBuffer == null) return;
+        demoP = 0;
+        demoBuffer[demoP++] = (byte) DEMOVERSION;
+        demoBuffer[demoP++] = (byte) Doomstat.gameskill;
+        demoBuffer[demoP++] = (byte) Doomstat.gameepisode;
+        demoBuffer[demoP++] = (byte) Doomstat.gamemap;
+        demoBuffer[demoP++] = (byte) Doomstat.deathmatch;
+        demoBuffer[demoP++] = (byte) (Doomstat.respawnmonsters ? 1 : 0);
+        demoBuffer[demoP++] = (byte) (Doomstat.fastparm ? 1 : 0);
+        demoBuffer[demoP++] = (byte) (Doomstat.nomonsters ? 1 : 0);
+        demoBuffer[demoP++] = (byte) consoleplayer;
+        for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            demoBuffer[demoP++] = (byte) (playeringame[i] ? 1 : 0);
+        }
+    }
+
+    /**
+     * G_DeferedPlayDemo — latch the demo name and queue
+     * ga_playdemo. g_game.c lines 1576–1580.
+     */
+    public static void gDeferedPlayDemo(String name) {
+        defdemoname = name;
+        gameaction = ga_playdemo;
+    }
+
+    /**
+     * G_DoPlayDemo — load the demo lump and start playback.
+     * g_game.c lines 1582–1620.
+     */
+    public static void gDoPlayDemo() {
+        gameaction = ga_nothing;
+        try {
+            demoBuffer = doom.wad.WWad.wCacheLumpName(defdemoname,
+                    doom.wad.ZZone.PU_STATIC);
+        } catch (java.io.IOException | doom.system.ISystem.DoomError e) {
+            // demo lump missing — bail back to the title loop.
+            doom.system.DMain.dStartTitle();
+            return;
+        }
+        demoP = 0;
+        if ((demoBuffer[demoP++] & 0xff) != DEMOVERSION) {
+            // Version mismatch — bail back to the title loop.
+            doom.system.DMain.dStartTitle();
+            return;
+        }
+        int skill   = demoBuffer[demoP++] & 0xff;
+        int episode = demoBuffer[demoP++] & 0xff;
+        int map     = demoBuffer[demoP++] & 0xff;
+        Doomstat.deathmatch       = demoBuffer[demoP++] & 0xff;
+        Doomstat.respawnmonsters  = demoBuffer[demoP++] != 0;
+        Doomstat.fastparm         = demoBuffer[demoP++] != 0;
+        Doomstat.nomonsters       = demoBuffer[demoP++] != 0;
+        consoleplayer             = demoBuffer[demoP++] & 0xff;
+        for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            playeringame[i] = demoBuffer[demoP++] != 0;
+        }
+        if (playeringame[1]) {
+            Doomstat.netgame = true;
+            Doomstat.netdemo = true;
+        }
+        gInitNew(skill, episode, map);
+        Doomstat.usergame    = false;
+        Doomstat.demoplayback = true;
+    }
+
+    /**
+     * G_CheckDemoStatus — flush the recording to disk (if armed)
+     * or advance to the next title-screen demo page (if playing
+     * back). Returns true if a new demo-loop action took place.
+     * g_game.c lines 1647–1687.
+     */
+    public static boolean gCheckDemoStatus() {
+        if (Doomstat.demoplayback) {
+            if (Doomstat.singledemo) {
+                doom.system.ISystem.iQuit();
+            }
+            demoBuffer = null;
+            demoP = 0;
+            Doomstat.demoplayback = false;
+            Doomstat.netdemo = false;
+            Doomstat.netgame = false;
+            Doomstat.deathmatch = 0;
+            playeringame[1] = playeringame[2] = playeringame[3] = false;
+            Doomstat.respawnmonsters = false;
+            Doomstat.fastparm = false;
+            Doomstat.nomonsters = false;
+            consoleplayer = 0;
+            doom.system.DMain.dAdvanceDemo();
+            return true;
+        }
+        if (demorecording) {
+            demoBuffer[demoP++] = (byte) DEMOMARKER;
+            try {
+                java.nio.file.Files.write(
+                        java.nio.file.Paths.get(demoName),
+                        java.util.Arrays.copyOf(demoBuffer, demoP));
+            } catch (java.io.IOException e) {
+                // best-effort — drop the demo if write fails
+            }
+            demoBuffer = null;
+            demorecording = false;
+            // The C calls I_Error here so the engine exits with
+            // a status message. The Java port emits a player
+            // message + bounces to the title.
+            if (GGame.players[consoleplayer] != null) {
+                GGame.players[consoleplayer].message =
+                        "Demo " + demoName + " recorded";
+            }
+            doom.system.DMain.dStartTitle();
+        }
+        return false;
+    }
+
+    //
     // G_DoNewGame
     //
     // g_game.c lines 1345–1358. Tears down netgame / deathmatch /
@@ -449,6 +649,12 @@ public final class GGame {
         startepisode = episode;
         startmap = map;
         Doomstat.respawnmonsters = (skill == Doomstat.sk_nightmare);
+        // If -record armed the demo buffer, stamp the header now
+        // that skill/episode/map are settled. Matches the C
+        // G_InitNew → G_BeginRecording dispatch order.
+        if (demorecording) {
+            gBeginRecording();
+        }
         gameaction = ga_loadlevel;
     }
 
@@ -709,9 +915,10 @@ public final class GGame {
                     gDoSaveGame();
                     break;
                 case ga_playdemo:
+                    gDoPlayDemo();
+                    break;
                 case ga_screenshot:
-                    // ga_screenshot / demo playback waiting on more
-                    // dependent ports.
+                    // ga_screenshot waits on the BMP / PCX writer.
                     gameaction = ga_nothing;
                     break;
                 default:
@@ -725,7 +932,18 @@ public final class GGame {
         // would arrive via netcmds[] in multiplayer — single-player
         // skips that.
         if (playeringame[consoleplayer]) {
-            gBuildTiccmd(players[consoleplayer].cmd);
+            Ticcmd cmd = players[consoleplayer].cmd;
+            gBuildTiccmd(cmd);
+            // Demo overlay: when replaying, the recorded ticcmd
+            // overrides the live input; when recording, the live
+            // ticcmd is appended to the demo buffer. Matches
+            // g_game.c lines 666–669.
+            if (Doomstat.demoplayback) {
+                gReadDemoTiccmd(cmd);
+            }
+            if (demorecording) {
+                gWriteDemoTiccmd(cmd);
+            }
         }
 
         // Special-button latches.

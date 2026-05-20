@@ -96,14 +96,16 @@ class DMainTitleTest {
         assertEquals("CREDIT", DMain.pagename);
     }
 
-    // Demo-playback sequences (1, 3, 5) re-arm advancedemo so the
-    // loop skips straight to the next page (we don't play demos).
+    // Demo-playback sequences (1, 3, 5) queue ga_playdemo. The
+    // demo lump is loaded by gDoPlayDemo on the next tic; if the
+    // load fails (no WAD in tests), it bounces back to the title.
     @Test
-    void doAdvanceSequenceOneSkipsToNextPage() {
+    void doAdvanceSequenceOneQueuesPlaydemo() {
         DMain.demosequence = 0;
         DMain.dDoAdvanceDemo();
         assertEquals(1, DMain.demosequence);
-        assertTrue(DMain.advancedemo);
+        assertEquals(GGame.ga_playdemo, GGame.gameaction);
+        assertEquals("demo1", GGame.defdemoname);
     }
 
     // Wrap to 0 after sequence 5 (shareware/registered).
@@ -122,8 +124,9 @@ class DMainTitleTest {
         DMain.demosequence = 5;
         DMain.dDoAdvanceDemo();
         assertEquals(6, DMain.demosequence);
-        // Sequence 6 = demo4 (deferred), advancedemo re-armed.
-        assertTrue(DMain.advancedemo);
+        // Sequence 6 = demo4 — queues ga_playdemo with that name.
+        assertEquals(GGame.ga_playdemo, GGame.gameaction);
+        assertEquals("demo4", GGame.defdemoname);
     }
 
     // ---- dPageTicker ----

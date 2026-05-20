@@ -21,6 +21,13 @@ public final class Doomstat {
 
     // doomstat.h — true while replaying a demo (set by G_DoPlayDemo).
     public static boolean demoplayback;
+    // doomstat.h — true while a recorded demo is playing in a
+    // netgame slot (multiplayer .lmp).
+    public static boolean netdemo;
+    // doomstat.h — true when -playdemo on the cmdline so I_Quit
+    // fires at demo end (vs. cycling through the title-screen
+    // demo loop).
+    public static boolean singledemo;
 
     // doomstat.h — 0 = co-op, 1 = old deathmatch, 2 = altdeath.
     // Set from the -deathmatch / -altdeath command-line switches.

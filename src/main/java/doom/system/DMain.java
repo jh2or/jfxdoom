@@ -283,6 +283,31 @@ public final class DMain {
         // V_DrawPatchDirect call).
         doom.ui.MMenu.mInit();
 
+        // -record <name> arms demo recording. G_RecordDemo
+        // allocates the buffer; the header lands on the next
+        // G_InitNew call.
+        p = MArgv.checkParm("-record");
+        if (p > 0 && p < MArgv.myargc - 1) {
+            GGame.gRecordDemo(MArgv.myargv[p + 1]);
+            autostart = true;
+        }
+
+        // -playdemo <name> queues a demo replay (single-shot).
+        p = MArgv.checkParm("-playdemo");
+        if (p > 0 && p < MArgv.myargc - 1) {
+            Doomstat.singledemo = true;
+            GGame.gDeferedPlayDemo(MArgv.myargv[p + 1]);
+        }
+
+        // -timedemo <name> is like -playdemo but bails out to a
+        // timing-info message at end (singletics + nodrawers in
+        // the C). The Java port just routes to playdemo for now.
+        p = MArgv.checkParm("-timedemo");
+        if (p > 0 && p < MArgv.myargc - 1) {
+            Doomstat.singledemo = true;
+            GGame.gDeferedPlayDemo(MArgv.myargv[p + 1]);
+        }
+
         // Auto-start a level if -warp / -episode / -skill given.
         if (autostart) {
             // Seed playeringame[0]=true so the playsim has at
@@ -516,9 +541,7 @@ public final class DMain {
                 }
                 break;
             case 1:
-                // G_DeferedPlayDemo("demo1") — skip the demo, loop
-                // through to the next page on the next tic.
-                advancedemo = true;
+                GGame.gDeferedPlayDemo("demo1");
                 break;
             case 2:
                 pagetic = 200;
@@ -526,7 +549,7 @@ public final class DMain {
                 pagename = "CREDIT";
                 break;
             case 3:
-                advancedemo = true;
+                GGame.gDeferedPlayDemo("demo2");
                 break;
             case 4:
                 Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
@@ -541,10 +564,11 @@ public final class DMain {
                 }
                 break;
             case 5:
-                advancedemo = true;
+                GGame.gDeferedPlayDemo("demo3");
                 break;
             case 6:
-                advancedemo = true;
+                // Retail Ultimate Doom adds a fourth demo.
+                GGame.gDeferedPlayDemo("demo4");
                 break;
             default:
                 break;
