@@ -105,7 +105,7 @@ public final class ISystem {
         doom.system.DNet.dQuitNetGame();
         doom.sound.ISound.iShutdownSound();
         doom.sound.ISound.iShutdownMusic();
-        // M_SaveDefaults — deferred (full m_misc port).
+        MMisc.mSaveDefaults();
         doom.ui.IVideo.iShutdownGraphics();
     }
 

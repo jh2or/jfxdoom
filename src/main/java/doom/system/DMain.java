@@ -172,6 +172,11 @@ public final class DMain {
         startmap = 1;
         autostart = false;
 
+        // Load persisted user defaults (volumes, gamma, screen
+        // size, etc.) from default.cfg. Honoured before the
+        // boolean flags so explicit cmdline switches override.
+        MMisc.mLoadDefaults();
+
         // Boolean flags.
         Doomstat.nomonsters = MArgv.checkParm("-nomonsters") > 0;
         Doomstat.respawnmonsters = MArgv.checkParm("-respawn") > 0;
