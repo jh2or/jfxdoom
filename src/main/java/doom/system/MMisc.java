@@ -200,6 +200,59 @@ public final class MMisc {
         }
     }
 
+    //
+    // M_ScreenShot — m_misc.c lines 501–530.
+    //
+    // The C writes a PCX file (Doom era's standard); the Java
+    // port writes PNG via `javax.imageio.ImageIO`. Naming
+    // matches the C's DOOM00..DOOM99 ladder (with .png extension
+    // instead of .pcx).
+    public static void mScreenShot() {
+        // Read screens[0] and the current palette.
+        byte[] linear = new byte[doom.system.Doomdef.SCREENWIDTH
+                                  * doom.system.Doomdef.SCREENHEIGHT];
+        doom.ui.IVideo.iReadScreen(linear);
+        byte[] palette;
+        try {
+            palette = doom.wad.WWad.wCacheLumpName("PLAYPAL",
+                    doom.wad.ZZone.PU_CACHE);
+        } catch (IOException | ISystem.DoomError e) {
+            return;  // no palette → no screenshot
+        }
+        if (palette == null || palette.length < 768) return;
+
+        // Find a free DOOMNN.png filename, NN ∈ [00..99].
+        String name = null;
+        for (int i = 0; i <= 99; i++) {
+            String candidate = String.format("DOOM%02d.png", i);
+            if (!Files.exists(Path.of(candidate))) {
+                name = candidate;
+                break;
+            }
+        }
+        if (name == null) return;  // 100 slots full
+
+        // Build an ARGB BufferedImage from the palette + screen.
+        int w = doom.system.Doomdef.SCREENWIDTH;
+        int h = doom.system.Doomdef.SCREENHEIGHT;
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        int[] argb = new int[w * h];
+        for (int i = 0; i < argb.length; i++) {
+            int idx = linear[i] & 0xff;
+            int r = palette[idx * 3]     & 0xff;
+            int g = palette[idx * 3 + 1] & 0xff;
+            int b = palette[idx * 3 + 2] & 0xff;
+            argb[i] = 0xff000000 | (r << 16) | (g << 8) | b;
+        }
+        img.setRGB(0, 0, w, h, argb, 0, w);
+        try {
+            javax.imageio.ImageIO.write(img, "png", Path.of(name).toFile());
+        } catch (IOException e) {
+            // best-effort
+        }
+    }
+
     private MMisc() {
     }
 }

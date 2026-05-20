@@ -918,7 +918,7 @@ public final class GGame {
                     gDoPlayDemo();
                     break;
                 case ga_screenshot:
-                    // ga_screenshot waits on the BMP / PCX writer.
+                    MMisc.mScreenShot();
                     gameaction = ga_nothing;
                     break;
                 default:

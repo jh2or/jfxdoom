@@ -38,3 +38,4 @@ reference-wads/*.wad
 # Keep the gradle wrapper jar exception
 !gradle/wrapper/gradle-wrapper.jar
 default.cfg
+DOOM*.png
