@@ -645,7 +645,11 @@ public final class MMenu {
                 break;
             default: break;
         }
-        // R_SetViewSize(screenblocks, detailLevel) deferred.
+        // Defer the actual resize through setsizeneeded so it
+        // lands at the next dDisplay (matches the C — direct
+        // mutation from menu callbacks can race the in-flight
+        // renderer otherwise).
+        doom.render.RMain.rSetViewSize(screenblocks, detailLevel);
     }
 
     // Menu painting primitives — m_menu.c lines 1183–1338.

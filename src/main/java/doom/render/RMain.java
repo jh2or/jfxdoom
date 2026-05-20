@@ -648,12 +648,15 @@ public final class RMain {
     // skips R_InitData (already done from RData.rInitData when the
     // WAD loads) and the printf chatter.
     //
-    // detailLevel / screenblocks come from m_misc default settings;
-    // for now both default to "high detail, full-screen view".
+    // detailLevel / screenblocks come from m_misc default settings
+    // (mLoadDefaults runs ahead of rInit in dDoomMain). screenblocks
+    // 10 = play view sized to leave a status-bar margin; 11 = full
+    // screen. The C reads the globals directly; the Java port pulls
+    // them from MMenu where mLoadDefaults wires them.
     public static void rInit() {
         rInitPointToAngle();
         rInitTables();
-        rSetViewSize(/*screenblocks=*/ 11, /*detailLevel=*/ 0);
+        rSetViewSize(doom.ui.MMenu.screenblocks, doom.ui.MMenu.detailLevel);
         rExecuteSetViewSize();
         RPlane.rInitPlanes();
         rInitLightTables();

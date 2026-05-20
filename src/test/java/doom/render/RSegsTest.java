@@ -99,7 +99,7 @@ class RSegsTest {
                 front.ceilingheight, front.ceilingpic, front.lightlevel);
 
         int dsBefore = RBsp.dsP;
-        RSegs.rwAngle1 = 0;
+        RBsp.rwAngle1 = 0;
         RSegs.rStoreWallRange(50, 60);
 
         assertEquals(dsBefore + 1, RBsp.dsP);
@@ -163,7 +163,7 @@ class RSegsTest {
                 front.ceilingheight, 0, 192);
 
         int dsBefore = RBsp.dsP;
-        RSegs.rwAngle1 = 0;
+        RBsp.rwAngle1 = 0;
         RSegs.rStoreWallRange(50, 60);
 
         assertEquals(dsBefore + 1, RBsp.dsP);
@@ -190,7 +190,7 @@ class RSegsTest {
                 front.ceilingheight, 0, 192);
 
         int dsBefore = RBsp.dsP;
-        RSegs.rwAngle1 = 0;
+        RBsp.rwAngle1 = 0;
         RSegs.rStoreWallRange(50, 60);
 
         Drawseg ds = RBsp.drawsegs[dsBefore];

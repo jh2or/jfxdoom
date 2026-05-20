@@ -19,7 +19,6 @@
 package doom.render;
 
 import doom.fixed.Fixed;
-import doom.system.Doomdef;
 import doom.system.ISystem;
 
 import java.io.IOException;
@@ -46,8 +45,12 @@ public final class RSegs {
     public static int rwNormalangle; // angle_t
 
     // r_segs.c line 60 — angle to the seg's start vertex from
-    // viewx/y. Set by r_bsp.c R_AddLine.
-    public static int rwAngle1;      // angle_t
+    // viewx/y. The C declares this in r_segs.c but r_bsp.c
+    // writes it via the extern declaration in r_state.h. The
+    // Java port lives in RBsp where it's actually set; RSegs
+    // reads `RBsp.rwAngle1` directly. Keeping a second field
+    // here would shadow it (always 0) — see the porting-bug
+    // history in PORT_STATUS deviation 39.
 
     // r_segs.c lines 65–74 — per-seg render scratch.
     public static int rwX;
@@ -183,14 +186,17 @@ public final class RSegs {
                         - Fixed.mul(RDraw.dcTexturemid, RThings.spryscale);
                 RDraw.dcIscale = (int) (0xffffffffL / (RThings.spryscale & 0xffffffffL));
 
-                // draw the texture (R_DrawMaskedColumn dispatched
-                // through r_things — column points 3 bytes before
-                // R_GetColumn in the C, accounting for the
-                // post-header offset).
+                // draw the texture. R_GetColumn lands at the post's
+                // pixel data (it adds +3 internally for the C
+                // R_DrawColumn fast path). R_DrawMaskedColumn wants
+                // the column HEADER (topdelta byte), so we back the
+                // offset up by 3 to match the C's
+                // `(byte*)R_GetColumn(...) - 3`.
                 try {
                     RData.ColumnRef cref = RData.rGetColumn(texnum,
                             col & 0xffff);
-                    RThings.rDrawMaskedColumn(cref);
+                    RThings.rDrawMaskedColumn(
+                            new RData.ColumnRef(cref.data, cref.offset - 3));
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -430,7 +436,7 @@ public final class RSegs {
         // — angle_t arithmetic is unsigned 32-bit, so abs() doesn't
         // really make sense; the C effectively wants the magnitude
         // of the angular distance. Match the C bit-for-bit.
-        offsetangle = Math.abs(rwNormalangle - rwAngle1);
+        offsetangle = Math.abs(rwNormalangle - RBsp.rwAngle1);
 
         if (Integer.compareUnsigned(offsetangle, Tables.ANG90) > 0) {
             offsetangle = Tables.ANG90;
@@ -620,7 +626,7 @@ public final class RSegs {
                 || maskedtexture;
 
         if (segtextured) {
-            offsetangle = rwNormalangle - rwAngle1;
+            offsetangle = rwNormalangle - RBsp.rwAngle1;
 
             if (Integer.compareUnsigned(offsetangle, Tables.ANG180) > 0) {
                 offsetangle = -offsetangle;
@@ -634,7 +640,7 @@ public final class RSegs {
                     & Tables.FINEMASK];
             rwOffset = Fixed.mul(hyp, sineval);
 
-            if (Integer.compareUnsigned(rwNormalangle - rwAngle1,
+            if (Integer.compareUnsigned(rwNormalangle - RBsp.rwAngle1,
                     Tables.ANG180) < 0) {
                 rwOffset = -rwOffset;
             }

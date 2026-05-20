@@ -148,9 +148,21 @@ public final class RDraw {
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
+        // The C hardcodes `& 127` assuming 128-tall texture columns.
+        // Composite textures are exactly 128 bytes per column so the
+        // mask is in-bounds. Single-patch wall textures with a
+        // shorter post (e.g. 64-pixel tall) leave the upper bytes
+        // unallocated — the C reads garbage past the post end and
+        // gets away with it; Java's bounds check would throw. Clamp
+        // the read to the last byte of the source buffer to match
+        // the C's "read whatever happens to be there" intent
+        // without crashing (deviation 39).
+        int srcMax = dcSource.length - 1;
 
         do {
-            int src = dcSource[dcSourceOfs + ((frac >> Fixed.FRACBITS) & 127)] & 0xFF;
+            int idx = dcSourceOfs + ((frac >> Fixed.FRACBITS) & 127);
+            if (idx > srcMax) idx = srcMax;
+            int src = dcSource[idx] & 0xFF;
             screen[destIdx] = dcColormap[dcColormapOfs + src];
             destIdx += Doomdef.SCREENWIDTH;
             frac += fracstep;
@@ -180,10 +192,13 @@ public final class RDraw {
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
+        int srcMax = dcSource.length - 1;
 
         do {
             // Hack. Does not work correctly.
-            int src = dcSource[dcSourceOfs + ((frac >> Fixed.FRACBITS) & 127)] & 0xFF;
+            int idx = dcSourceOfs + ((frac >> Fixed.FRACBITS) & 127);
+            if (idx > srcMax) idx = srcMax;
+            int src = dcSource[idx] & 0xFF;
             byte v = dcColormap[dcColormapOfs + src];
             screen[destIdx] = v;
             screen[dest2Idx] = v;

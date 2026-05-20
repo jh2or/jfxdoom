@@ -114,6 +114,30 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | i_net.c       | `doom.system.INet`       | Standard | Pending | Single-player stub first.                          |
 | d_net.c       | `doom.system.DNet`       | Standard | Partial | Single-player stub: D_QuitNetGame / NetUpdate / TryRunTics no-op. Full ticcmd-exchange protocol lands when multiplayer comes online. |
 
+## Open TODO items
+
+The C-side port is feature-complete; the remaining items are
+stretch goals that don't gate the engine.
+
+- **ENDOOM screen**: the C paints the `ENDOOM` WAD lump in DOS
+  text mode on quit. The Java port has no text-mode terminal —
+  ENDOOM would need a separate 80×25 text renderer in the
+  JavaFX shell (or an opt-in "throw the ENDOOM lump to stdout"
+  path). Currently not painted.
+- **Mouse navigation in M_Responder**: m_menu.c lines 1399–
+  1446 read `ev_mouse` events with relative-motion deltas
+  (`data2` / `data3`) to drive menu navigation + a click button
+  for ENTER / BACKSPACE. The JavaFX shell only queues key
+  events; mouse capture + relative-motion synthesis would land
+  in JfxDoomApp.
+- **Joystick navigation in M_Responder**: m_menu.c lines 1362–
+  1396 read `ev_joystick` events with axis + button data the
+  same way. JavaFX doesn't ship a joystick API; this would need
+  a third-party HID library.
+- **Mouse aim / strafe in G_BuildTiccmd**: g_game.c lines 363–
+  377 fold `ev_mouse` deltas into the per-tic ticcmd (forward /
+  side / turn). Same JavaFX-shell dependency as above.
+
 ## Deviations from C worth flagging
 
 1. `m_fixed.c`: `FixedDiv` overflow branch throws `ArithmeticException` instead of calling `I_Error`.
@@ -377,6 +401,45 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+39. r_draw.c column-source bounds clamp + r_bsp.c `rwAngle1`
+    fix:
+    - **`rwAngle1` shadowing**: the C declares `rw_angle1` as a
+      single file-scope global in r_bsp.c (with `extern` in
+      r_state.h for r_segs.c to read). The Java port split it
+      across `RBsp.rwAngle1` (written by `RBsp.rAddLine`) and
+      `RSegs.rwAngle1` (read by `RSegs.rStoreWallRange`). The
+      RSegs copy was never written, so it stayed 0, which made
+      `offsetangle = abs(rwNormalangle - 0)` always pick the
+      seg's normal angle. The unsigned-compare clamp at line 435
+      then forced offsetangle to `ANG90`, leaving `distangle=0`,
+      `sineval≈0`, `rwDistance≈0`, and `scale` clamped at the max
+      (64×FRACUNIT). Result: every wall rendered as wide vertical
+      bands of a single colour from the texture's top row.
+      **Fix**: dropped `RSegs.rwAngle1`, made RSegs read
+      `RBsp.rwAngle1`. Walls now project at the correct scale.
+    - **`R_DrawMaskedColumn` for masked segs**: the C does
+      `column = (column_t*)R_GetColumn(texnum, col) - 3` to back
+      the pointer up from the post pixel data (where R_GetColumn
+      lands, per the `+3` in R_GenerateLookup) to the post header
+      (which R_DrawMaskedColumn expects). The Java port forgot
+      the `-3` — masked walls (fences, the imp-gate bars in
+      E1M1) read garbage as a "topdelta" / "length" pair and
+      walked past the column buffer. **Fix**: subtract 3 from
+      the offset before handing it to rDrawMaskedColumn (RSegs
+      line 196).
+    - **`R_DrawColumn` source clamp**: the C hard-codes `& 127`
+      in the column sample, assuming 128-byte column data. That
+      holds for composite textures (always padded to 128) but
+      not for single-patch wall textures with shorter posts
+      (e.g. 64-pixel-tall). The C reads garbage past the post
+      end and gets away with it; Java's bounds check throws.
+      **Fix**: in `rDrawColumn` and `rDrawColumnLow`, clamp the
+      read index to `dcSource.length - 1`. Matches the C's
+      "read whatever happens to be there" intent without
+      crashing — visual output is unchanged for normal
+      composite textures and merely deterministic instead of
+      crashing for short single-patch walls.
 
 38. m_misc.c defaults `int*` → IntSupplier / IntConsumer pair:
     - The C uses `default_t { char *name; int *location; int
