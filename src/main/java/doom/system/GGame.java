@@ -81,18 +81,72 @@ public final class GGame {
         gameaction = ga_completed;
     }
 
-    // g_game.c lines 800–841 — G_PlayerReborn.
-    // Stubbed: the full body memsets player_t and re-applies starting
-    // ammo/weapons/health, which needs the ammo[]/weaponowned[]/
-    // readyweapon/maxammo fields (none ported until p_inter / p_user).
-    // For the current set of consumers (P_SpawnPlayer's PST_REBORN
-    // branch) we just flip playerstate back to LIVE so subsequent
-    // ticks behave as if the player respawned cleanly. The ammo/weapon
-    // restore comes online when those fields land.
+    //
+    // G_PlayerReborn
+    // g_game.c lines 800–841. Resets the player to fresh-spawn
+    // state — full health, fist + pistol, 50 bullets — while
+    // preserving the frags / killcount / itemcount / secretcount
+    // counters across rebirths.
     public static void gPlayerReborn(int player) {
         Player p = players[player];
-        p.playerstate = Player.PST_LIVE;
-        p.health = 100; // doomdef.h MAXHEALTH
+
+        // Stash the across-rebirth counters.
+        int[] frags = new int[Doomdef.MAXPLAYERS];
+        System.arraycopy(p.frags, 0, frags, 0, Doomdef.MAXPLAYERS);
+        int killcount   = p.killcount;
+        int itemcount   = p.itemcount;
+        int secretcount = p.secretcount;
+
+        // Memset-equivalent: clear every per-life field. The C does
+        // a single memset(); Java has no struct-zero so reset by
+        // field. Keep the fresh allocation pattern in sync with
+        // Player.java's declared defaults.
+        p.mo              = null;
+        p.playerstate     = Player.PST_LIVE;
+        p.cmd             = new doom.play.Ticcmd();
+        p.viewz           = 0;
+        p.viewheight      = 0;
+        p.deltaviewheight = 0;
+        p.bob             = 0;
+        p.extralight      = 0;
+        p.fixedcolormap   = 0;
+        p.armorpoints     = 0;
+        p.armortype       = 0;
+        java.util.Arrays.fill(p.powers, 0);
+        java.util.Arrays.fill(p.cards, false);
+        p.backpack        = false;
+        p.pendingweapon   = Doomdef.wp_pistol;
+        p.readyweapon     = Doomdef.wp_pistol;
+        java.util.Arrays.fill(p.weaponowned, false);
+        java.util.Arrays.fill(p.ammo, 0);
+        for (int i = 0; i < Doomdef.NUMAMMO; i++) {
+            p.maxammo[i] = doom.play.PInter.maxammo[i];
+        }
+        p.cheats          = 0;
+        p.refire          = 0;
+        p.message         = null;
+        p.damagecount     = 0;
+        p.bonuscount      = 0;
+        p.attacker        = null;
+        p.didsecret       = false;
+
+        // "don't do anything immediately" — set the input
+        // debounce flags so a held trigger doesn't fire on the
+        // first tic post-rebirth.
+        p.usedown   = 1;
+        p.attackdown = 1;
+
+        // Starting health + weapons + bullets.
+        p.health      = Doomdef.MAXHEALTH;          // 100
+        p.weaponowned[Doomdef.wp_fist]   = true;
+        p.weaponowned[Doomdef.wp_pistol] = true;
+        p.ammo[Doomdef.am_clip] = 50;
+
+        // Restore the across-rebirth counters.
+        System.arraycopy(frags, 0, p.frags, 0, Doomdef.MAXPLAYERS);
+        p.killcount   = killcount;
+        p.itemcount   = itemcount;
+        p.secretcount = secretcount;
     }
 
     //
@@ -649,6 +703,18 @@ public final class GGame {
         startepisode = episode;
         startmap = map;
         Doomstat.respawnmonsters = (skill == Doomstat.sk_nightmare);
+
+        // g_game.c lines 1421–1422: every player slot is forced
+        // into PST_REBORN so the first P_SpawnPlayer call after
+        // gDoLoadLevel runs G_PlayerReborn (which restores
+        // health=100, fist+pistol, 50 bullets). Without this,
+        // Java's default playerstate=0 (=PST_LIVE) makes the
+        // spawn path skip reborn and the player ends up with
+        // zero everything.
+        for (int i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            players[i].playerstate = Player.PST_REBORN;
+        }
+
         // If -record armed the demo buffer, stamp the header now
         // that skill/episode/map are settled. Matches the C
         // G_InitNew → G_BeginRecording dispatch order.

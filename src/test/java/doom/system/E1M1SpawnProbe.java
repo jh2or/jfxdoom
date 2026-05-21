@@ -51,6 +51,14 @@ class E1M1SpawnProbe {
         System.err.printf(
                 "  floorz=%d ceilingz=%d%n",
                 mo.floorz >> 16, mo.ceilingz >> 16);
+        System.err.printf(
+                "  player.health=%d mo.health=%d readyweapon=%d "
+                        + "fist=%b pistol=%b ammo[clip]=%d maxammo[clip]=%d%n",
+                p.health, mo.health, p.readyweapon,
+                p.weaponowned[doom.system.Doomdef.wp_fist],
+                p.weaponowned[doom.system.Doomdef.wp_pistol],
+                p.ammo[doom.system.Doomdef.am_clip],
+                p.maxammo[doom.system.Doomdef.am_clip]);
     }
 
     private static int indexOf(doom.render.Sector s) {
