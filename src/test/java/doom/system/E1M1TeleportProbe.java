@@ -54,6 +54,34 @@ class E1M1TeleportProbe {
         teleportAndDump(mo, p, 1056, -3360, 0,                outDir, "look_east");
         teleportAndDump(mo, p, 1056, -3360, Tables.ANG180,    outDir, "look_south");
         teleportAndDump(mo, p, 1056, -3360, Tables.ANG90 * 3, outDir, "look_west");
+
+        // Reproduce "ran into a wall" — face an actual wall at
+        // close range from a variety of angles. The user-reported
+        // RSegs:276 IOOB hit when rwCenterangle + xtoviewangle[]
+        // shifted past 4095 in finetangent, which happens for
+        // segs viewed at acute angles.
+        for (int deg = 0; deg < 360; deg += 22) {
+            int ang = (int) ((long) deg * (1L << 32) / 360);
+            teleportAndDump(mo, p, 1056, -3580, ang, outDir,
+                    "wall_close_" + deg);
+        }
+
+        // Sweep map positions encountered during normal play. The
+        // exact position the user's stack trace fired from
+        // (~1140, -3012) is in here. Verifies finetangent[8192]
+        // absorbs every angle combination across the map.
+        int[][] spots = {
+                { 1140, -3012 }, { 1300, -3200 }, { 1500, -3500 },
+                { 900,  -3000 }, { 700,  -3100 }, { 800,  -3400 },
+                { 1200, -2800 }, { 1450, -2950 }, { 1600, -3300 },
+        };
+        for (int[] spot : spots) {
+            for (int deg = 0; deg < 360; deg += 45) {
+                int ang = (int) ((long) deg * (1L << 32) / 360);
+                teleportAndDump(mo, p, spot[0], spot[1], ang, outDir,
+                        "sweep_" + spot[0] + "_" + spot[1] + "_" + deg);
+            }
+        }
     }
 
     private static void teleportAndDump(Mobj mo, Player p,

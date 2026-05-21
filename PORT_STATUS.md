@@ -402,6 +402,28 @@ stretch goals that don't gate the engine.
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
 
+40. `finetangent` extended to absorb r_segs.c OOB reads:
+    - C `tables.c` lays `finetangent[4096]` immediately before
+      `finesine[10240]` in the static-data segment. r_segs.c's
+      texture-column projection reads `finetangent[angle]` for
+      `angle` in [0, 8191] without any bounds check — indices
+      [4096, 8191] silently overrun into `finesine[0, 4095]`.
+      The C compiler's adjacent-array layout makes this "work"
+      in a non-portable way: the renderer ends up reading sine
+      values dressed as tangent, which (combined with the
+      texture-column math) produces visually correct results
+      for the affected segs.
+    - Java's bounded `int[]` throws on the OOB read. Users
+      reported intermittent IOOB crashes during E1M1 play —
+      `ArrayIndexOutOfBoundsException: Index 4096 out of
+      bounds for length 4096` at RSegs:276, fired when running
+      into walls at acute angles.
+    - **Fix**: allocate `finetangent` at 8192 entries (full
+      FINEANGLES), with [0, 4095] holding the real tangent
+      table from `finetangent.dat` and [4096, 8191] mirroring
+      `finesine[0, 4095]`. The C's effective lookup behavior
+      is preserved exactly; the Java port no longer throws.
+
 39. r_draw.c column-source bounds clamp + r_bsp.c `rwAngle1`
     fix:
     - **`rwAngle1` shadowing**: the C declares `rw_angle1` as a

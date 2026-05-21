@@ -11,13 +11,20 @@ class TablesTest {
 
     @Test
     void finetangentSizeAndEndpoints() {
-        assertEquals(4096, Tables.finetangent.length);
+        // The Java port over-allocates finetangent to 8192 to
+        // absorb r_segs.c's OOB reads (the C version alias-overruns
+        // into the adjacent finesine table). See deviation 40.
+        assertEquals(8192, Tables.finetangent.length);
         assertEquals(-170910304, Tables.finetangent[0]);
         assertEquals(170910304, Tables.finetangent[4095]);
         // Middle: tangent crosses zero between 2047 and 2048. Verify those
         // symmetric values to catch off-by-one in extraction.
         assertEquals(-25, Tables.finetangent[2047]);
         assertEquals(25, Tables.finetangent[2048]);
+        // Upper half mirrors finesine[0..4095] — the C's adjacent-
+        // array OOB.
+        assertEquals(Tables.finesine[0], Tables.finetangent[4096]);
+        assertEquals(Tables.finesine[4095], Tables.finetangent[8191]);
     }
 
     @Test

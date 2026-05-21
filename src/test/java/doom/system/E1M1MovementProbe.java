@@ -38,12 +38,18 @@ class E1M1MovementProbe {
         Player p = GGame.players[0];
         Path outDir = Path.of("build/probe");
         Files.createDirectories(outDir);
-        // Pretend the user is holding "up arrow" the whole time.
+        // Walk + turn for a long time so we step through every
+        // wall-rendering angle. The user's IOOB was reportedly
+        // triggered by "running into a wall" — extended play
+        // should exercise the same code path.
         GGame.gamekeydown[Doomdef.KEY_UPARROW] = true;
-        for (int tic = 0; tic < 350; tic++) {
-            // After tic 80 also hold right-turn so the player
-            // moves AND rotates through every facing.
-            if (tic == 80) GGame.gamekeydown[Doomdef.KEY_RIGHTARROW] = true;
+        for (int tic = 0; tic < 1000; tic++) {
+            if (tic == 80)  GGame.gamekeydown[Doomdef.KEY_RIGHTARROW] = true;
+            if (tic == 400) GGame.gamekeydown[Doomdef.KEY_RIGHTARROW] = false;
+            if (tic == 400) GGame.gamekeydown[Doomdef.KEY_LEFTARROW] = true;
+            if (tic == 700) GGame.gamekeydown[Doomdef.KEY_LEFTARROW] = false;
+            if (tic == 700) GGame.gamekeydown[Doomdef.KEY_RSHIFT] = true;  // run
+            if (tic == 850) GGame.gamekeydown[Doomdef.KEY_RIGHTARROW] = true;
             try {
                 DMain.dDoomLoop();
             } catch (Throwable t) {

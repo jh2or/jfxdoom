@@ -42,7 +42,32 @@ public final class Tables {
     public static final int FINECOSINE_OFFSET = FINEANGLES / 4;
 
     // fixed_t finetangent[FINEANGLES/2];   // 4096 entries
-    public static final int[] finetangent = loadInts("finetangent.dat", FINEANGLES / 2);
+    //
+    // In the C build, `finetangent` is immediately followed in
+    // memory by `finesine` (both are file-statics in tables.c).
+    // r_segs.c reads `finetangent[angle]` for `angle` in [0, 8191]
+    // without bounds-checking — indices 4096..8191 silently
+    // overrun into `finesine[0..4095]`. The Doom renderer
+    // depends on those "overrun" values for wall-column
+    // projection at certain seg angles.
+    //
+    // Java's bounded arrays throw on OOB. To preserve the C's
+    // effective behavior, we allocate a 8192-entry buffer with
+    // the raw tangent values in [0, 4095] and finesine[0..4095]
+    // mirrored into [4096, 8191] — exactly what the C reads.
+    // See deviation 40.
+    public static final int[] finetangent = loadFinetangentExtended();
+
+    private static int[] loadFinetangentExtended() {
+        int[] base = loadInts("finetangent.dat", FINEANGLES / 2);
+        int[] ext = new int[FINEANGLES];
+        System.arraycopy(base, 0, ext, 0, FINEANGLES / 2);
+        // finesine is loaded above; copy its first 4096 entries
+        // into the upper half of finetangent to mimic the C's
+        // adjacent-array OOB read.
+        System.arraycopy(finesine, 0, ext, FINEANGLES / 2, FINEANGLES / 2);
+        return ext;
+    }
 
     // angle_t tantoangle[SLOPERANGE+1];    // 2049 entries
     public static final int[] tantoangle = loadInts("tantoangle.dat", SLOPERANGE + 1);
