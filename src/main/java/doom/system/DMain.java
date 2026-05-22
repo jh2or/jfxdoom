@@ -252,6 +252,24 @@ public final class DMain {
         System.arraycopy(wadfiles, 0, paths, 0, numwadfiles);
         WWad.wInitMultipleFiles(paths);
 
+        // d_main.c IdentifyVersion — the C scans for known IWAD
+        // filenames (doom.wad, doom2.wad, doomu.wad, etc.) to
+        // decide gamemode. WAD files get renamed in the wild, so
+        // sniff the loaded lump set instead:
+        //   MAP01 → commercial (Doom 2 / Final Doom)
+        //   E4M1  → retail (Ultimate Doom)
+        //   E2M1  → registered (Doom)
+        //   else  → shareware
+        if (WWad.wCheckNumForName("MAP01") >= 0) {
+            Doomstat.gamemode = Doomstat.GameMode.commercial;
+        } else if (WWad.wCheckNumForName("E4M1") >= 0) {
+            Doomstat.gamemode = Doomstat.GameMode.retail;
+        } else if (WWad.wCheckNumForName("E2M1") >= 0) {
+            Doomstat.gamemode = Doomstat.GameMode.registered;
+        } else {
+            Doomstat.gamemode = Doomstat.GameMode.shareware;
+        }
+
         // R_Init: textures + flats + sprites + colormap + viewangletox /
         // xtoviewangle / yslope / scalelight / zlight, calls
         // RDraw.rInitTranslationTables / RPlane.rInitPlanes /

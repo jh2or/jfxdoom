@@ -387,11 +387,19 @@ public final class GGame {
 
     /**
      * G_SaveGame — queues a save-write to `slot` with `description`.
-     * g_game.c lines 1262–1269.
+     * g_game.c lines 1262–1269. The C derives the file path from
+     * the slot via `sprintf(name, SAVEGAMENAME"%d.dsg", slot)`
+     * inside G_DoSaveGame; mirror that here so callers don't have
+     * to know the slot→filename convention. Without this, saveName
+     * stays at whatever value gLoadGame left it (or null), and
+     * gDoSaveGame's `Paths.get(null)` throws NPE — gameaction
+     * stays at ga_savegame and the engine spins on the same NPE
+     * each frame (the user-reported "save endless loop").
      */
     public static void gSaveGame(int slot, String description) {
         saveSlot = slot;
         saveDescription = description;
+        saveName = Dstrings.SAVEGAMENAME + slot + ".dsg";
         gameaction = ga_savegame;
     }
 
@@ -403,6 +411,11 @@ public final class GGame {
      * PSaveg byte stream.
      */
     public static void gDoSaveGame() {
+        // Always-clear gameaction first so an unexpected throw
+        // (NPE, OOM, IOException) doesn't leave gameaction stuck
+        // at ga_savegame — otherwise the next gTicker pass spins
+        // on the same failing branch.
+        gameaction = ga_nothing;
         try {
             byte[] body = doom.play.PSaveg.save();
             byte[] desc = saveDescription == null
@@ -414,10 +427,9 @@ public final class GGame {
             System.arraycopy(body, 0, out, 1 + (out[0] & 0xff), body.length);
             java.nio.file.Files.write(java.nio.file.Paths.get(saveName), out);
             players[consoleplayer].message = "game saved.";
-        } catch (java.io.IOException e) {
+        } catch (java.io.IOException | RuntimeException e) {
             players[consoleplayer].message = "save failed: " + e.getMessage();
         }
-        gameaction = ga_nothing;
     }
 
     /**
@@ -426,6 +438,10 @@ public final class GGame {
      * hands the body to PSaveg.load().
      */
     public static void gDoLoadGame() {
+        // Same defensive-reset as gDoSaveGame — clear gameaction
+        // before the I/O so a missing-file NPE or malformed save
+        // doesn't trap the engine in ga_loadgame.
+        gameaction = ga_nothing;
         try {
             byte[] all = java.nio.file.Files.readAllBytes(
                     java.nio.file.Paths.get(saveName));
@@ -434,10 +450,9 @@ public final class GGame {
             System.arraycopy(all, 1 + descLen, body, 0, body.length);
             doom.play.PSaveg.load(body);
             players[consoleplayer].message = "game loaded.";
-        } catch (java.io.IOException e) {
+        } catch (java.io.IOException | RuntimeException e) {
             players[consoleplayer].message = "load failed: " + e.getMessage();
         }
-        gameaction = ga_nothing;
     }
 
     /**
@@ -676,6 +691,12 @@ public final class GGame {
         // demoplayback / netdemo deferred (demo system not ported).
         Doomstat.netgame    = false;
         Doomstat.deathmatch = 0;
+        // The C relies on D_CheckNetGame having set
+        // playeringame[consoleplayer]=true at boot. The Java port
+        // skips that, so a New-Game-from-menu reaches gDoNewGame
+        // with playeringame[0]=false → P_SpawnMapThing finds no
+        // active seat → no player. Seed it explicitly here.
+        playeringame[0] = true;
         playeringame[1] = playeringame[2] = playeringame[3] = false;
         // The C separately clears `respawnparm` (the -respawn cmdline
         // flag) and `respawnmonsters` (which gInitNew re-derives from
@@ -686,7 +707,14 @@ public final class GGame {
         Doomstat.nomonsters      = false;
         consoleplayer = 0;
         gInitNew(dSkill, dEpisode, dMap);
-        gameaction = ga_nothing;
+        // gInitNew set gameaction = ga_loadlevel; do NOT clear
+        // it. The C's G_InitNew calls G_DoLoadLevel directly
+        // (bypassing the queue) and then G_DoNewGame's trailing
+        // `gameaction = ga_nothing` is a no-op marker. The Java
+        // port queues through ga_loadlevel instead, so the
+        // trailing clear would wipe the pending transition and
+        // the menu's New Game pick would never actually load
+        // the level.
     }
 
     //

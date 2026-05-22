@@ -90,10 +90,18 @@ class ISystemTest {
 
     // I_Init / I_Quit dispatch into ISound / DNet / IVideo.
     // All are stubs; the test just verifies no throw on the
-    // top-level entry / exit dance.
+    // top-level entry / exit dance. The quit-hook (System.exit
+    // in production) is swapped for a no-op so the JUnit runner
+    // survives the call.
     @Test
     void iInitAndQuitDoNotThrow() {
-        ISystem.iInit();
-        ISystem.iQuit();
+        Runnable prev = ISystem.quitHook;
+        ISystem.quitHook = () -> { /* no-op for the test */ };
+        try {
+            ISystem.iInit();
+            ISystem.iQuit();
+        } finally {
+            ISystem.quitHook = prev;
+        }
     }
 }

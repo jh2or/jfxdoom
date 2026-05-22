@@ -97,16 +97,32 @@ public final class ISystem {
     }
 
     // i_system.c — I_Quit. Tears down net + audio + saves
-    // defaults + tears down video. The Java port doesn't call
-    // System.exit — the JVM's main thread returns naturally when
-    // the JavaFX shell closes. iError is the catastrophic-exit
-    // path.
+    // defaults + tears down video, then exits the JVM. The C
+    // calls exit() at the end; Java needs the equivalent since
+    // the JavaFX AnimationTimer keeps the application thread
+    // alive otherwise (so the window would stay open after the
+    // "press y to quit" prompt despite music + video shutting
+    // down).
+    //
+    // The exit step routes through `quitHook` so tests can swap
+    // in a no-op — otherwise an iQuit-triggering test would
+    // System.exit the JUnit runner mid-suite.
+    public static Runnable quitHook = () -> System.exit(0);
+
+    // The `quitting` flag suppresses re-entry from
+    // JfxDoomApp.stop() → iQuit (which fires when the JVM exit
+    // starts unwinding).
+    private static boolean quitting;
+
     public static void iQuit() {
+        if (quitting) return;
+        quitting = true;
         doom.system.DNet.dQuitNetGame();
         doom.sound.ISound.iShutdownSound();
         doom.sound.ISound.iShutdownMusic();
         MMisc.mSaveDefaults();
         doom.ui.IVideo.iShutdownGraphics();
+        if (quitHook != null) quitHook.run();
     }
 
     // i_system.c — I_WaitVBL. Sleeps for `count * 1/70 s` so the
