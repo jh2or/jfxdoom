@@ -116,6 +116,7 @@ public final class ISound {
     // Music subsystem state.
     private static Sequencer    musicSequencer;
     private static Synthesizer  musicSynth;
+    private static javax.sound.midi.Receiver musicReceiver;
     private static Sequence     musicSequence;
     private static int          musicHandleSeq = 1;
     private static int          currentMusicHandle;
@@ -130,12 +131,17 @@ public final class ISound {
             musicSequencer.open();
             musicSynth = MidiSystem.getSynthesizer();
             musicSynth.open();
-            musicSequencer.getTransmitter().setReceiver(musicSynth.getReceiver());
+            // Cache the receiver. Gervill's getReceiver() returns the
+            // default receiver each call, but holding our own
+            // reference avoids relying on that contract.
+            musicReceiver = musicSynth.getReceiver();
+            musicSequencer.getTransmitter().setReceiver(musicReceiver);
         } catch (MidiUnavailableException e) {
             // No MIDI device — silent music. Same shape as iInitSound
             // bailing on LineUnavailableException.
             musicSequencer = null;
             musicSynth = null;
+            musicReceiver = null;
         }
     }
 
@@ -150,6 +156,7 @@ public final class ISound {
             musicSynth.close();
             musicSynth = null;
         }
+        musicReceiver = null;
         musicSequence = null;
     }
 
@@ -332,21 +339,22 @@ public final class ISound {
     // s_sound.c bookkeeping still matches.
 
     public static void iSetMusicVolume(int volume) {
-        if (musicSynth == null) return;
-        // Doom volume is 0..127. Apply a uniform gain via CC 7
-        // (channel volume) on every channel so the synth respects
-        // it regardless of GM master-volume support.
+        if (musicReceiver == null) return;
+        // The menu drives this with snd_MusicVolume in [0, 15]
+        // (m_menu.c's *8 scaling is commented out — the DMX driver
+        // scaled internally). S_SetMusicVolume also calls us with
+        // 127 first as a DMX reset workaround. Map both into MIDI
+        // CC 7's [0, 127] range: scale the menu range up by 8, pass
+        // through anything already past 15.
+        int cc = volume <= 15 ? (volume << 3) : Math.min(volume, 127);
         try {
-            javax.sound.midi.Receiver rx = musicSynth.getReceiver();
             for (int ch = 0; ch < 16; ch++) {
                 ShortMessage m = new ShortMessage();
-                m.setMessage(ShortMessage.CONTROL_CHANGE, ch, 7, volume & 0x7f);
-                rx.send(m, -1);
+                m.setMessage(ShortMessage.CONTROL_CHANGE, ch, 7, cc);
+                musicReceiver.send(m, -1);
             }
-        } catch (javax.sound.midi.InvalidMidiDataException
-                | javax.sound.midi.MidiUnavailableException e) {
-            // Best-effort — silently skip on a transient receiver
-            // failure.
+        } catch (javax.sound.midi.InvalidMidiDataException e) {
+            // Best-effort — silently skip on a transient failure.
         }
     }
 

@@ -33,6 +33,7 @@ import doom.play.PSpec;
 import doom.play.PSwitch;
 import doom.play.Player;
 import doom.render.RData;
+import doom.render.RDraw;
 import doom.render.RMain;
 import doom.render.RThings;
 import doom.sound.ISound;
@@ -410,6 +411,21 @@ public final class DMain {
     // the per-frame wipeScreenWipe can melt from start → end.
     public static boolean wipeActive;
 
+    // Border-redraw counter. r_draw paints the FLOOR7_2 tiled border
+    // into screens[1] (the "back screen"). The C copies sections of
+    // screens[1] onto screens[0] for `borderdrawcount` frames after a
+    // size change so the old viewport's pixels don't bleed through
+    // the new smaller view — that's the "remnants of the old viewport"
+    // symptom this fixes. C: static int borderdrawcount in d_main.c.
+    private static int borderdrawcount;
+
+    // Track the previous gamestate + viewheight so dDisplay can fire
+    // off a one-shot back-screen fill and HUD redraw whenever either
+    // transitions. C: static gamestate_t oldgamestate, static boolean
+    // fullscreen in d_main.c's D_Display.
+    private static int oldGameState = -1;
+    private static boolean prevFullscreen;
+
     //
     // D_Display
     //
@@ -418,8 +434,15 @@ public final class DMain {
     // intermission / finale drawers, status-bar redraw, view-size
     // change response.
     public static void dDisplay() {
-        if (RMain.setsizeneeded) {
+        boolean sizeChanged = RMain.setsizeneeded;
+        if (sizeChanged) {
             RMain.rExecuteSetViewSize();
+            // C: oldgamestate = -1 (force background redraw) +
+            // borderdrawcount = 3 — three frames of border copy so
+            // the freshly-revealed status-bar / border area replaces
+            // whatever the old (larger) view had drawn there.
+            oldGameState = -1;
+            borderdrawcount = 3;
         }
 
         // Detect a gamestate transition: capture the current frame
@@ -446,10 +469,20 @@ public final class DMain {
                         RMain.rRenderPlayerView(p);
                     }
                 }
+                // C: redrawsbar = wipe || (viewheight != 200 && fullscreen),
+                // i.e. force a status-bar refresh when the prior frame
+                // was fullscreen and we just shrank into a windowed
+                // view. Without this, the HUD region is still showing
+                // the old viewport's pixels.
+                boolean fullscreen = RDraw.viewheight == Doomdef.SCREENHEIGHT;
+                boolean redrawsbar = startingWipe
+                        || (!fullscreen && prevFullscreen)
+                        || sizeChanged;
                 // Status bar (health / ammo / face / keys / armor).
                 // Drawn before HUD overlay so the pickup-message
                 // banner paints on top.
-                doom.ui.StStuff.stDrawer(false, false);
+                doom.ui.StStuff.stDrawer(fullscreen, redrawsbar);
+                prevFullscreen = fullscreen;
                 // HUD overlay (pickup-message banner). Full HU_Drawer
                 // (chat / level title) lands when those widgets port.
                 doom.ui.HuStuff.huDrawer();
@@ -467,6 +500,31 @@ public final class DMain {
             default:
                 break;
         }
+
+        // Border / back-screen handling. C: when entering GS_LEVEL
+        // from another gamestate, paint the FLOOR7_2 + brdr_* tile
+        // pattern into screens[1] once. Then for borderdrawcount
+        // frames after a size change (or whenever the view isn't
+        // active), copy the border strip from screens[1] over the
+        // exposed regions of screens[0] to wipe the old viewport
+        // remnants.
+        if (Doomstat.gamestate == Doomstat.GS_LEVEL
+                && oldGameState != Doomstat.GS_LEVEL) {
+            try {
+                RDraw.rFillBackScreen();
+            } catch (IOException ignored) {
+                // Missing border lumps — degrade silently.
+            }
+        }
+        if (Doomstat.gamestate == Doomstat.GS_LEVEL
+                && !doom.ui.AmMap.automapactive
+                && RDraw.scaledviewwidth != Doomdef.SCREENWIDTH) {
+            if (borderdrawcount > 0) {
+                RDraw.rDrawViewBorder();
+                borderdrawcount--;
+            }
+        }
+        oldGameState = Doomstat.gamestate;
 
         // Menu overlay always paints last so it sits on top of the
         // live view + status bar + HUD. M_Drawer no-ops when the

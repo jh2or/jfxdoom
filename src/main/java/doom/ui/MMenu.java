@@ -631,8 +631,11 @@ public final class MMenu {
 
     public static void mChangeDetail(int choice) {
         detailLevel = 1 - detailLevel;
-        // R_SetViewSize hook deferred (low-detail mode never worked
-        // in the C either, per the source comment).
+        // C's M_ChangeDetail had this branch commented out — DOS
+        // builds dropped low-detail support. RMain.rSetViewSize +
+        // detailshift in the Java port already drive
+        // rDrawColumnLow / rDrawSpanLow, so light it up.
+        doom.render.RMain.rSetViewSize(screenblocks, detailLevel);
     }
 
     public static void mSizeDisplay(int choice) {
