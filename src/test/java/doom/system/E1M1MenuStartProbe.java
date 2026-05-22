@@ -36,6 +36,16 @@ class E1M1MenuStartProbe {
         System.err.printf("after first loop: advancedemo=%b gameaction=%d gamestate=%d%n",
                 DMain.advancedemo, GGame.gameaction, Doomstat.gamestate);
 
+        // Simulate the user letting the title-screen demo loop
+        // tick through to demo1 — this is exactly the wait that
+        // reproduces "no control of the player" after the menu
+        // pick. With demoplayback latched true, gTicker keeps
+        // overwriting the live ticcmd with demo bytes.
+        Doomstat.demoplayback = true;
+        GGame.demoBuffer = new byte[] { 0, 0, 0, 0, (byte) GGame.DEMOMARKER };
+        System.err.printf("simulated demoplayback: demoplayback=%b%n",
+                Doomstat.demoplayback);
+
         // Walk the menu state machine the same way mResponder
         // would: pick episode 1 (choice 0) → pick HURTME skill
         // (the default difficulty).
@@ -79,6 +89,11 @@ class E1M1MenuStartProbe {
         }
         if (p.ammo[Doomdef.am_clip] != 50) {
             throw new AssertionError("expected 50 bullets, got " + p.ammo[Doomdef.am_clip]);
+        }
+        // gDoNewGame must have cleared the simulated demoplayback —
+        // otherwise the user has no input control.
+        if (Doomstat.demoplayback) {
+            throw new AssertionError("demoplayback should be cleared after gDoNewGame");
         }
         // Gamemode should be retail since DOOM.WAD has E4M1.
         if (Doomstat.gamemode != Doomstat.GameMode.retail

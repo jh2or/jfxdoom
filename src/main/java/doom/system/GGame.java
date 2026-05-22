@@ -688,9 +688,18 @@ public final class GGame {
     // demo flags, restores single-player defaults, then calls
     // G_InitNew with the deferred parameters.
     public static void gDoNewGame() {
-        // demoplayback / netdemo deferred (demo system not ported).
-        Doomstat.netgame    = false;
-        Doomstat.deathmatch = 0;
+        // Clear any in-flight demo playback. If the user lets the
+        // title-screen demo loop spin (TITLEPIC → demo1), gDoPlayDemo
+        // sets Doomstat.demoplayback=true; without clearing it here,
+        // gTicker keeps overwriting the live ticcmd with demo bytes
+        // and the player has no input control after the menu pick.
+        Doomstat.demoplayback = false;
+        Doomstat.netdemo      = false;
+        // Drop the demo buffer too so a stale cursor can't be read.
+        demoBuffer = null;
+        demoP = 0;
+        Doomstat.netgame      = false;
+        Doomstat.deathmatch   = 0;
         // The C relies on D_CheckNetGame having set
         // playeringame[consoleplayer]=true at boot. The Java port
         // skips that, so a New-Game-from-menu reaches gDoNewGame
