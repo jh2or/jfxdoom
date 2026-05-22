@@ -85,17 +85,21 @@ class ISoundTest {
 
     // ---- volume / sep ----
 
-    // sep=0 → full left, zero right.
+    // sep=0 → full left, zero right. The applyVolumeSep clamp
+    // caps vol at the menu range [0, 15] and then multiplies by
+    // 8 for the mixer's [0, 127]-scaled per-sample math, so
+    // vol=15 yields leftvol=120 at full pan, vol=127 also
+    // clamps to leftvol=120.
     @Test
     void applyVolumeSepFullLeftPan() {
         Sounds.Sfxinfo sfx = new Sounds.Sfxinfo("test", false, 64, null, 0, 0, 0);
         sfx.lumpnum = 0;
         sfx.data = new ISound.DmxBlob(new byte[] { 0 }, 11025);
-        int h = ISound.iStartSound(0, sfx, 127, 0, 128, 64);
+        int h = ISound.iStartSound(0, sfx, 15, 0, 128, 64);
         // Walk channels to find the one with this handle.
         for (ISound.Channel c : ISound.channels) {
             if (c.handle == h) {
-                assertEquals(127, c.leftvol);
+                assertEquals(120, c.leftvol);
                 assertEquals(0,   c.rightvol);
                 return;
             }
@@ -108,11 +112,11 @@ class ISoundTest {
         Sounds.Sfxinfo sfx = new Sounds.Sfxinfo("test", false, 64, null, 0, 0, 0);
         sfx.lumpnum = 0;
         sfx.data = new ISound.DmxBlob(new byte[] { 0 }, 11025);
-        int h = ISound.iStartSound(0, sfx, 127, 255, 128, 64);
+        int h = ISound.iStartSound(0, sfx, 15, 255, 128, 64);
         for (ISound.Channel c : ISound.channels) {
             if (c.handle == h) {
                 assertEquals(0,   c.leftvol);
-                assertEquals(127, c.rightvol);
+                assertEquals(120, c.rightvol);
                 return;
             }
         }

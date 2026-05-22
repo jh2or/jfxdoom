@@ -448,14 +448,20 @@ public final class ISound {
     // table (linear taper either side of centre).
     private static void applyVolumeSep(Channel c, int vol, int sep) {
         if (vol < 0)   vol = 0;
-        if (vol > 127) vol = 127;
+        // s_sound.c hands volume in the menu range [0, 15] (or up
+        // to snd_SfxVolume which is also 0..15). The mixer's
+        // per-sample multiply is `sample * leftvol >> 7`, which
+        // gives full output when leftvol ≈ 128. Scale the
+        // menu-range volume up so vol=15 produces an audible
+        // signal — without this, leftvol tops out at ~7 and the
+        // mixed sample is ~50 dB below max (effectively silent).
+        if (vol > 15)  vol = 15;
         if (sep < 0)   sep = 0;
         if (sep > 255) sep = 255;
+        int scaled = vol * 8;  // [0, 15] → [0, 120]
         // Left = full at sep=0, zero at sep=255.
-        int left  = (vol * (255 - sep)) / 255;
-        int right = (vol *  sep)        / 255;
-        c.leftvol  = left;
-        c.rightvol = right;
+        c.leftvol  = (scaled * (255 - sep)) / 255;
+        c.rightvol = (scaled *  sep)        / 255;
     }
 
     private static short clampShort(int v) {
