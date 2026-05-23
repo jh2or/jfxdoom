@@ -880,9 +880,12 @@ public final class MMenu {
             }
         }
 
-        // Pop up the menu if closed and ESC is pressed.
+        // Pop up the menu if closed and ESC is pressed. ENTER is
+        // accepted too — a small port deviation from the C (which
+        // only honours ESC here) so the UX matches what most
+        // users expect from later Doom builds / source ports.
         if (!menuactive) {
-            if (ch == Doomdef.KEY_ESCAPE) {
+            if (ch == Doomdef.KEY_ESCAPE || ch == Doomdef.KEY_ENTER) {
                 mStartControlPanel();
                 SSound.sStartSound(null, Sounds.sfx_swtchn);
                 return true;
@@ -1051,6 +1054,21 @@ public final class MMenu {
     }
 
     public static void mInit() {
+        // Reset per-menu cursor positions to their initial values.
+        // The C process restarts from scratch each run, so the
+        // static struct initialisers are equivalent to a reset;
+        // in the JavaFX port the JVM survives across in-process
+        // relaunches and would otherwise carry the prior session's
+        // `lastOn` (e.g. landing on QUIT GAME after the user
+        // navigated there last time).
+        MainDef.lastOn    = 0;
+        EpiDef.lastOn     = 0;
+        NewDef.lastOn     = hurtme;
+        OptionsDef.lastOn = 0;
+        SoundDef.lastOn   = 0;
+        LoadDef.lastOn    = 0;
+        SaveDef.lastOn    = 0;
+
         currentMenu = MainDef;
         menuactive = false;
         itemOn = currentMenu.lastOn;
