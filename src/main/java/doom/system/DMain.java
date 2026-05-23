@@ -153,6 +153,13 @@ public final class DMain {
         wadfiles[numwadfiles++] = file;
     }
 
+    // Clear the accumulated WAD list so a subsequent dDoomMain
+    // call doesn't double-load the previous session's files.
+    // Used by the JavaFX Startup UI on relaunch.
+    public static void dResetWadFiles() {
+        numwadfiles = 0;
+    }
+
     //
     // D_DoomMain
     //

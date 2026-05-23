@@ -21,6 +21,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
@@ -42,14 +43,38 @@ import java.util.List;
 
 public final class StartupUi {
 
+    public enum DisplayMode {
+        SCALE_1X(1, false, "Windowed 1× (320×200)"),
+        SCALE_2X(2, false, "Windowed 2× (640×400)"),
+        SCALE_3X(3, false, "Windowed 3× (960×600)"),
+        SCALE_4X(4, false, "Windowed 4× (1280×800)"),
+        SCALE_5X(5, false, "Windowed 5× (1600×1000)"),
+        FULLSCREEN(0, true, "Fullscreen (letterboxed)");
+
+        public final int scale;
+        public final boolean fullscreen;
+        private final String label;
+
+        DisplayMode(int scale, boolean fullscreen, String label) {
+            this.scale = scale;
+            this.fullscreen = fullscreen;
+            this.label = label;
+        }
+
+        @Override
+        public String toString() { return label; }
+    }
+
     @FunctionalInterface
     public interface LaunchCallback {
-        void onLaunch(String[] args);
+        void onLaunch(String[] args, DisplayMode display);
     }
 
     private final TextField iwadField = new TextField();
     private final ListView<String> pwadList =
             new ListView<>(FXCollections.observableArrayList());
+    private final ComboBox<DisplayMode> displayBox =
+            new ComboBox<>(FXCollections.observableArrayList(DisplayMode.values()));
     private final CheckBox expertMode = new CheckBox("Expert mode");
 
     private final ComboBox<String> skillBox = new ComboBox<>(FXCollections.observableArrayList(
@@ -76,6 +101,17 @@ public final class StartupUi {
     private final TextField timedemoField  = new TextField();
     private final Spinner<Integer> maxdemo = new Spinner<>(128, 32_768, 128, 32);
 
+    // Optional pre-fill (e.g. when returning from a finished
+    // game session and we want to remember the last IWAD).
+    private String initialIwad;
+    private DisplayMode initialDisplay = DisplayMode.SCALE_3X;
+
+    public StartupUi prefill(String iwad, DisplayMode display) {
+        this.initialIwad = iwad;
+        if (display != null) this.initialDisplay = display;
+        return this;
+    }
+
     public Scene build(Stage stage, LaunchCallback callback) {
         // Title.
         Label title = new Label("jfxdoom");
@@ -90,6 +126,10 @@ public final class StartupUi {
             defaultDir = new File(System.getProperty("user.home", "."));
         }
         final File initialDir = defaultDir;
+
+        // Apply prefill values.
+        if (initialIwad != null) iwadField.setText(initialIwad);
+        displayBox.setValue(initialDisplay);
 
         // ---- IWAD row ----
         Button iwadBrowse = new Button("Browse…");
@@ -124,12 +164,14 @@ public final class StartupUi {
         // ---- primary grid (always visible) ----
         GridPane primary = grid();
         int r = 0;
-        primary.add(new Label("IWAD:"),  0, r);
-        primary.add(iwadField,           1, r);
-        primary.add(iwadBrowse,          2, r++);
-        primary.add(new Label("PWADs:"), 0, r);
-        primary.add(pwadList,            1, r);
-        primary.add(pwadButtons,         2, r++);
+        primary.add(new Label("IWAD:"),    0, r);
+        primary.add(iwadField,             1, r);
+        primary.add(iwadBrowse,            2, r++);
+        primary.add(new Label("PWADs:"),   0, r);
+        primary.add(pwadList,              1, r);
+        primary.add(pwadButtons,           2, r++);
+        primary.add(new Label("Display:"), 0, r);
+        primary.add(displayBox,            1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);
@@ -189,13 +231,8 @@ public final class StartupUi {
 
         TitledPane expertPane = new TitledPane("Expert options", expert);
         expertPane.setCollapsible(false);
-        // Hide the pane unless Expert mode is on; managed=false
-        // collapses its layout so the rest of the window reflows
-        // cleanly.
         expertPane.visibleProperty().bind(expertMode.selectedProperty());
         expertPane.managedProperty().bind(expertMode.selectedProperty());
-        // Belt-and-braces: even if the pane were shown some other
-        // way, disable the controls so values can't be edited.
         expert.disableProperty().bind(expertMode.selectedProperty().not());
 
         // ---- expert toggle row ----
@@ -211,21 +248,27 @@ public final class StartupUi {
                 Bindings.createBooleanBinding(
                         () -> iwadField.getText() == null || iwadField.getText().isBlank(),
                         iwadField.textProperty()));
-        launch.setOnAction(e -> callback.onLaunch(assembleArgs()));
+        launch.setOnAction(e -> callback.onLaunch(assembleArgs(), displayBox.getValue()));
         Region spring = new Region();
         HBox.setHgrow(spring, Priority.ALWAYS);
         HBox launchRow = new HBox(spring, launch);
         launchRow.setPadding(new Insets(8, 0, 0, 0));
 
-        VBox root = new VBox(10,
+        VBox content = new VBox(10,
                 title, subtitle, new Separator(),
                 primary, new Separator(),
                 expertRow, expertPane,
                 launchRow);
-        root.setPadding(new Insets(16));
-        VBox.setVgrow(primary, Priority.ALWAYS);
+        content.setPadding(new Insets(16));
 
-        return new Scene(root, 640, 520);
+        // Wrap in a ScrollPane so expert-mode fields stay reachable
+        // without manual window resize.
+        ScrollPane scroll = new ScrollPane(content);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+
+        return new Scene(scroll, 660, 520);
     }
 
     private static GridPane grid() {

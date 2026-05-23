@@ -10,27 +10,40 @@
 //     DMain.dProcessEvents (deferred until the responder chain
 //     ports — events are queued but unused for now).
 //
-// Boot:
-//   1. JfxDoomApp.main(args) (the application entry) calls
-//      Application.launch which invokes start(Stage).
-//   2. start() builds the Canvas + Scene + key listeners, then
-//      runs DMain.dDoomMain(args) inline (boots V/Z/W/R/P/I/S
-//      subsystems and warps to the requested level).
-//   3. AnimationTimer ticks at 35Hz (using TICRATE), each call
-//      runs DMain.dDoomLoop() and repaints the canvas.
+// Boot (no-args / launcher path):
+//   1. JfxDoomApp.main(args) → Application.launch → start(Stage).
+//   2. start() shows the StartupUi scene. The user picks a WAD
+//      and a DisplayMode (windowed Nx or fullscreen) and clicks
+//      Launch.
+//   3. The launch callback hands control to bootGame(), which
+//      builds the Canvas + Scene, registers IVideo hooks, calls
+//      DMain.dDoomMain to init subsystems, then starts the
+//      AnimationTimer ticking at TICRATE.
+//   4. When the engine wants to quit (menu Quit / dDoomLoop's
+//      iQuit), the overridden ISystem.quitHook calls
+//      returnToLauncher() instead of System.exit — we stop the
+//      timer, drop fullscreen, and switch the scene back to a
+//      fresh StartupUi. Closing the window is a real exit (stop()
+//      sets shuttingDown and the quit hook honours it).
 //
-// Run with:
-//   gradle run --args="-iwad reference-wads/DOOM.WAD -warp 1 1"
+// Boot (CLI-args path):
+//   1. start() bypasses the launcher and calls bootGame directly
+//      with launchArgs. Quitting still routes through
+//      returnToLauncher so the user lands in the launcher rather
+//      than losing the window.
 package doom.ui;
 
 import doom.system.DEvent;
 import doom.system.DMain;
 import doom.system.Doomdef;
+import doom.system.ISystem;
 import doom.wad.WWad;
 import doom.wad.ZZone;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -38,6 +51,7 @@ import javafx.scene.image.PixelBuffer;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
@@ -51,9 +65,9 @@ public final class JfxDoomApp extends Application {
 
     private static final int W = Doomdef.SCREENWIDTH;
     private static final int H = Doomdef.SCREENHEIGHT;
-    // Default integer scale so the 320×200 frame has presence on
-    // modern displays.
-    private static final int SCALE = 3;
+    private static final double DOOM_ASPECT = (double) W / H;  // 1.6
+    // Default windowed scale for the CLI-driven boot path.
+    private static final int DEFAULT_SCALE = 3;
 
     // The JavaFX-side framebuffer: one ARGB int per pixel,
     // wrapped in a PixelBuffer<IntBuffer> backing a WritableImage.
@@ -66,6 +80,13 @@ public final class JfxDoomApp extends Application {
     // 256-entry ARGB palette. Indexed by VVideo.screens[0] bytes.
     private final int[] palette = new int[256];
 
+    // Mutable session state.
+    private AnimationTimer animationTimer;
+    private boolean hasBootedGame;
+    private boolean shuttingDown;
+    private String lastIwad;
+    private StartupUi.DisplayMode lastDisplay = StartupUi.DisplayMode.SCALE_3X;
+
     public static void main(String[] args) {
         launchArgs = args;
         Application.launch(JfxDoomApp.class, args);
@@ -74,70 +95,113 @@ public final class JfxDoomApp extends Application {
     @Override
     public void start(Stage stage) {
         stage.setTitle("jfxdoom");
+
+        // Route engine quit requests back to the launcher instead
+        // of System.exit. shuttingDown is set by stop() so a real
+        // window close still terminates the JVM.
+        ISystem.quitHook = () -> {
+            if (shuttingDown) return;
+            Platform.runLater(() -> returnToLauncher(stage));
+        };
+
         if (launchArgs.length > 0) {
             // CLI-driven boot — skip the Startup UI entirely.
-            bootGame(stage, launchArgs);
+            captureLastFromArgs(launchArgs);
+            bootGame(stage, launchArgs, StartupUi.DisplayMode.SCALE_3X);
         } else {
-            // Default entrypoint: show the Startup UI, then boot
-            // with whatever the user assembled.
-            StartupUi ui = new StartupUi();
-            Scene startupScene = ui.build(stage, args -> bootGame(stage, args));
-            stage.setScene(startupScene);
-            stage.setResizable(true);
-            stage.show();
+            showLauncher(stage);
         }
     }
 
+    private void showLauncher(Stage stage) {
+        StartupUi ui = new StartupUi().prefill(lastIwad, lastDisplay);
+        Scene startupScene = ui.build(stage, (args, display) -> {
+            captureLastFromArgs(args);
+            lastDisplay = display;
+            bootGame(stage, args, display);
+        });
+        stage.setFullScreen(false);
+        stage.setScene(startupScene);
+        stage.setResizable(true);
+        // The launcher window has a different size than the game
+        // canvas — re-centre once the new scene is in place.
+        stage.sizeToScene();
+        stage.centerOnScreen();
+        if (!stage.isShowing()) stage.show();
+    }
+
     // Build the game canvas + key listeners, hand control to the
-    // engine, then drive it at TICRATE. Called either directly
-    // from start() (CLI path) or from the Startup UI's Launch
-    // callback.
-    private void bootGame(Stage stage, String[] args) {
-        Canvas canvas = new Canvas(W * SCALE, H * SCALE);
+    // engine, then drive it at TICRATE. Called from start() (CLI
+    // path) or from the Startup UI's Launch callback.
+    private void bootGame(Stage stage, String[] args, StartupUi.DisplayMode display) {
+        // Engine state needs a fresh start on re-launch: clear
+        // the quitting guard and drop the previous WAD list so
+        // dDoomMain doesn't double-load.
+        if (hasBootedGame) {
+            ISystem.iResetForRelaunch();
+            DMain.dResetWadFiles();
+        }
+
+        Canvas canvas = new Canvas();
         GraphicsContext gc = canvas.getGraphicsContext2D();
         // Pixel-perfect upscale.
         gc.setImageSmoothing(false);
 
         StackPane root = new StackPane(canvas);
-        Scene scene = new Scene(root, W * SCALE, H * SCALE);
+        // Black bars when the canvas doesn't fill the stage
+        // (fullscreen aspect mismatch).
+        root.setStyle("-fx-background-color: black;");
 
-        // Key events queued for the engine. M_Responder /
-        // G_Responder dispatch lands when m_menu / g_game port;
-        // for now, ESC closes the window.
+        Scene scene;
+        if (display != null && display.fullscreen) {
+            scene = new Scene(root);
+            installAspectFitter(canvas, scene);
+        } else {
+            int scale = (display != null) ? display.scale : DEFAULT_SCALE;
+            if (scale <= 0) scale = DEFAULT_SCALE;
+            canvas.setWidth(W * scale);
+            canvas.setHeight(H * scale);
+            scene = new Scene(root, W * scale, H * scale);
+        }
+
         scene.setOnKeyPressed(e -> {
             int code = mapKey(e.getCode());
             if (code < 0) return;
-            DEvent ev = new DEvent(DEvent.EV_KEYDOWN, code);
-            DMain.dPostEvent(ev);
+            DMain.dPostEvent(new DEvent(DEvent.EV_KEYDOWN, code));
         });
         scene.setOnKeyReleased(e -> {
             int code = mapKey(e.getCode());
             if (code < 0) return;
-            DEvent ev = new DEvent(DEvent.EV_KEYUP, code);
-            DMain.dPostEvent(ev);
+            DMain.dPostEvent(new DEvent(DEvent.EV_KEYUP, code));
         });
 
         stage.setScene(scene);
-        stage.setResizable(false);
-        // Re-centre after the size change (Startup UI was larger).
-        stage.centerOnScreen();
+        if (display != null && display.fullscreen) {
+            stage.setResizable(true);
+            // Suppress JavaFX's default Esc-exits-fullscreen so the
+            // Doom menu's Esc keeps working.
+            stage.setFullScreenExitKeyCombination(KeyCombination.NO_MATCH);
+            stage.setFullScreenExitHint("");
+            stage.setFullScreen(true);
+        } else {
+            stage.setFullScreen(false);
+            stage.setResizable(false);
+            stage.sizeToScene();
+            stage.centerOnScreen();
+        }
         if (!stage.isShowing()) stage.show();
 
-        // Register IVideo hooks.
+        // Register IVideo hooks. The drawImage size uses the
+        // live canvas dimensions so fullscreen resizes (e.g. on
+        // monitor change) are picked up without re-registration.
         IVideo.finishUpdateHook = () -> {
-            // Convert palette-byte framebuffer → ARGB ints.
             byte[] src = VVideo.screens[0];
-            if (src == null) {
-                return;
-            }
+            if (src == null) return;
             for (int i = 0; i < W * H; i++) {
                 argb[i] = palette[src[i] & 0xff];
             }
-            // Rebind the buffer (no-op on contents — signals the
-            // PixelBuffer that the underlying ints changed).
             pixelBuffer.updateBuffer(b -> null);
-            // Repaint Canvas.
-            gc.drawImage(image, 0, 0, W * SCALE, H * SCALE);
+            gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
         };
         IVideo.setPaletteHook = bytes -> uploadPalette(bytes);
         IVideo.startTicHook = () -> {
@@ -155,8 +219,8 @@ public final class JfxDoomApp extends Application {
             throw new RuntimeException(ex);
         }
 
-        // Drive the engine at TICRATE Hz.
-        new AnimationTimer() {
+        hasBootedGame = true;
+        animationTimer = new AnimationTimer() {
             long lastNs = 0;
             final long ticNs = 1_000_000_000L / Doomdef.TICRATE;
 
@@ -170,13 +234,71 @@ public final class JfxDoomApp extends Application {
                     lastNs += ticNs;
                 }
             }
-        }.start();
+        };
+        animationTimer.start();
+    }
+
+    // Called from the overridden ISystem.quitHook. The engine has
+    // already torn down audio and saved defaults by the time we
+    // get here — we just stop the tic loop and swap back to a
+    // fresh StartupUi.
+    private void returnToLauncher(Stage stage) {
+        if (animationTimer != null) {
+            animationTimer.stop();
+            animationTimer = null;
+        }
+        // Drop hooks so any straggling engine callbacks no-op
+        // until bootGame re-installs them.
+        IVideo.finishUpdateHook = null;
+        IVideo.setPaletteHook = null;
+        IVideo.startTicHook = null;
+        showLauncher(stage);
+    }
+
+    // Resize the canvas inside the StackPane so 320:200 is
+    // preserved when the scene is larger or a different aspect
+    // ratio than the engine's native ratio. Black bars appear via
+    // the StackPane's background.
+    private static void installAspectFitter(Canvas canvas, Scene scene) {
+        InvalidationListener l = obs -> {
+            double sw = scene.getWidth();
+            double sh = scene.getHeight();
+            if (sw <= 0 || sh <= 0) return;
+            double sa = sw / sh;
+            double cw, ch;
+            if (sa > DOOM_ASPECT) {
+                // Wider than Doom — pillarbox (limit width).
+                ch = sh;
+                cw = sh * DOOM_ASPECT;
+            } else {
+                // Taller than Doom — letterbox (limit height).
+                cw = sw;
+                ch = sw / DOOM_ASPECT;
+            }
+            canvas.setWidth(cw);
+            canvas.setHeight(ch);
+        };
+        scene.widthProperty().addListener(l);
+        scene.heightProperty().addListener(l);
+        l.invalidated(null);
+    }
+
+    private void captureLastFromArgs(String[] args) {
+        for (int i = 0; i + 1 < args.length; i++) {
+            if ("-iwad".equals(args[i])) {
+                lastIwad = args[i + 1];
+                return;
+            }
+        }
     }
 
     @Override
     public void stop() {
+        // Window close → real exit. shuttingDown short-circuits
+        // the quit hook so it doesn't try to re-show the launcher.
+        shuttingDown = true;
         try {
-            doom.system.ISystem.iQuit();
+            ISystem.iQuit();
         } catch (Throwable t) {
             // best-effort shutdown
         }

@@ -125,6 +125,14 @@ public final class ISystem {
         if (quitHook != null) quitHook.run();
     }
 
+    // Clear the `quitting` re-entry guard so a subsequent
+    // iQuit-triggered teardown can run again. Used by the
+    // JavaFX Startup UI when the user returns to the launcher
+    // and then launches a fresh game in-process.
+    public static void iResetForRelaunch() {
+        quitting = false;
+    }
+
     // i_system.c — I_WaitVBL. Sleeps for `count * 1/70 s` so the
     // game loop can throttle to TICRATE.
     public static void iWaitVBL(int count) {
