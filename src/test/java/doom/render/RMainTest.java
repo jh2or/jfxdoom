@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import doom.fixed.Fixed;
 import doom.play.PSetup;
+import doom.system.Doomdef;
 import doom.wad.WWad;
 import doom.wad.ZZone;
 
@@ -343,18 +344,19 @@ class RMainTest {
         RMain.rSetViewSize(11, 0);
         RMain.rExecuteSetViewSize();
 
+        int rw = Doomdef.RENDER_WIDTH;
+        int rh = Doomdef.RENDER_HEIGHT;
         assertFalse(RMain.setsizeneeded);
-        assertEquals(320, RMain.viewwidth);
-        assertEquals(200, RDraw.viewheight);
-        assertEquals(160, RMain.centerx);
-        assertEquals(100, RMain.centery);
-        assertEquals(160 << Fixed.FRACBITS, RMain.centerxfrac);
+        assertEquals(rw, RMain.viewwidth);
+        assertEquals(rh, RDraw.viewheight);
+        assertEquals(rw / 2, RMain.centerx);
+        assertEquals(rh / 2, RMain.centery);
+        assertEquals((rw / 2) << Fixed.FRACBITS, RMain.centerxfrac);
         assertEquals(RMain.centerxfrac, RMain.projection);
         assertEquals(0, RMain.detailshift);
-        // pspritescale = FRACUNIT * viewwidth / SCREENWIDTH = FRACUNIT.
-        assertEquals(Fixed.FRACUNIT, RMain.pspritescale);
-        // pspriteiscale matches.
-        assertEquals(Fixed.FRACUNIT, RMain.pspriteiscale);
+        // pspritescale = FRACUNIT * viewwidth / BASE_WIDTH = FRACUNIT * RENDER_MUL.
+        assertEquals(Fixed.FRACUNIT * Doomdef.RENDER_MUL, RMain.pspritescale);
+        assertEquals(Fixed.FRACUNIT / Doomdef.RENDER_MUL, RMain.pspriteiscale);
     }
 
     // viewangletox[] gets populated and clipangle is sane.

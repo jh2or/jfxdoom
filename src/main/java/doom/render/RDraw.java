@@ -105,7 +105,7 @@ public final class RDraw {
     // --- Fuzz (spectre/invisibility) ---
 
     public static final int FUZZTABLE = 50;
-    public static final int FUZZOFF = Doomdef.SCREENWIDTH;
+    public static final int FUZZOFF = Doomdef.RENDER_WIDTH;
 
     // r_draw.c lines 263–272.
     public static int[] fuzzoffset = {
@@ -136,14 +136,14 @@ public final class RDraw {
             return;
         }
 
-        if (dcX < 0 || dcX >= Doomdef.SCREENWIDTH
+        if (dcX < 0 || dcX >= Doomdef.RENDER_WIDTH
                 || dcYl < 0
-                || dcYh >= Doomdef.SCREENHEIGHT) {
+                || dcYh >= Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawColumn: %d to %d at %d",
                     dcYl, dcYh, dcX);
         }
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
 
         int fracstep = dcIscale;
@@ -164,7 +164,7 @@ public final class RDraw {
             if (idx > srcMax) idx = srcMax;
             int src = dcSource[idx] & 0xFF;
             screen[destIdx] = dcColormap[dcColormapOfs + src];
-            destIdx += Doomdef.SCREENWIDTH;
+            destIdx += Doomdef.RENDER_WIDTH;
             frac += fracstep;
         } while (count-- > 0);
     }
@@ -176,9 +176,9 @@ public final class RDraw {
             return;
         }
 
-        if (dcX < 0 || dcX >= Doomdef.SCREENWIDTH
+        if (dcX < 0 || dcX >= Doomdef.RENDER_WIDTH
                 || dcYl < 0
-                || dcYh >= Doomdef.SCREENHEIGHT) {
+                || dcYh >= Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawColumn: %d to %d at %d",
                     dcYl, dcYh, dcX);
         }
@@ -186,7 +186,7 @@ public final class RDraw {
         // Blocky mode, need to multiply by 2.
         dcX <<= 1;
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
         int dest2Idx = ylookup[dcYl] + columnofs[dcX + 1];
 
@@ -202,8 +202,8 @@ public final class RDraw {
             byte v = dcColormap[dcColormapOfs + src];
             screen[destIdx] = v;
             screen[dest2Idx] = v;
-            destIdx += Doomdef.SCREENWIDTH;
-            dest2Idx += Doomdef.SCREENWIDTH;
+            destIdx += Doomdef.RENDER_WIDTH;
+            dest2Idx += Doomdef.RENDER_WIDTH;
             frac += fracstep;
         } while (count-- > 0);
     }
@@ -226,13 +226,13 @@ public final class RDraw {
             return;
         }
 
-        if (dcX < 0 || dcX >= Doomdef.SCREENWIDTH
-                || dcYl < 0 || dcYh >= Doomdef.SCREENHEIGHT) {
+        if (dcX < 0 || dcX >= Doomdef.RENDER_WIDTH
+                || dcYl < 0 || dcYh >= Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawFuzzColumn: %d to %d at %d",
                     dcYl, dcYh, dcX);
         }
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
 
         int fracstep = dcIscale;
@@ -248,7 +248,7 @@ public final class RDraw {
                 fuzzpos = 0;
             }
 
-            destIdx += Doomdef.SCREENWIDTH;
+            destIdx += Doomdef.RENDER_WIDTH;
             frac += fracstep;
         } while (count-- > 0);
     }
@@ -261,14 +261,14 @@ public final class RDraw {
             return;
         }
 
-        if (dcX < 0 || dcX >= Doomdef.SCREENWIDTH
+        if (dcX < 0 || dcX >= Doomdef.RENDER_WIDTH
                 || dcYl < 0
-                || dcYh >= Doomdef.SCREENHEIGHT) {
+                || dcYh >= Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawColumn: %d to %d at %d",
                     dcYl, dcYh, dcX);
         }
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
 
         int fracstep = dcIscale;
@@ -278,7 +278,7 @@ public final class RDraw {
             int raw = dcSource[dcSourceOfs + (frac >> Fixed.FRACBITS)] & 0xFF;
             int translated = dcTranslation[dcTranslationOfs + raw] & 0xFF;
             screen[destIdx] = dcColormap[dcColormapOfs + translated];
-            destIdx += Doomdef.SCREENWIDTH;
+            destIdx += Doomdef.RENDER_WIDTH;
             frac += fracstep;
         } while (count-- > 0);
     }
@@ -309,8 +309,8 @@ public final class RDraw {
     public static void rDrawSpan() {
         if (dsX2 < dsX1
                 || dsX1 < 0
-                || dsX2 >= Doomdef.SCREENWIDTH
-                || dsY < 0 || dsY > Doomdef.SCREENHEIGHT) {
+                || dsX2 >= Doomdef.RENDER_WIDTH
+                || dsY < 0 || dsY > Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawSpan: %d to %d at %d",
                     dsX1, dsX2, dsY);
         }
@@ -318,7 +318,7 @@ public final class RDraw {
         int xfrac = dsXfrac;
         int yfrac = dsYfrac;
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dsY] + columnofs[dsX1];
 
         int count = dsX2 - dsX1;
@@ -337,8 +337,8 @@ public final class RDraw {
     public static void rDrawSpanLow() {
         if (dsX2 < dsX1
                 || dsX1 < 0
-                || dsX2 >= Doomdef.SCREENWIDTH
-                || dsY < 0 || dsY > Doomdef.SCREENHEIGHT) {
+                || dsX2 >= Doomdef.RENDER_WIDTH
+                || dsY < 0 || dsY > Doomdef.RENDER_HEIGHT) {
             throw ISystem.iError("R_DrawSpan: %d to %d at %d",
                     dsX1, dsX2, dsY);
         }
@@ -350,7 +350,7 @@ public final class RDraw {
         dsX1 <<= 1;
         dsX2 <<= 1;
 
-        byte[] screen = VVideo.screens[0];
+        byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dsY] + columnofs[dsX1];
 
         int count = dsX2 - dsX1;
@@ -366,10 +366,12 @@ public final class RDraw {
 
     // void R_InitBuffer(int width, int height)
     // Precalculates per-row and per-column offsets so the drawing inner
-    // loops avoid multiply-by-SCREENWIDTH.
+    // loops avoid multiply-by-RENDER_WIDTH. The viewport sits inside
+    // VVideo.viewBuffer at (viewwindowx, viewwindowy); width / height
+    // are in renderer pixels (RENDER coords).
     public static void rInitBuffer(int width, int height) {
         // Handle resize — smaller view windows with border and/or status bar.
-        viewwindowx = (Doomdef.SCREENWIDTH - width) >> 1;
+        viewwindowx = (Doomdef.RENDER_WIDTH - width) >> 1;
 
         // Column offset for windows.
         for (int i = 0; i < width; i++) {
@@ -377,22 +379,30 @@ public final class RDraw {
         }
 
         // Same for base row offset.
-        if (width == Doomdef.SCREENWIDTH) {
+        if (width == Doomdef.RENDER_WIDTH) {
             viewwindowy = 0;
         } else {
-            viewwindowy = (Doomdef.SCREENHEIGHT - SBARHEIGHT - height) >> 1;
+            viewwindowy = (Doomdef.RENDER_HEIGHT
+                    - SBARHEIGHT * Doomdef.RENDER_MUL - height) >> 1;
         }
 
-        // Precalculate all row offsets into screens[0].
+        // Precalculate all row offsets into viewBuffer.
         for (int i = 0; i < height; i++) {
-            ylookup[i] = (i + viewwindowy) * Doomdef.SCREENWIDTH;
+            ylookup[i] = (i + viewwindowy) * Doomdef.RENDER_WIDTH;
         }
     }
 
     // void R_FillBackScreen(void)
     // Fills screens[1] with a tiled flat and draws a beveled border.
+    // viewwindowx / viewwindowy / scaledviewwidth / viewheight are
+    // kept in *renderer* (RENDER_*) coords; convert to UI coords
+    // here so the patch overlay lands on screens[1] (which is
+    // SCREENWIDTH × SCREENHEIGHT).
     public static void rFillBackScreen() throws IOException {
-        if (scaledviewwidth == Doomdef.SCREENWIDTH) {
+        // Compare in UI coords — at RENDER_MUL > 1, scaledviewwidth
+        // is in renderer pixels and won't equal SCREENWIDTH even
+        // for a full-width view.
+        if (scaledviewwidth == Doomdef.RENDER_WIDTH) {
             return;
         }
 
@@ -415,30 +425,35 @@ public final class RDraw {
             }
         }
 
+        int vx = viewwindowx     / Doomdef.RENDER_MUL;
+        int vy = viewwindowy     / Doomdef.RENDER_MUL;
+        int vw = scaledviewwidth / Doomdef.RENDER_MUL;
+        int vh = viewheight      / Doomdef.RENDER_MUL;
+
         Patch top = Patch.fromLump(WWad.wCacheLumpName("brdr_t", ZZone.PU_CACHE));
-        for (int x = 0; x < scaledviewwidth; x += 8) {
-            VVideo.vDrawPatch(viewwindowx + x, viewwindowy - 8, 1, top);
+        for (int x = 0; x < vw; x += 8) {
+            VVideo.vDrawPatch(vx + x, vy - 8, 1, top);
         }
         Patch bot = Patch.fromLump(WWad.wCacheLumpName("brdr_b", ZZone.PU_CACHE));
-        for (int x = 0; x < scaledviewwidth; x += 8) {
-            VVideo.vDrawPatch(viewwindowx + x, viewwindowy + viewheight, 1, bot);
+        for (int x = 0; x < vw; x += 8) {
+            VVideo.vDrawPatch(vx + x, vy + vh, 1, bot);
         }
         Patch left = Patch.fromLump(WWad.wCacheLumpName("brdr_l", ZZone.PU_CACHE));
-        for (int y = 0; y < viewheight; y += 8) {
-            VVideo.vDrawPatch(viewwindowx - 8, viewwindowy + y, 1, left);
+        for (int y = 0; y < vh; y += 8) {
+            VVideo.vDrawPatch(vx - 8, vy + y, 1, left);
         }
         Patch right = Patch.fromLump(WWad.wCacheLumpName("brdr_r", ZZone.PU_CACHE));
-        for (int y = 0; y < viewheight; y += 8) {
-            VVideo.vDrawPatch(viewwindowx + scaledviewwidth, viewwindowy + y, 1, right);
+        for (int y = 0; y < vh; y += 8) {
+            VVideo.vDrawPatch(vx + vw, vy + y, 1, right);
         }
 
-        VVideo.vDrawPatch(viewwindowx - 8, viewwindowy - 8, 1,
+        VVideo.vDrawPatch(vx - 8, vy - 8, 1,
                 Patch.fromLump(WWad.wCacheLumpName("brdr_tl", ZZone.PU_CACHE)));
-        VVideo.vDrawPatch(viewwindowx + scaledviewwidth, viewwindowy - 8, 1,
+        VVideo.vDrawPatch(vx + vw, vy - 8, 1,
                 Patch.fromLump(WWad.wCacheLumpName("brdr_tr", ZZone.PU_CACHE)));
-        VVideo.vDrawPatch(viewwindowx - 8, viewwindowy + viewheight, 1,
+        VVideo.vDrawPatch(vx - 8, vy + vh, 1,
                 Patch.fromLump(WWad.wCacheLumpName("brdr_bl", ZZone.PU_CACHE)));
-        VVideo.vDrawPatch(viewwindowx + scaledviewwidth, viewwindowy + viewheight, 1,
+        VVideo.vDrawPatch(vx + vw, vy + vh, 1,
                 Patch.fromLump(WWad.wCacheLumpName("brdr_br", ZZone.PU_CACHE)));
     }
 
@@ -449,26 +464,32 @@ public final class RDraw {
     }
 
     // void R_DrawViewBorder(void) — copies the back-screen border onto the main screen.
+    // Convert renderer (RENDER_*) coords to UI coords since this
+    // method copies between screens[1] and screens[0], both
+    // SCREENWIDTH × SCREENHEIGHT.
     public static void rDrawViewBorder() {
-        if (scaledviewwidth == Doomdef.SCREENWIDTH) {
+        if (scaledviewwidth == Doomdef.RENDER_WIDTH) {
             return;
         }
 
-        int top = ((Doomdef.SCREENHEIGHT - SBARHEIGHT) - viewheight) / 2;
-        int side = (Doomdef.SCREENWIDTH - scaledviewwidth) / 2;
+        int vwUi = scaledviewwidth / Doomdef.RENDER_MUL;
+        int vhUi = viewheight      / Doomdef.RENDER_MUL;
+
+        int top = ((Doomdef.SCREENHEIGHT - SBARHEIGHT) - vhUi) / 2;
+        int side = (Doomdef.SCREENWIDTH - vwUi) / 2;
 
         // copy top and one line of left side
         rVideoErase(0, top * Doomdef.SCREENWIDTH + side);
 
         // copy one line of right side and bottom
-        int ofs = (viewheight + top) * Doomdef.SCREENWIDTH - side;
+        int ofs = (vhUi + top) * Doomdef.SCREENWIDTH - side;
         rVideoErase(ofs, top * Doomdef.SCREENWIDTH + side);
 
         // copy sides using wraparound
         ofs = top * Doomdef.SCREENWIDTH + Doomdef.SCREENWIDTH - side;
         side <<= 1;
 
-        for (int i = 1; i < viewheight; i++) {
+        for (int i = 1; i < vhUi; i++) {
             rVideoErase(ofs, side);
             ofs += Doomdef.SCREENWIDTH;
         }

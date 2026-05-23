@@ -481,7 +481,10 @@ public final class DMain {
                 // was fullscreen and we just shrank into a windowed
                 // view. Without this, the HUD region is still showing
                 // the old viewport's pixels.
-                boolean fullscreen = RDraw.viewheight == Doomdef.SCREENHEIGHT;
+                // RDraw.viewheight is in renderer pixels (RENDER_HEIGHT
+                // at blocks=11); compare against RENDER_HEIGHT, not the
+                // 320×200 UI dim, so blocks=11 still hides the status bar.
+                boolean fullscreen = RDraw.viewheight == Doomdef.RENDER_HEIGHT;
                 boolean redrawsbar = startingWipe
                         || (!fullscreen && prevFullscreen)
                         || sizeChanged;

@@ -112,10 +112,10 @@ class RThingsTest {
         assertEquals(Fixed.FRACUNIT * 4, RThings.MINZ);
         assertEquals(100, RThings.BASEYCENTER);
         assertEquals(128, RThings.MAXVISSPRITES);
-        assertEquals(Doomdef.SCREENWIDTH, RThings.negonearray.length);
+        assertEquals(Doomdef.RENDER_WIDTH, RThings.negonearray.length);
         // negonearray seeded with -1.
         assertEquals(-1, RThings.negonearray[0]);
-        assertEquals(-1, RThings.negonearray[Doomdef.SCREENWIDTH - 1]);
+        assertEquals(-1, RThings.negonearray[Doomdef.RENDER_WIDTH - 1]);
     }
 
     // ---- R_AddSprites: skip already-visited sectors ----

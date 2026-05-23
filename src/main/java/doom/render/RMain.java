@@ -98,7 +98,7 @@ public final class RMain {
     // r_main.c — inverse of viewangletox. Indexed by screen-x, returns
     // the smallest viewangle that maps back to that x. Built by
     // R_InitTextureMapping.
-    public static final int[] xtoviewangle = new int[Doomdef.SCREENWIDTH + 1];
+    public static final int[] xtoviewangle = new int[Doomdef.RENDER_WIDTH + 1];
 
     // r_main.c — fixed-point centre + projection. Set by
     // R_ExecuteSetViewSize.
@@ -152,12 +152,12 @@ public final class RMain {
 
     // r_main.c — per-row inverse scale and per-column distance scale.
     // R_MapPlane uses them to compute texture xfrac/yfrac per row.
-    public static final int[] yslope    = new int[Doomdef.SCREENHEIGHT];
-    public static final int[] distscale = new int[Doomdef.SCREENWIDTH];
+    public static final int[] yslope    = new int[Doomdef.RENDER_HEIGHT];
+    public static final int[] distscale = new int[Doomdef.RENDER_WIDTH];
 
     // r_main.c — per-column initial sprite-clip ceiling (= viewheight
     // at default). Read by r_things during sprite drawing.
-    public static final short[] screenheightarray = new short[Doomdef.SCREENWIDTH];
+    public static final short[] screenheightarray = new short[Doomdef.RENDER_WIDTH];
 
     // r_main.c — view-size queue. R_SetViewSize sets these so the
     // change applies at the next R_ExecuteSetViewSize.
@@ -521,7 +521,7 @@ public final class RMain {
         for (i = 0; i < LIGHTLEVELS; i++) {
             startmap = ((LIGHTLEVELS - 1 - i) * 2) * NUMCOLORMAPS / LIGHTLEVELS;
             for (j = 0; j < MAXLIGHTZ; j++) {
-                scale = Fixed.div((Doomdef.SCREENWIDTH / 2) * Fixed.FRACUNIT,
+                scale = Fixed.div((Doomdef.RENDER_WIDTH / 2) * Fixed.FRACUNIT,
                         (j + 1) << LIGHTZSHIFT);
                 scale >>= LIGHTSCALESHIFT;
                 level = startmap - scale / DISTMAP;
@@ -570,11 +570,15 @@ public final class RMain {
         setsizeneeded = false;
 
         if (setblocks == 11) {
-            RDraw.scaledviewwidth = Doomdef.SCREENWIDTH;
-            RDraw.viewheight = Doomdef.SCREENHEIGHT;
+            RDraw.scaledviewwidth = Doomdef.RENDER_WIDTH;
+            RDraw.viewheight = Doomdef.RENDER_HEIGHT;
         } else {
-            RDraw.scaledviewwidth = setblocks * 32;
-            RDraw.viewheight = (setblocks * 168 / 10) & ~7;
+            // Per-block step is 32px wide / 16.8px tall on the
+            // 320×200 design grid; scale by RENDER_MUL so the
+            // screen-size slider produces the same fraction of
+            // the framebuffer at any RENDER_MUL.
+            RDraw.scaledviewwidth = setblocks * 32 * Doomdef.RENDER_MUL;
+            RDraw.viewheight = (setblocks * 168 / 10 * Doomdef.RENDER_MUL) & ~7;
         }
 
         detailshift = setdetail;
@@ -598,9 +602,13 @@ public final class RMain {
 
         rInitTextureMapping();
 
-        // psprite scales
-        pspritescale = Fixed.FRACUNIT * viewwidth / Doomdef.SCREENWIDTH;
-        pspriteiscale = Fixed.FRACUNIT * Doomdef.SCREENWIDTH / viewwidth;
+        // psprite scales. Divide by BASE_WIDTH (the 320-pixel
+        // logical grid) rather than RENDER_WIDTH so the weapon
+        // sprite stays the right on-screen size at RENDER_MUL > 1
+        // — otherwise the scale collapses to 1.0 = native sprite
+        // pixels = half-size at 640 wide.
+        pspritescale = Fixed.FRACUNIT * viewwidth / Doomdef.BASE_WIDTH;
+        pspriteiscale = Fixed.FRACUNIT * Doomdef.BASE_WIDTH / viewwidth;
 
         // thing clipping
         for (i = 0; i < viewwidth; i++) {
@@ -626,7 +634,7 @@ public final class RMain {
         for (i = 0; i < LIGHTLEVELS; i++) {
             startmap = ((LIGHTLEVELS - 1 - i) * 2) * NUMCOLORMAPS / LIGHTLEVELS;
             for (j = 0; j < MAXLIGHTSCALE; j++) {
-                level = startmap - j * Doomdef.SCREENWIDTH
+                level = startmap - j * Doomdef.RENDER_WIDTH
                         / (viewwidth << detailshift) / DISTMAP;
 
                 if (level < 0) {

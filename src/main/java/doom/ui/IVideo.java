@@ -34,9 +34,14 @@ public final class IVideo {
     }
 
     // i_video.c — I_StartFrame. Per-frame hook called at the top
-    // of D_Display (game-loop frame entry).
+    // of D_Display (game-loop frame entry). The JavaFX shell uses
+    // this to clear the screens[0] viewport area (so the two-
+    // buffer composite can distinguish "UI drew here this frame"
+    // from "stale renderer pixels from a previous frame").
     public static void iStartFrame() {
-        // intentionally empty
+        if (startFrameHook != null) {
+            startFrameHook.run();
+        }
     }
 
     // i_video.c — I_StartTic. Per-tic input poll. The C posts
@@ -62,6 +67,7 @@ public final class IVideo {
     // for colfunc/spanfunc — see deviation 31.
     public static Runnable finishUpdateHook;
     public static Runnable startTicHook;
+    public static Runnable startFrameHook;
     public static java.util.function.Consumer<byte[]> setPaletteHook;
 
     // i_video.c — I_FinishUpdate. Pushes screens[0] (the 320×200

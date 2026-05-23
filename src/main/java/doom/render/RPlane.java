@@ -22,7 +22,7 @@ public final class RPlane {
 
     // r_plane.c line 59 — opening list cap. Used by RSegs /
     // RThings for per-column sprite/wall clipping.
-    public static final int MAXOPENINGS = Doomdef.SCREENWIDTH * 64;
+    public static final int MAXOPENINGS = Doomdef.RENDER_WIDTH * 64;
 
     // r_defs.h lines 460–480 — visplane_t.
     // top[] and bottom[] track the per-column upper / lower row of
@@ -39,9 +39,12 @@ public final class RPlane {
         public int minx;
         public int maxx;
         // Indexed [logicalColumn + 1] to leave room for the
-        // sentinel writes at top[minx-1] / top[maxx+1].
-        public final byte[] top    = new byte[Doomdef.SCREENWIDTH + 2];
-        public final byte[] bottom = new byte[Doomdef.SCREENWIDTH + 2];
+        // sentinel writes at top[minx-1] / top[maxx+1]. Widened
+        // from byte[] to short[] so y-coords past 255 (any
+        // RENDER_MUL > 1 setup) don't wrap around — this was
+        // PrBoom's famous hi-res blocker too.
+        public final short[] top    = new short[Doomdef.RENDER_WIDTH + 2];
+        public final short[] bottom = new short[Doomdef.RENDER_WIDTH + 2];
     }
 
     public static final Visplane[] visplanes = new Visplane[MAXVISPLANES];
@@ -63,19 +66,19 @@ public final class RPlane {
     // r_plane.c lines 69–70 — per-column upper/lower clip ranges.
     // floorclip starts at SCREENHEIGHT (no floor visible);
     // ceilingclip starts at -1 (no ceiling visible).
-    public static final short[] floorclip   = new short[Doomdef.SCREENWIDTH];
-    public static final short[] ceilingclip = new short[Doomdef.SCREENWIDTH];
+    public static final short[] floorclip   = new short[Doomdef.RENDER_WIDTH];
+    public static final short[] ceilingclip = new short[Doomdef.RENDER_WIDTH];
 
     // r_plane.c lines 76–77 — R_MakeSpans scratch.
-    public static final int[] spanstart = new int[Doomdef.SCREENHEIGHT];
-    public static final int[] spanstop  = new int[Doomdef.SCREENHEIGHT];
+    public static final int[] spanstart = new int[Doomdef.RENDER_HEIGHT];
+    public static final int[] spanstop  = new int[Doomdef.RENDER_HEIGHT];
 
     // r_plane.c lines 82–93 — texture-mapping cache.
     public static int planeheight;       // fixed_t
-    public static final int[] cachedheight   = new int[Doomdef.SCREENHEIGHT];
-    public static final int[] cacheddistance = new int[Doomdef.SCREENHEIGHT];
-    public static final int[] cachedxstep    = new int[Doomdef.SCREENHEIGHT];
-    public static final int[] cachedystep    = new int[Doomdef.SCREENHEIGHT];
+    public static final int[] cachedheight   = new int[Doomdef.RENDER_HEIGHT];
+    public static final int[] cacheddistance = new int[Doomdef.RENDER_HEIGHT];
+    public static final int[] cachedxstep    = new int[Doomdef.RENDER_HEIGHT];
+    public static final int[] cachedystep    = new int[Doomdef.RENDER_HEIGHT];
 
     public static int basexscale;        // fixed_t
     public static int baseyscale;        // fixed_t
@@ -222,12 +225,12 @@ public final class RPlane {
         fresh.height = height;
         fresh.picnum = picnum;
         fresh.lightlevel = lightlevel;
-        fresh.minx = Doomdef.SCREENWIDTH;
+        fresh.minx = Doomdef.RENDER_WIDTH;
         fresh.maxx = -1;
 
-        // Reset top[] to 0xff sentinel (no fragment yet).
+        // Reset top[] to 0xffff sentinel (no fragment yet).
         for (int i = 0; i < fresh.top.length; i++) {
-            fresh.top[i] = (byte) 0xff;
+            fresh.top[i] = (short) 0xffff;
         }
 
         return fresh;
@@ -265,7 +268,7 @@ public final class RPlane {
         // Walk the intersection: if every column is still 0xff
         // sentinel we can just extend `pl`.
         for (x = intrl; x <= intrh; x++) {
-            if ((pl.top[x + 1] & 0xff) != 0xff) {
+            if ((pl.top[x + 1] & 0xffff) != 0xffff) {
                 break;
             }
         }
@@ -288,7 +291,7 @@ public final class RPlane {
         fresh.maxx = stop;
 
         for (int i = 0; i < fresh.top.length; i++) {
-            fresh.top[i] = (byte) 0xff;
+            fresh.top[i] = (short) 0xffff;
         }
 
         return fresh;
@@ -364,8 +367,8 @@ public final class RPlane {
                 RDraw.dcColormapOfs = 0;
                 RDraw.dcTexturemid = RSky.skytexturemid;
                 for (x = pl.minx; x <= pl.maxx; x++) {
-                    RDraw.dcYl = pl.top[x + 1] & 0xff;
-                    RDraw.dcYh = pl.bottom[x + 1] & 0xff;
+                    RDraw.dcYl = pl.top[x + 1] & 0xffff;
+                    RDraw.dcYh = pl.bottom[x + 1] & 0xffff;
 
                     if (RDraw.dcYl <= RDraw.dcYh) {
                         angle = (RMain.viewangle + RMain.xtoviewangle[x])
@@ -416,17 +419,17 @@ public final class RPlane {
             // C: pl->top[pl->maxx+1] = 0xff; pl->top[pl->minx-1] = 0xff;
             // The Java port indexes top[] with a +1 bias to absorb the
             // C's pad-byte sentinel writes.
-            pl.top[pl.maxx + 1 + 1] = (byte) 0xff;
-            pl.top[pl.minx - 1 + 1] = (byte) 0xff;
+            pl.top[pl.maxx + 1 + 1] = (short) 0xffff;
+            pl.top[pl.minx - 1 + 1] = (short) 0xffff;
 
             stop = pl.maxx + 1;
 
             for (x = pl.minx; x <= stop; x++) {
                 rMakeSpans(x,
-                        pl.top[x - 1 + 1] & 0xff,
-                        pl.bottom[x - 1 + 1] & 0xff,
-                        pl.top[x + 1]     & 0xff,
-                        pl.bottom[x + 1]  & 0xff);
+                        pl.top[x - 1 + 1] & 0xffff,
+                        pl.bottom[x - 1 + 1] & 0xffff,
+                        pl.top[x + 1]     & 0xffff,
+                        pl.bottom[x + 1]  & 0xffff);
             }
 
             // C: Z_ChangeTag(ds_source, PU_CACHE) — release the flat

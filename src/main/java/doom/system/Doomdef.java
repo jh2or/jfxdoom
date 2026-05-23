@@ -13,9 +13,27 @@ public final class Doomdef {
     public static final int SCREEN_MUL = 1;
     public static final double INV_ASPECT_RATIO = 0.625;
 
-    // doomdef.h lines 110–112
+    // doomdef.h lines 110–112 — the *logical* / UI framebuffer size.
+    // HUD widgets, the menu, the status bar, intermission, finale,
+    // and the title-page art are all authored for this grid. The
+    // JavaFX shell upscales by the user's display-scale factor.
     public static final int SCREENWIDTH = 320;
     public static final int SCREENHEIGHT = 200;
+
+    // ----------------------------------------------------------------
+    // JavaFX-port deviation 41 — hi-res renderer.
+    //
+    // The 3D view (R_RenderPlayerView and everything it calls) writes
+    // to a *separate* high-resolution framebuffer (VVideo.viewBuffer)
+    // that is RENDER_WIDTH × RENDER_HEIGHT. RENDER_MUL = 1 keeps the
+    // engine at vanilla 320×200 sample density; bump it to 2 or
+    // higher for finer wall / floor / sprite sampling. The UI buffers
+    // (screens[0..3]) stay at SCREENWIDTH × SCREENHEIGHT regardless,
+    // and JfxDoomApp composites the two at blit time.
+    // ----------------------------------------------------------------
+    public static final int RENDER_MUL    = 2;
+    public static final int RENDER_WIDTH  = SCREENWIDTH  * RENDER_MUL;
+    public static final int RENDER_HEIGHT = SCREENHEIGHT * RENDER_MUL;
 
     // doomdef.h line 119
     public static final int MAXPLAYERS = 4;

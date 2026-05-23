@@ -25,6 +25,15 @@ public final class VVideo {
     // v_video.c line 44 — byte[SCREENWIDTH*SCREENHEIGHT] each.
     public static byte[][] screens = new byte[5][];
 
+    // JavaFX-port deviation 41 — separate hi-res buffer for the 3D
+    // renderer. R_DrawColumn / R_DrawSpan and friends write here so
+    // the renderer can run at RENDER_WIDTH × RENDER_HEIGHT (which
+    // may be larger than SCREENWIDTH × SCREENHEIGHT). screens[0..3]
+    // keep their original 320×200 UI role. Composited at blit time
+    // by JfxDoomApp.
+    public static byte[] viewBuffer =
+            new byte[Doomdef.RENDER_WIDTH * Doomdef.RENDER_HEIGHT];
+
     // v_video.c line 46.
     public static int[] dirtybox = new int[4];
 
@@ -128,6 +137,12 @@ public final class VVideo {
     public static void vInit() {
         for (int i = 0; i < 4; i++) {
             screens[i] = new byte[SCREENWIDTH * SCREENHEIGHT];
+        }
+        // Re-allocate the hi-res view buffer in case RENDER_MUL
+        // changed between sessions (e.g. tests that swap constants
+        // via reflection).
+        if (viewBuffer.length != Doomdef.RENDER_WIDTH * Doomdef.RENDER_HEIGHT) {
+            viewBuffer = new byte[Doomdef.RENDER_WIDTH * Doomdef.RENDER_HEIGHT];
         }
     }
 

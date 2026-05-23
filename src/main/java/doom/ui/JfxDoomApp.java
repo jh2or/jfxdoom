@@ -63,8 +63,16 @@ public final class JfxDoomApp extends Application {
     // CLI args captured from main() and replayed in start().
     private static String[] launchArgs = new String[0];
 
-    private static final int W = Doomdef.SCREENWIDTH;
-    private static final int H = Doomdef.SCREENHEIGHT;
+    // ARGB blit buffer is sized to the *render* framebuffer
+    // (RENDER_WIDTH × RENDER_HEIGHT) so the hi-res 3D view shows
+    // at native sample density; UI pixels from screens[0] are
+    // nearest-neighbour upscaled by RENDER_MUL when composited
+    // into argb. JavaFX then upscales argb → window by the
+    // user's chosen display scale.
+    private static final int W = Doomdef.RENDER_WIDTH;
+    private static final int H = Doomdef.RENDER_HEIGHT;
+    private static final int UI_W = Doomdef.SCREENWIDTH;
+    private static final int RM   = Doomdef.RENDER_MUL;
     private static final double DOOM_ASPECT = (double) W / H;  // 1.6
     // Default windowed scale for the CLI-driven boot path.
     private static final int DEFAULT_SCALE = 3;
@@ -165,14 +173,30 @@ public final class JfxDoomApp extends Application {
         }
 
         scene.setOnKeyPressed(e -> {
-            int code = mapKey(e.getCode());
+            int code = mapKey(e.getCode(), e.getText());
             if (code < 0) return;
             DMain.dPostEvent(new DEvent(DEvent.EV_KEYDOWN, code));
         });
         scene.setOnKeyReleased(e -> {
-            int code = mapKey(e.getCode());
+            int code = mapKey(e.getCode(), e.getText());
             if (code < 0) return;
             DMain.dPostEvent(new DEvent(DEvent.EV_KEYUP, code));
+        });
+        // Layout-shifted characters: KeyPressed only reports the
+        // physical key's unshifted character (Shift+0 → "0" on
+        // Windows), so chars like '=' / '+' on a German keyboard
+        // never reach the menu's screen-size handler from KeyPressed
+        // alone. KeyTyped delivers the post-layout, post-modifier
+        // character — narrowly forward the ones the menu cares
+        // about so normal letter/digit keys aren't double-fired.
+        scene.setOnKeyTyped(e -> {
+            String chars = e.getCharacter();
+            if (chars == null || chars.isEmpty()) return;
+            char c = chars.charAt(0);
+            if (c == '=' || c == '+') {
+                DMain.dPostEvent(new DEvent(DEvent.EV_KEYDOWN, c));
+                DMain.dPostEvent(new DEvent(DEvent.EV_KEYUP,   c));
+            }
         });
 
         stage.setScene(scene);
@@ -194,12 +218,54 @@ public final class JfxDoomApp extends Application {
         // Register IVideo hooks. The drawImage size uses the
         // live canvas dimensions so fullscreen resizes (e.g. on
         // monitor change) are picked up without re-registration.
+        //
+        // The argb blit composites two palette buffers each frame:
+        //   - VVideo.screens[0]  (UI, sized UI_W × UI_H)
+        //   - VVideo.viewBuffer  (3D view, sized W × H)
+        // For pixels inside the active viewport rect the view
+        // buffer wins; outside, the UI buffer is nearest-neighbour
+        // upscaled by RENDER_MUL. The viewport is "active" only
+        // when the engine is in GS_LEVEL and the automap is off —
+        // otherwise the UI buffer carries the full frame (title
+        // screen, intermission, finale, automap).
         IVideo.finishUpdateHook = () -> {
-            byte[] src = VVideo.screens[0];
-            if (src == null) return;
-            for (int i = 0; i < W * H; i++) {
-                argb[i] = palette[src[i] & 0xff];
+            byte[] ui = VVideo.screens[0];
+            byte[] view = VVideo.viewBuffer;
+            if (ui == null) return;
+
+            int vx = doom.render.RDraw.viewwindowx;
+            int vy = doom.render.RDraw.viewwindowy;
+            int vw = doom.render.RDraw.scaledviewwidth;
+            int vh = doom.render.RDraw.viewheight;
+            boolean viewActive =
+                    doom.system.Doomstat.gamestate == doom.system.Doomstat.GS_LEVEL
+                    && !doom.ui.AmMap.automapactive
+                    && vw > 0 && vh > 0;
+
+            int vxEnd = vx + vw;
+            int vyEnd = vy + vh;
+
+            int i = 0;
+            for (int y = 0; y < H; y++) {
+                int uiRowOff = (y / RM) * UI_W;
+                boolean rowInView = viewActive && y >= vy && y < vyEnd;
+                int viewRowOff = y * W;
+                for (int x = 0; x < W; x++, i++) {
+                    int pal;
+                    if (rowInView && x >= vx && x < vxEnd) {
+                        // viewport zone: prefer the UI byte if non-
+                        // zero (a menu/HUD overlay painted there
+                        // this frame, post-startFrameHook clear),
+                        // otherwise the 3D view's pixel.
+                        int uiPal = ui[uiRowOff + (x / RM)] & 0xff;
+                        pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
+                    } else {
+                        pal = ui[uiRowOff + (x / RM)] & 0xff;
+                    }
+                    argb[i] = palette[pal];
+                }
             }
+
             pixelBuffer.updateBuffer(b -> null);
             gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
         };
@@ -207,6 +273,26 @@ public final class JfxDoomApp extends Application {
         IVideo.startTicHook = () -> {
             // Drain queued key events into the Doom event queue
             // when D_PostEvent is wired (deferred).
+        };
+        // Each frame, before the engine paints anything, clear
+        // the *viewport* slice of screens[0] to palette index 0.
+        // The composite below treats any non-zero pixel in the
+        // viewport zone as "UI drew here" (menu / HUD overlay /
+        // pause text / message banner) and prefers it over
+        // viewBuffer. Anything outside the viewport (status bar,
+        // brick border, automap) is untouched.
+        IVideo.startFrameHook = () -> {
+            byte[] ui = VVideo.screens[0];
+            if (ui == null) return;
+            int vxUi = doom.render.RDraw.viewwindowx / RM;
+            int vyUi = doom.render.RDraw.viewwindowy / RM;
+            int vwUi = doom.render.RDraw.scaledviewwidth / RM;
+            int vhUi = doom.render.RDraw.viewheight / RM;
+            if (vwUi <= 0 || vhUi <= 0) return;
+            for (int y = vyUi; y < vyUi + vhUi; y++) {
+                int rowOff = y * UI_W + vxUi;
+                java.util.Arrays.fill(ui, rowOff, rowOff + vwUi, (byte) 0);
+            }
         };
 
         // Boot the engine.
@@ -327,10 +413,26 @@ public final class JfxDoomApp extends Application {
         }
     }
 
-    // Translate a JavaFX KeyCode to the Doom keycode space
-    // (Doomdef.KEY_* + raw ASCII for letter / digit keys).
-    // Returns -1 for unmapped keys (modifiers, etc.).
-    private static int mapKey(KeyCode k) {
+    // Translate a JavaFX KeyCode (+ typed text) to the Doom
+    // keycode space (Doomdef.KEY_* + raw ASCII for letter / digit
+    // keys). Returns -1 for unmapped keys (modifiers, etc.).
+    //
+    // `text` is the KeyEvent.getText() result; it respects the
+    // user's keyboard layout (e.g. on a German layout the "-"
+    // character arrives on a different physical KeyCode than US,
+    // so KeyCode.MINUS never matches — but getText() returns "-"
+    // either way). For printable ASCII the typed character takes
+    // precedence over the KeyCode mapping; modifier and special
+    // keys fall back to the KeyCode switch.
+    private static int mapKey(KeyCode k, String text) {
+        // Layout-aware shortcut for printable ASCII (esp. the
+        // screen-size keys '-' / '=' / ',' / '.').
+        if (text != null && text.length() == 1) {
+            char c = text.charAt(0);
+            if (c > 0 && c < Doomdef.NUMKEYS) {
+                return Character.toLowerCase(c);
+            }
+        }
         switch (k) {
             case LEFT:        return Doomdef.KEY_LEFTARROW;
             case RIGHT:       return Doomdef.KEY_RIGHTARROW;
@@ -346,10 +448,13 @@ public final class JfxDoomApp extends Application {
             case SPACE:       return Doomdef.KEY_SPACE;
             case COMMA:       return Doomdef.KEY_COMMA;
             case PERIOD:      return Doomdef.KEY_PERIOD;
+            case MINUS:       return Doomdef.KEY_MINUS;
+            case EQUALS:      return Doomdef.KEY_EQUALS;
             default:
                 // Plain ASCII pass-through for letter / digit keys
                 // — Doom's responder reads gamekeydown[ch] for the
-                // weapon-change shortcuts ('1'..'7').
+                // weapon-change shortcuts ('1'..'7'). Used as a
+                // last resort if getText() didn't deliver a char.
                 String s = k.getName();
                 if (s.length() == 1) {
                     char c = Character.toLowerCase(s.charAt(0));

@@ -244,9 +244,10 @@ public final class RSegs {
 
                 if (top <= bottom) {
                     // C: ceilingplane->top[rwX] = top; bottom[rwX] = bottom.
-                    // Java: top[]/bottom[] sized SCREENWIDTH+2 with +1 bias.
-                    RBsp.ceilingplane.top[rwX + 1]    = (byte) top;
-                    RBsp.ceilingplane.bottom[rwX + 1] = (byte) bottom;
+                    // Java: top[]/bottom[] sized RENDER_WIDTH+2 with +1 bias,
+                    // short[] not byte[] so hi-res y-coords fit.
+                    RBsp.ceilingplane.top[rwX + 1]    = (short) top;
+                    RBsp.ceilingplane.bottom[rwX + 1] = (short) bottom;
                 }
             }
 
@@ -263,8 +264,8 @@ public final class RSegs {
                     top = RPlane.ceilingclip[rwX] + 1;
                 }
                 if (top <= bottom) {
-                    RBsp.floorplane.top[rwX + 1]    = (byte) top;
-                    RBsp.floorplane.bottom[rwX + 1] = (byte) bottom;
+                    RBsp.floorplane.top[rwX + 1]    = (short) top;
+                    RBsp.floorplane.bottom[rwX + 1] = (short) bottom;
                 }
             }
 

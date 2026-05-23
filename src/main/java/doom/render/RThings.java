@@ -42,7 +42,7 @@ public final class RThings {
     // r_things.c line 81 — negonearray[SCREENWIDTH] filled with -1
     // sentinels, used by r_segs as a default sprtopclip / negative
     // baseline.
-    public static final short[] negonearray = new short[Doomdef.SCREENWIDTH];
+    public static final short[] negonearray = new short[Doomdef.RENDER_WIDTH];
 
     static {
         for (int i = 0; i < negonearray.length; i++) {
@@ -283,7 +283,7 @@ public final class RThings {
     // R_InitSprites
     // r_things.c lines 299–309.
     public static void rInitSprites(String[] namelist) {
-        for (int i = 0; i < Doomdef.SCREENWIDTH; i++) {
+        for (int i = 0; i < Doomdef.RENDER_WIDTH; i++) {
             negonearray[i] = -1;
         }
         rInitSpriteDefs(namelist);
@@ -843,8 +843,8 @@ public final class RThings {
     // R_DrawSprite
     // r_things.c lines 842–950.
     public static void rDrawSprite(Vissprite spr) {
-        short[] clipbot = new short[Doomdef.SCREENWIDTH];
-        short[] cliptop = new short[Doomdef.SCREENWIDTH];
+        short[] clipbot = new short[Doomdef.RENDER_WIDTH];
+        short[] cliptop = new short[Doomdef.RENDER_WIDTH];
         int x;
         int r1;
         int r2;

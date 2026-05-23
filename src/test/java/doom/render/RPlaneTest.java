@@ -33,11 +33,11 @@ class RPlaneTest {
         assertEquals(h, vp.height);
         assertEquals(5, vp.picnum);
         assertEquals(192, vp.lightlevel);
-        assertEquals(Doomdef.SCREENWIDTH, vp.minx);
+        assertEquals(Doomdef.RENDER_WIDTH, vp.minx);
         assertEquals(-1, vp.maxx);
-        // top[] reset to 0xff sentinel.
+        // top[] reset to 0xffff sentinel (short[] for hi-res).
         for (int i = 0; i < vp.top.length; i++) {
-            assertEquals((byte) 0xff, vp.top[i],
+            assertEquals((short) 0xffff, vp.top[i],
                     "top[" + i + "] not sentinel");
         }
     }
@@ -150,7 +150,7 @@ class RPlaneTest {
     @Test
     void constantsMatchCSource() {
         assertEquals(128, RPlane.MAXVISPLANES);
-        assertEquals(Doomdef.SCREENWIDTH * 64, RPlane.MAXOPENINGS);
+        assertEquals(Doomdef.RENDER_WIDTH * 64, RPlane.MAXOPENINGS);
         assertEquals(RPlane.MAXVISPLANES, RPlane.visplanes.length);
         assertEquals(RPlane.MAXOPENINGS, RPlane.openings.length);
     }
@@ -287,8 +287,8 @@ class RPlaneTest {
         for (int x = vp.minx; x <= vp.maxx; x++) {
             // Provide a single-row span at row viewheight/2 + 5 so
             // the column-walk has something to dispatch.
-            vp.top[x + 1]    = (byte) (RDraw.viewheight / 2 + 5);
-            vp.bottom[x + 1] = (byte) (RDraw.viewheight / 2 + 5);
+            vp.top[x + 1]    = (short) (RDraw.viewheight / 2 + 5);
+            vp.bottom[x + 1] = (short) (RDraw.viewheight / 2 + 5);
         }
 
         // Should not throw — walks the visplane and paints a few
