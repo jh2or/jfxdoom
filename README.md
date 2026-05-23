@@ -17,6 +17,19 @@ A common spot is `reference-wads/DOOM.WAD` next to the source.
 ## Run from source
 
 ```
+gradlew run
+```
+
+Launched with no arguments, jfxdoom opens a **Startup UI** —
+browse to a WAD, click **Launch ▶**, and the engine boots the
+same way the original `doom.exe` would (title loop, no level
+skip). Flip the **Expert mode** switch to reveal skill / warp /
+episode / gameplay flags / demo recording.
+
+To skip the UI and boot straight into the engine, pass any
+CLI argument:
+
+```
 gradlew run --args="-iwad reference-wads/DOOM.WAD"
 ```
 
@@ -32,7 +45,8 @@ gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1"
 gradlew run --args="-iwad reference-wads/DOOM2.WAD -warp 5"
 ```
 
-Other command-line flags supported (mirroring the C):
+Command-line flags supported (mirroring the C — the Startup
+UI exposes the same set):
 
 ```
 -iwad <path>        primary WAD

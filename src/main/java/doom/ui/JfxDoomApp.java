@@ -72,7 +72,27 @@ public final class JfxDoomApp extends Application {
     }
 
     @Override
-    public void start(Stage stage) throws IOException {
+    public void start(Stage stage) {
+        stage.setTitle("jfxdoom");
+        if (launchArgs.length > 0) {
+            // CLI-driven boot — skip the Startup UI entirely.
+            bootGame(stage, launchArgs);
+        } else {
+            // Default entrypoint: show the Startup UI, then boot
+            // with whatever the user assembled.
+            StartupUi ui = new StartupUi();
+            Scene startupScene = ui.build(stage, args -> bootGame(stage, args));
+            stage.setScene(startupScene);
+            stage.setResizable(true);
+            stage.show();
+        }
+    }
+
+    // Build the game canvas + key listeners, hand control to the
+    // engine, then drive it at TICRATE. Called either directly
+    // from start() (CLI path) or from the Startup UI's Launch
+    // callback.
+    private void bootGame(Stage stage, String[] args) {
         Canvas canvas = new Canvas(W * SCALE, H * SCALE);
         GraphicsContext gc = canvas.getGraphicsContext2D();
         // Pixel-perfect upscale.
@@ -97,10 +117,11 @@ public final class JfxDoomApp extends Application {
             DMain.dPostEvent(ev);
         });
 
-        stage.setTitle("jfxdoom");
         stage.setScene(scene);
         stage.setResizable(false);
-        stage.show();
+        // Re-centre after the size change (Startup UI was larger).
+        stage.centerOnScreen();
+        if (!stage.isShowing()) stage.show();
 
         // Register IVideo hooks.
         IVideo.finishUpdateHook = () -> {
@@ -125,11 +146,14 @@ public final class JfxDoomApp extends Application {
         };
 
         // Boot the engine.
-        DMain.dDoomMain(launchArgs);
-
-        // Load PLAYPAL and set the initial palette so the colormap
-        // bytes resolve to actual ARGB.
-        loadInitialPalette();
+        try {
+            DMain.dDoomMain(args);
+            // Load PLAYPAL and set the initial palette so the
+            // colormap bytes resolve to actual ARGB.
+            loadInitialPalette();
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
 
         // Drive the engine at TICRATE Hz.
         new AnimationTimer() {
