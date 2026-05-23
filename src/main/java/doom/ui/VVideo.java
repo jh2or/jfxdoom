@@ -178,10 +178,27 @@ public final class VVideo {
         y -= patch.topoffset;
         x -= patch.leftoffset;
 
+        // Centre-crop widescreen patches. DOOM2.WAD ships TITLEPIC
+        // / STBAR / etc. at 426×200 (and 426×32 for the status
+        // bar) so 16:9 source ports have extra art on the sides;
+        // vanilla doom expects 320 wide and the C `V_DrawPatch`
+        // simply prints "exceeds LFB" and bails. Skip those wider
+        // columns so the centred 320 region paints normally.
+        int srcColStart = 0;
+        int drawW = patch.width;
+        int drawH = patch.height;
+        if (drawW > SCREENWIDTH) {
+            srcColStart = (drawW - SCREENWIDTH) / 2;
+            drawW = SCREENWIDTH;
+        }
+        if (drawH > SCREENHEIGHT) {
+            drawH = SCREENHEIGHT;
+        }
+
         if (x < 0
-                || x + patch.width > SCREENWIDTH
+                || x + drawW > SCREENWIDTH
                 || y < 0
-                || y + patch.height > SCREENHEIGHT
+                || y + drawH > SCREENHEIGHT
                 || (scrn & 0xFFFFFFFFL) > 4L) {
             // C prints to stderr and returns — no I_Error abort. Matches
             // the "what is up with TNT.WAD?" comment in v_video.c.
@@ -191,18 +208,16 @@ public final class VVideo {
         }
 
         if (scrn == 0) {
-            vMarkRect(x, y, patch.width, patch.height);
+            vMarkRect(x, y, drawW, drawH);
         }
 
-        int col = 0;
         byte[] screen = screens[scrn];
         int desttop = y * SCREENWIDTH + x;
-
-        int w = patch.width;
+        int screenLen = screen.length;
         byte[] patchData = patch.data;
 
-        for (; col < w; x++, col++, desttop++) {
-            int columnOfs = patch.columnofs[col];
+        for (int col = 0; col < drawW; col++, desttop++) {
+            int columnOfs = patch.columnofs[col + srcColStart];
 
             // step through the posts in a column
             while ((patchData[columnOfs] & 0xFF) != 0xFF) {
@@ -213,7 +228,13 @@ public final class VVideo {
                 int count = length;
 
                 while (count-- > 0) {
-                    screen[destIdx] = patchData[srcIdx++];
+                    // Drop pixels that would land past the destination
+                    // buffer (e.g. the lower rows of a tall patch
+                    // when the target buffer is a smaller subscreen).
+                    if (destIdx < screenLen) {
+                        screen[destIdx] = patchData[srcIdx];
+                    }
+                    srcIdx++;
                     destIdx += SCREENWIDTH;
                 }
                 columnOfs = columnOfs + length + 4;
@@ -227,28 +248,41 @@ public final class VVideo {
         y -= patch.topoffset;
         x -= patch.leftoffset;
 
+        // Same centre-crop / height-cap as vDrawPatch.
+        int srcColStart = 0;
+        int drawW = patch.width;
+        int drawH = patch.height;
+        if (drawW > SCREENWIDTH) {
+            srcColStart = (drawW - SCREENWIDTH) / 2;
+            drawW = SCREENWIDTH;
+        }
+        if (drawH > SCREENHEIGHT) {
+            drawH = SCREENHEIGHT;
+        }
+
         if (x < 0
-                || x + patch.width > SCREENWIDTH
+                || x + drawW > SCREENWIDTH
                 || y < 0
-                || y + patch.height > SCREENHEIGHT
+                || y + drawH > SCREENHEIGHT
                 || (scrn & 0xFFFFFFFFL) > 4L) {
             System.err.printf("Patch origin %d,%d exceeds LFB%n", x, y);
             throw ISystem.iError("Bad V_DrawPatch in V_DrawPatchFlipped");
         }
 
         if (scrn == 0) {
-            vMarkRect(x, y, patch.width, patch.height);
+            vMarkRect(x, y, drawW, drawH);
         }
 
-        int col = 0;
         byte[] screen = screens[scrn];
         int desttop = y * SCREENWIDTH + x;
-
-        int w = patch.width;
+        int screenLen = screen.length;
         byte[] patchData = patch.data;
 
-        for (; col < w; x++, col++, desttop++) {
-            int columnOfs = patch.columnofs[w - 1 - col];
+        // Flipped: walk source columns from the cropped window's
+        // right edge back to its left edge.
+        int srcColEnd = srcColStart + drawW - 1;
+        for (int col = 0; col < drawW; col++, desttop++) {
+            int columnOfs = patch.columnofs[srcColEnd - col];
 
             while ((patchData[columnOfs] & 0xFF) != 0xFF) {
                 int topdelta = patchData[columnOfs] & 0xFF;
@@ -258,7 +292,10 @@ public final class VVideo {
                 int count = length;
 
                 while (count-- > 0) {
-                    screen[destIdx] = patchData[srcIdx++];
+                    if (destIdx < screenLen) {
+                        screen[destIdx] = patchData[srcIdx];
+                    }
+                    srcIdx++;
                     destIdx += SCREENWIDTH;
                 }
                 columnOfs = columnOfs + length + 4;
