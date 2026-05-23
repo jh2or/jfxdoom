@@ -85,11 +85,12 @@ class ISoundTest {
 
     // ---- volume / sep ----
 
-    // sep=0 → full left, zero right. The applyVolumeSep clamp
-    // caps vol at the menu range [0, 15] and then multiplies by
-    // 8 for the mixer's [0, 127]-scaled per-sample math, so
-    // vol=15 yields leftvol=120 at full pan, vol=127 also
-    // clamps to leftvol=120.
+    // sep=0 → full left, zero right. applyVolumeSep clamps vol
+    // to the menu range [0, 15] and multiplies by
+    // SFX_VOLUME_SCALE (28, +10 dB over the old ×9 to balance
+    // perceived loudness against MIDI music — see ISound), so
+    // vol=15 yields leftvol=420 at full pan, vol=127 also
+    // clamps to leftvol=420.
     @Test
     void applyVolumeSepFullLeftPan() {
         Sounds.Sfxinfo sfx = new Sounds.Sfxinfo("test", false, 64, null, 0, 0, 0);
@@ -99,7 +100,7 @@ class ISoundTest {
         // Walk channels to find the one with this handle.
         for (ISound.Channel c : ISound.channels) {
             if (c.handle == h) {
-                assertEquals(120, c.leftvol);
+                assertEquals(420, c.leftvol);
                 assertEquals(0,   c.rightvol);
                 return;
             }
@@ -116,7 +117,7 @@ class ISoundTest {
         for (ISound.Channel c : ISound.channels) {
             if (c.handle == h) {
                 assertEquals(0,   c.leftvol);
-                assertEquals(120, c.rightvol);
+                assertEquals(420, c.rightvol);
                 return;
             }
         }

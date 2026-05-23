@@ -62,6 +62,17 @@ public final class ISound {
             AudioFormat.Encoding.PCM_SIGNED,
             OUTPUT_RATE, 16, 2, 4, OUTPUT_RATE, false);
 
+    // Menu-range → backend-range gain. The C uniformly multiplied
+    // the [0, 15] menu volume by 8 to reach the DMX driver's
+    // [0, 127] scale on both sides. The Java port splits the
+    // multiplier per channel: the JVM's General MIDI synth runs
+    // hot relative to our 8-bit DMX SFX mixer, so equal scale
+    // makes music perceptibly louder than SFX even at matched
+    // slider positions. Tuning these constants keeps the menu
+    // sliders centred on a balanced default.
+    private static final int SFX_VOLUME_SCALE   = 28; // peak leftvol 420 at slider=15 (+10 dB over the old ×9)
+    private static final int MUSIC_VOLUME_SCALE = 5;  // peak CC 7 = 75 at slider=15
+
     //
     // Per-channel mixer state.
     //
@@ -70,8 +81,8 @@ public final class ISound {
         public int    sampleRate; // source rate (typically 11025)
         public double cursor;     // playback position (fractional source samples)
         public int    handle;     // monotonic identity (>0 when active)
-        public int    leftvol;    // 0..127
-        public int    rightvol;   // 0..127
+        public int    leftvol;    // 0..vol*SFX_VOLUME_SCALE; mixer clamps at int16 max
+        public int    rightvol;   // same
     }
 
     public static final Channel[] channels = new Channel[NUM_CHANNELS];
@@ -343,10 +354,12 @@ public final class ISound {
         // The menu drives this with snd_MusicVolume in [0, 15]
         // (m_menu.c's *8 scaling is commented out — the DMX driver
         // scaled internally). S_SetMusicVolume also calls us with
-        // 127 first as a DMX reset workaround. Map both into MIDI
-        // CC 7's [0, 127] range: scale the menu range up by 8, pass
-        // through anything already past 15.
-        int cc = volume <= 15 ? (volume << 3) : Math.min(volume, 127);
+        // 127 first as a DMX reset workaround. Map menu values
+        // through MUSIC_VOLUME_SCALE; pass anything already past
+        // 15 through unchanged so the 127 reset still works.
+        int cc = volume <= 15
+                ? (volume * MUSIC_VOLUME_SCALE)
+                : Math.min(volume, 127);
         try {
             for (int ch = 0; ch < 16; ch++) {
                 ShortMessage m = new ShortMessage();
@@ -459,14 +472,14 @@ public final class ISound {
         // s_sound.c hands volume in the menu range [0, 15] (or up
         // to snd_SfxVolume which is also 0..15). The mixer's
         // per-sample multiply is `sample * leftvol >> 7`, which
-        // gives full output when leftvol ≈ 128. Scale the
-        // menu-range volume up so vol=15 produces an audible
-        // signal — without this, leftvol tops out at ~7 and the
-        // mixed sample is ~50 dB below max (effectively silent).
+        // gives full output when leftvol ≈ 128. Scale via
+        // SFX_VOLUME_SCALE balances SFX against MIDI music. ×28
+        // is approximately +10 dB above the original ×9 (10 dB ≈
+        // ×3.16 in amplitude; 9 × 3.16 ≈ 28.4, rounded down).
         if (vol > 15)  vol = 15;
         if (sep < 0)   sep = 0;
         if (sep > 255) sep = 255;
-        int scaled = vol * 8;  // [0, 15] → [0, 120]
+        int scaled = vol * SFX_VOLUME_SCALE;  // [0, 15] → [0, 420]
         // Left = full at sep=0, zero at sep=255.
         c.leftvol  = (scaled * (255 - sep)) / 255;
         c.rightvol = (scaled *  sep)        / 255;
