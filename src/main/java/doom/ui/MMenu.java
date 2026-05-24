@@ -880,12 +880,17 @@ public final class MMenu {
             }
         }
 
-        // Pop up the menu if closed and ESC is pressed. ENTER is
-        // accepted too — a small port deviation from the C (which
-        // only honours ESC here) so the UX matches what most
-        // users expect from later Doom builds / source ports.
+        // Pop up the menu if closed and ESC is pressed. ENTER also
+        // opens the menu, but *only* on the title / demo screen
+        // (matches later Doom builds / source ports — pressing
+        // ENTER on the title screen jumps straight to the menu
+        // instead of waiting for the demo loop). During gameplay
+        // and on the intermission / finale screens, ENTER stays
+        // bound to its gameplay / advance action.
         if (!menuactive) {
-            if (ch == Doomdef.KEY_ESCAPE || ch == Doomdef.KEY_ENTER) {
+            boolean openOnEnter = ch == Doomdef.KEY_ENTER
+                    && Doomstat.gamestate == Doomstat.GS_DEMOSCREEN;
+            if (ch == Doomdef.KEY_ESCAPE || openOnEnter) {
                 mStartControlPanel();
                 SSound.sStartSound(null, Sounds.sfx_swtchn);
                 return true;

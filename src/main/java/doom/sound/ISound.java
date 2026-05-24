@@ -103,11 +103,18 @@ public final class ISound {
     //
     // I_InitSound
     // i_sound.c — Open + buffer the platform audio device.
+    // Buffer = ~1 s of stereo 16-bit @ 22050 Hz (4 bytes/frame).
+    // The previous code opened with OUTPUT_RATE *bytes* (≈250 ms)
+    // which left no headroom when the game loop briefly fell
+    // behind — iSubmitSound's "drop the tic if the line is near-
+    // full" path would silence SFX mid-shot on a frame-rate dip.
+    private static final int LINE_BUFFER_BYTES = OUTPUT_RATE * 4;
+
     public static void iInitSound() {
         if (line != null) return;
         try {
             line = AudioSystem.getSourceDataLine(OUTPUT_FORMAT);
-            line.open(OUTPUT_FORMAT, OUTPUT_RATE);   // ~1s buffer
+            line.open(OUTPUT_FORMAT, LINE_BUFFER_BYTES);
             line.start();
         } catch (LineUnavailableException e) {
             // No audio device — degrade to silent.
@@ -331,12 +338,16 @@ public final class ISound {
             mixBufferI16[i * 4 + 2] = (byte) (mixR[i]        & 0xff);
             mixBufferI16[i * 4 + 3] = (byte) ((mixR[i] >> 8) & 0xff);
         }
-        // Non-blocking write — drop frames if the line is full
-        // rather than stall the engine loop.
-        int avail = line.available();
-        if (avail >= mixBufferI16.length) {
-            line.write(mixBufferI16, 0, mixBufferI16.length);
-        }
+        // Blocking write. The previous non-blocking variant
+        // dropped the whole tic whenever the line couldn't fit
+        // another 2 520 B — which on a brief frame-rate dip
+        // chopped gunshots / footsteps mid-sample. The line's
+        // ~1 s buffer (LINE_BUFFER_BYTES) is big enough that
+        // bursting a few catch-up tics from the AnimationTimer's
+        // multi-tick loop fits without blocking; once it does
+        // back up, blocking briefly is preferable to silencing
+        // the SFX.
+        line.write(mixBufferI16, 0, mixBufferI16.length);
     }
 
     //
