@@ -69,21 +69,21 @@ public final class JfxDoomApp extends Application {
     // nearest-neighbour upscaled by RENDER_MUL when composited
     // into argb. JavaFX then upscales argb → window by the
     // user's chosen display scale.
-    private static final int W = Doomdef.RENDER_WIDTH;
-    private static final int H = Doomdef.RENDER_HEIGHT;
+    //
+    // RENDER_MUL is mutable (the Startup UI lets the user pick a
+    // render scale per session). The argb / pixelBuffer / image
+    // triple is re-created in bootGame after Doomdef.setRenderMul
+    // bumps the constants — UI_W is fixed (always 320) and the
+    // Doom aspect 320:200 is a literal so the fitter stays
+    // resolution-agnostic.
     private static final int UI_W = Doomdef.SCREENWIDTH;
-    private static final int RM   = Doomdef.RENDER_MUL;
-    private static final double DOOM_ASPECT = (double) W / H;  // 1.6
+    private static final double DOOM_ASPECT = 320.0 / 200.0;
     // Default windowed scale for the CLI-driven boot path.
     private static final int DEFAULT_SCALE = 3;
 
-    // The JavaFX-side framebuffer: one ARGB int per pixel,
-    // wrapped in a PixelBuffer<IntBuffer> backing a WritableImage.
-    private final int[] argb = new int[W * H];
-    private final IntBuffer argbBuf = IntBuffer.wrap(argb);
-    private final PixelBuffer<IntBuffer> pixelBuffer =
-            new PixelBuffer<>(W, H, argbBuf, PixelFormat.getIntArgbPreInstance());
-    private final WritableImage image = new WritableImage(pixelBuffer);
+    private int[] argb;
+    private PixelBuffer<IntBuffer> pixelBuffer;
+    private WritableImage image;
 
     // 256-entry ARGB palette. Indexed by VVideo.screens[0] bytes.
     private final int[] palette = new int[256];
@@ -94,6 +94,7 @@ public final class JfxDoomApp extends Application {
     private boolean shuttingDown;
     private String lastIwad;
     private StartupUi.DisplayMode lastDisplay = StartupUi.DisplayMode.SCALE_3X;
+    private int lastRenderMul = 2;
 
     public static void main(String[] args) {
         launchArgs = args;
@@ -115,18 +116,19 @@ public final class JfxDoomApp extends Application {
         if (launchArgs.length > 0) {
             // CLI-driven boot — skip the Startup UI entirely.
             captureLastFromArgs(launchArgs);
-            bootGame(stage, launchArgs, StartupUi.DisplayMode.SCALE_3X);
+            bootGame(stage, launchArgs, StartupUi.DisplayMode.SCALE_3X, lastRenderMul);
         } else {
             showLauncher(stage);
         }
     }
 
     private void showLauncher(Stage stage) {
-        StartupUi ui = new StartupUi().prefill(lastIwad, lastDisplay);
-        Scene startupScene = ui.build(stage, (args, display) -> {
+        StartupUi ui = new StartupUi().prefill(lastIwad, lastDisplay, lastRenderMul);
+        Scene startupScene = ui.build(stage, (args, display, renderMul) -> {
             captureLastFromArgs(args);
             lastDisplay = display;
-            bootGame(stage, args, display);
+            lastRenderMul = renderMul;
+            bootGame(stage, args, display, renderMul);
         });
         stage.setFullScreen(false);
         stage.setScene(startupScene);
@@ -141,7 +143,32 @@ public final class JfxDoomApp extends Application {
     // Build the game canvas + key listeners, hand control to the
     // engine, then drive it at TICRATE. Called from start() (CLI
     // path) or from the Startup UI's Launch callback.
-    private void bootGame(Stage stage, String[] args, StartupUi.DisplayMode display) {
+    private void bootGame(Stage stage, String[] args,
+                          StartupUi.DisplayMode display, int renderMul) {
+        // Apply the user's render-scale choice before any renderer
+        // class allocates RENDER_*-sized scratch arrays. setRenderMul
+        // updates the Doomdef constants; the resizeForRender calls
+        // swap module-level static arrays (RMain, RPlane, RThings,
+        // RDraw) to match. VVideo.viewBuffer re-allocates inside
+        // vInit, which dDoomMain calls below.
+        Doomdef.setRenderMul(renderMul);
+        doom.render.RMain.resizeForRender();
+        doom.render.RPlane.resizeForRender();
+        doom.render.RThings.resizeForRender();
+        doom.render.RDraw.resizeForRender();
+
+        // (Re-)allocate the ARGB blit buffer + PixelBuffer +
+        // WritableImage at the new RENDER_* size. Each is wrapped
+        // around the previous one, so we re-create the whole chain.
+        int w = Doomdef.RENDER_WIDTH;
+        int h = Doomdef.RENDER_HEIGHT;
+        if (argb == null || argb.length != w * h) {
+            argb = new int[w * h];
+            pixelBuffer = new PixelBuffer<>(w, h, IntBuffer.wrap(argb),
+                    PixelFormat.getIntArgbPreInstance());
+            image = new WritableImage(pixelBuffer);
+        }
+
         // Engine state needs a fresh start on re-launch: clear
         // the quitting guard and drop the previous WAD list so
         // dDoomMain doesn't double-load.
@@ -160,6 +187,11 @@ public final class JfxDoomApp extends Application {
         // (fullscreen aspect mismatch).
         root.setStyle("-fx-background-color: black;");
 
+        // Canvas / scene sizing uses the *UI* logical grid (320x200) ×
+        // user-picked display scale. The renderer's RENDER_MUL only
+        // affects sample density inside that same window — JavaFX
+        // scales the hi-res argb image to fit.
+        int uiH = Doomdef.SCREENHEIGHT;
         Scene scene;
         if (display != null && display.fullscreen) {
             scene = new Scene(root);
@@ -167,9 +199,9 @@ public final class JfxDoomApp extends Application {
         } else {
             int scale = (display != null) ? display.scale : DEFAULT_SCALE;
             if (scale <= 0) scale = DEFAULT_SCALE;
-            canvas.setWidth(W * scale);
-            canvas.setHeight(H * scale);
-            scene = new Scene(root, W * scale, H * scale);
+            canvas.setWidth(UI_W * scale);
+            canvas.setHeight(uiH * scale);
+            scene = new Scene(root, UI_W * scale, uiH * scale);
         }
 
         scene.setOnKeyPressed(e -> {
@@ -245,22 +277,28 @@ public final class JfxDoomApp extends Application {
             int vxEnd = vx + vw;
             int vyEnd = vy + vh;
 
+            // Read render dims dynamically (RENDER_MUL is a per-
+            // session value the Startup UI sets).
+            int renderW = Doomdef.RENDER_WIDTH;
+            int renderH = Doomdef.RENDER_HEIGHT;
+            int rm      = Doomdef.RENDER_MUL;
+
             int i = 0;
-            for (int y = 0; y < H; y++) {
-                int uiRowOff = (y / RM) * UI_W;
+            for (int y = 0; y < renderH; y++) {
+                int uiRowOff = (y / rm) * UI_W;
                 boolean rowInView = viewActive && y >= vy && y < vyEnd;
-                int viewRowOff = y * W;
-                for (int x = 0; x < W; x++, i++) {
+                int viewRowOff = y * renderW;
+                for (int x = 0; x < renderW; x++, i++) {
                     int pal;
                     if (rowInView && x >= vx && x < vxEnd) {
                         // viewport zone: prefer the UI byte if non-
                         // zero (a menu/HUD overlay painted there
                         // this frame, post-startFrameHook clear),
                         // otherwise the 3D view's pixel.
-                        int uiPal = ui[uiRowOff + (x / RM)] & 0xff;
+                        int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
                         pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
                     } else {
-                        pal = ui[uiRowOff + (x / RM)] & 0xff;
+                        pal = ui[uiRowOff + (x / rm)] & 0xff;
                     }
                     argb[i] = palette[pal];
                 }
@@ -284,10 +322,11 @@ public final class JfxDoomApp extends Application {
         IVideo.startFrameHook = () -> {
             byte[] ui = VVideo.screens[0];
             if (ui == null) return;
-            int vxUi = doom.render.RDraw.viewwindowx / RM;
-            int vyUi = doom.render.RDraw.viewwindowy / RM;
-            int vwUi = doom.render.RDraw.scaledviewwidth / RM;
-            int vhUi = doom.render.RDraw.viewheight / RM;
+            int rm = Doomdef.RENDER_MUL;
+            int vxUi = doom.render.RDraw.viewwindowx / rm;
+            int vyUi = doom.render.RDraw.viewwindowy / rm;
+            int vwUi = doom.render.RDraw.scaledviewwidth / rm;
+            int vhUi = doom.render.RDraw.viewheight / rm;
             if (vwUi <= 0 || vhUi <= 0) return;
             for (int y = vyUi; y < vyUi + vhUi; y++) {
                 int rowOff = y * UI_W + vxUi;

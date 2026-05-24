@@ -21,8 +21,10 @@ public final class RPlane {
     public static final int MAXVISPLANES = 128;
 
     // r_plane.c line 59 — opening list cap. Used by RSegs /
-    // RThings for per-column sprite/wall clipping.
-    public static final int MAXOPENINGS = Doomdef.RENDER_WIDTH * 64;
+    // RThings for per-column sprite/wall clipping. Non-final so
+    // resizeForRender() can track the JavaFX shell's per-session
+    // render scale.
+    public static int MAXOPENINGS = Doomdef.RENDER_WIDTH * 64;
 
     // r_defs.h lines 460–480 — visplane_t.
     // top[] and bottom[] track the per-column upper / lower row of
@@ -42,9 +44,10 @@ public final class RPlane {
         // sentinel writes at top[minx-1] / top[maxx+1]. Widened
         // from byte[] to short[] so y-coords past 255 (any
         // RENDER_MUL > 1 setup) don't wrap around — this was
-        // PrBoom's famous hi-res blocker too.
-        public final short[] top    = new short[Doomdef.RENDER_WIDTH + 2];
-        public final short[] bottom = new short[Doomdef.RENDER_WIDTH + 2];
+        // PrBoom's famous hi-res blocker too. Non-final so
+        // RPlane.resizeForRender can re-allocate per session.
+        public short[] top    = new short[Doomdef.RENDER_WIDTH + 2];
+        public short[] bottom = new short[Doomdef.RENDER_WIDTH + 2];
     }
 
     public static final Visplane[] visplanes = new Visplane[MAXVISPLANES];
@@ -60,25 +63,54 @@ public final class RPlane {
     }
 
     // r_plane.c line 60 — shared openings buffer for RSegs / RThings.
-    public static final short[] openings = new short[MAXOPENINGS];
+    public static short[] openings = new short[MAXOPENINGS];
     public static int lastopening;      // index = next-free short
 
     // r_plane.c lines 69–70 — per-column upper/lower clip ranges.
     // floorclip starts at SCREENHEIGHT (no floor visible);
     // ceilingclip starts at -1 (no ceiling visible).
-    public static final short[] floorclip   = new short[Doomdef.RENDER_WIDTH];
-    public static final short[] ceilingclip = new short[Doomdef.RENDER_WIDTH];
+    public static short[] floorclip   = new short[Doomdef.RENDER_WIDTH];
+    public static short[] ceilingclip = new short[Doomdef.RENDER_WIDTH];
 
     // r_plane.c lines 76–77 — R_MakeSpans scratch.
-    public static final int[] spanstart = new int[Doomdef.RENDER_HEIGHT];
-    public static final int[] spanstop  = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] spanstart = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] spanstop  = new int[Doomdef.RENDER_HEIGHT];
 
     // r_plane.c lines 82–93 — texture-mapping cache.
     public static int planeheight;       // fixed_t
-    public static final int[] cachedheight   = new int[Doomdef.RENDER_HEIGHT];
-    public static final int[] cacheddistance = new int[Doomdef.RENDER_HEIGHT];
-    public static final int[] cachedxstep    = new int[Doomdef.RENDER_HEIGHT];
-    public static final int[] cachedystep    = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] cachedheight   = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] cacheddistance = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] cachedxstep    = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] cachedystep    = new int[Doomdef.RENDER_HEIGHT];
+
+    // JavaFX-port deviation 41 — re-allocate all RENDER_*-sized
+    // arrays so the JavaFX shell can switch render scale per
+    // session. Visplane.top/bottom are per-instance, so this
+    // walks the pool too.
+    public static void resizeForRender() {
+        MAXOPENINGS = Doomdef.RENDER_WIDTH * 64;
+        if (openings.length != MAXOPENINGS) {
+            openings = new short[MAXOPENINGS];
+        }
+        if (floorclip.length != Doomdef.RENDER_WIDTH) {
+            floorclip   = new short[Doomdef.RENDER_WIDTH];
+            ceilingclip = new short[Doomdef.RENDER_WIDTH];
+        }
+        if (spanstart.length != Doomdef.RENDER_HEIGHT) {
+            spanstart      = new int[Doomdef.RENDER_HEIGHT];
+            spanstop       = new int[Doomdef.RENDER_HEIGHT];
+            cachedheight   = new int[Doomdef.RENDER_HEIGHT];
+            cacheddistance = new int[Doomdef.RENDER_HEIGHT];
+            cachedxstep    = new int[Doomdef.RENDER_HEIGHT];
+            cachedystep    = new int[Doomdef.RENDER_HEIGHT];
+        }
+        if (visplanes[0].top.length != Doomdef.RENDER_WIDTH + 2) {
+            for (Visplane vp : visplanes) {
+                vp.top    = new short[Doomdef.RENDER_WIDTH + 2];
+                vp.bottom = new short[Doomdef.RENDER_WIDTH + 2];
+            }
+        }
+    }
 
     public static int basexscale;        // fixed_t
     public static int baseyscale;        // fixed_t

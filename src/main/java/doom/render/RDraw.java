@@ -40,9 +40,12 @@ import java.io.IOException;
 
 public final class RDraw {
 
-    // r_draw.c line 47–51.
-    public static final int MAXWIDTH = 1120;
-    public static final int MAXHEIGHT = 832;
+    // r_draw.c line 47–51. The C used 1120 / 832 (hi-res variant
+    // cap). JavaFX-port deviation 41 ties these to the configured
+    // max render scale so columnofs / ylookup are wide enough for
+    // any RENDER_MUL up to MAX_RENDER_MUL (= 4 → 1280 × 800).
+    public static final int MAXWIDTH  = Doomdef.BASE_WIDTH  * Doomdef.MAX_RENDER_MUL;
+    public static final int MAXHEIGHT = Doomdef.SCREENHEIGHT * Doomdef.MAX_RENDER_MUL;
     public static final int SBARHEIGHT = 32;
 
     // r_draw.c line 63–70.
@@ -105,20 +108,44 @@ public final class RDraw {
     // --- Fuzz (spectre/invisibility) ---
 
     public static final int FUZZTABLE = 50;
-    public static final int FUZZOFF = Doomdef.RENDER_WIDTH;
+    // The fuzz column samples a neighbouring pixel one row away
+    // (i.e. ±RENDER_WIDTH bytes in the framebuffer). Non-final so
+    // resizeForRender() can refresh it after Doomdef.setRenderMul.
+    public static int FUZZOFF = Doomdef.RENDER_WIDTH;
 
-    // r_draw.c lines 263–272.
-    public static int[] fuzzoffset = {
-            FUZZOFF, -FUZZOFF, FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF,
-            FUZZOFF, FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF,
-            FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF, -FUZZOFF, -FUZZOFF, -FUZZOFF,
-            FUZZOFF, -FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF,
-            FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF, -FUZZOFF, FUZZOFF,
-            FUZZOFF, -FUZZOFF, -FUZZOFF, -FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF,
-            FUZZOFF, FUZZOFF, -FUZZOFF, FUZZOFF, FUZZOFF, -FUZZOFF, FUZZOFF
+    // r_draw.c lines 263–272. Sign pattern preserved verbatim;
+    // resizeForRender() rebuilds the magnitudes from FUZZOFF.
+    private static final int[] FUZZ_SIGNS = {
+            +1, -1, +1, -1, +1, +1, -1,
+            +1, +1, -1, +1, +1, +1, -1,
+            +1, +1, +1, -1, -1, -1, -1,
+            +1, -1, -1, +1, +1, +1, +1, -1,
+            +1, -1, +1, +1, -1, -1, +1,
+            +1, -1, -1, -1, -1, +1, +1,
+            +1, +1, -1, +1, +1, -1, +1
     };
+    public static int[] fuzzoffset = buildFuzzOffset();
+
+    private static int[] buildFuzzOffset() {
+        int[] out = new int[FUZZ_SIGNS.length];
+        for (int i = 0; i < FUZZ_SIGNS.length; i++) {
+            out[i] = FUZZ_SIGNS[i] * FUZZOFF;
+        }
+        return out;
+    }
 
     public static int fuzzpos = 0;
+
+    // JavaFX-port deviation 41 — refresh FUZZOFF + the fuzzoffset
+    // table after Doomdef.setRenderMul. The sign pattern stays the
+    // same; only the magnitudes (= one row of the framebuffer)
+    // change with RENDER_WIDTH.
+    public static void resizeForRender() {
+        if (FUZZOFF != Doomdef.RENDER_WIDTH) {
+            FUZZOFF = Doomdef.RENDER_WIDTH;
+            fuzzoffset = buildFuzzOffset();
+        }
+    }
 
     // --- Player-color translation ---
 

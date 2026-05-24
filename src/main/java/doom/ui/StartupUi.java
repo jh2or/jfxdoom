@@ -67,7 +67,7 @@ public final class StartupUi {
 
     @FunctionalInterface
     public interface LaunchCallback {
-        void onLaunch(String[] args, DisplayMode display);
+        void onLaunch(String[] args, DisplayMode display, int renderMul);
     }
 
     private final TextField iwadField = new TextField();
@@ -75,6 +75,21 @@ public final class StartupUi {
             new ListView<>(FXCollections.observableArrayList());
     private final ComboBox<DisplayMode> displayBox =
             new ComboBox<>(FXCollections.observableArrayList(DisplayMode.values()));
+    // Render-scale entries: label + the RENDER_MUL value passed to
+    // Doomdef.setRenderMul. 1x is vanilla 320x200 sample density;
+    // 2..4x trade CPU for crisper walls / floors / sprites.
+    public static final class RenderScale {
+        public final int mul;
+        public final String label;
+        public RenderScale(int mul, String label) { this.mul = mul; this.label = label; }
+        @Override public String toString() { return label; }
+    }
+    private final ComboBox<RenderScale> renderScaleBox =
+            new ComboBox<>(FXCollections.observableArrayList(
+                    new RenderScale(1, "1× (vanilla 320×200)"),
+                    new RenderScale(2, "2× (640×400)"),
+                    new RenderScale(3, "3× (960×600)"),
+                    new RenderScale(4, "4× (1280×800)")));
     private final CheckBox expertMode = new CheckBox("Expert mode");
 
     private final ComboBox<String> skillBox = new ComboBox<>(FXCollections.observableArrayList(
@@ -105,10 +120,12 @@ public final class StartupUi {
     // game session and we want to remember the last IWAD).
     private String initialIwad;
     private DisplayMode initialDisplay = DisplayMode.SCALE_3X;
+    private int initialRenderMul = 2;
 
-    public StartupUi prefill(String iwad, DisplayMode display) {
+    public StartupUi prefill(String iwad, DisplayMode display, int renderMul) {
         this.initialIwad = iwad;
         if (display != null) this.initialDisplay = display;
+        if (renderMul >= 1 && renderMul <= 4) this.initialRenderMul = renderMul;
         return this;
     }
 
@@ -130,6 +147,12 @@ public final class StartupUi {
         // Apply prefill values.
         if (initialIwad != null) iwadField.setText(initialIwad);
         displayBox.setValue(initialDisplay);
+        for (RenderScale rs : renderScaleBox.getItems()) {
+            if (rs.mul == initialRenderMul) { renderScaleBox.setValue(rs); break; }
+        }
+        if (renderScaleBox.getValue() == null) {
+            renderScaleBox.setValue(renderScaleBox.getItems().get(1)); // 2× default
+        }
 
         // ---- IWAD row ----
         Button iwadBrowse = new Button("Browse…");
@@ -172,6 +195,8 @@ public final class StartupUi {
         primary.add(pwadButtons,           2, r++);
         primary.add(new Label("Display:"), 0, r);
         primary.add(displayBox,            1, r++, 2, 1);
+        primary.add(new Label("Render:"),  0, r);
+        primary.add(renderScaleBox,        1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);
@@ -248,7 +273,11 @@ public final class StartupUi {
                 Bindings.createBooleanBinding(
                         () -> iwadField.getText() == null || iwadField.getText().isBlank(),
                         iwadField.textProperty()));
-        launch.setOnAction(e -> callback.onLaunch(assembleArgs(), displayBox.getValue()));
+        launch.setOnAction(e -> {
+            RenderScale rs = renderScaleBox.getValue();
+            int mul = (rs != null) ? rs.mul : 2;
+            callback.onLaunch(assembleArgs(), displayBox.getValue(), mul);
+        });
         Region spring = new Region();
         HBox.setHgrow(spring, Priority.ALWAYS);
         HBox launchRow = new HBox(spring, launch);

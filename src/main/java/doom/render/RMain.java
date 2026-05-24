@@ -97,8 +97,9 @@ public final class RMain {
 
     // r_main.c — inverse of viewangletox. Indexed by screen-x, returns
     // the smallest viewangle that maps back to that x. Built by
-    // R_InitTextureMapping.
-    public static final int[] xtoviewangle = new int[Doomdef.RENDER_WIDTH + 1];
+    // R_InitTextureMapping. Non-final so resizeForRender() can
+    // re-allocate when the JavaFX shell switches render scale.
+    public static int[] xtoviewangle = new int[Doomdef.RENDER_WIDTH + 1];
 
     // r_main.c — fixed-point centre + projection. Set by
     // R_ExecuteSetViewSize.
@@ -152,12 +153,31 @@ public final class RMain {
 
     // r_main.c — per-row inverse scale and per-column distance scale.
     // R_MapPlane uses them to compute texture xfrac/yfrac per row.
-    public static final int[] yslope    = new int[Doomdef.RENDER_HEIGHT];
-    public static final int[] distscale = new int[Doomdef.RENDER_WIDTH];
+    public static int[] yslope    = new int[Doomdef.RENDER_HEIGHT];
+    public static int[] distscale = new int[Doomdef.RENDER_WIDTH];
 
     // r_main.c — per-column initial sprite-clip ceiling (= viewheight
     // at default). Read by r_things during sprite drawing.
-    public static final short[] screenheightarray = new short[Doomdef.RENDER_WIDTH];
+    public static short[] screenheightarray = new short[Doomdef.RENDER_WIDTH];
+
+    // JavaFX-port deviation 41 — re-allocate the scratch arrays
+    // sized by RENDER_WIDTH / RENDER_HEIGHT after Doomdef.setRenderMul
+    // bumped the constants. Called by JfxDoomApp.bootGame before
+    // dDoomMain so rInit / rExecuteSetViewSize see the right shapes.
+    public static void resizeForRender() {
+        if (xtoviewangle.length != Doomdef.RENDER_WIDTH + 1) {
+            xtoviewangle = new int[Doomdef.RENDER_WIDTH + 1];
+        }
+        if (yslope.length != Doomdef.RENDER_HEIGHT) {
+            yslope = new int[Doomdef.RENDER_HEIGHT];
+        }
+        if (distscale.length != Doomdef.RENDER_WIDTH) {
+            distscale = new int[Doomdef.RENDER_WIDTH];
+        }
+        if (screenheightarray.length != Doomdef.RENDER_WIDTH) {
+            screenheightarray = new short[Doomdef.RENDER_WIDTH];
+        }
+    }
 
     // r_main.c — view-size queue. R_SetViewSize sets these so the
     // change applies at the next R_ExecuteSetViewSize.

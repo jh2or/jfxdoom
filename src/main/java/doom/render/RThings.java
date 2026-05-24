@@ -41,12 +41,20 @@ public final class RThings {
 
     // r_things.c line 81 — negonearray[SCREENWIDTH] filled with -1
     // sentinels, used by r_segs as a default sprtopclip / negative
-    // baseline.
-    public static final short[] negonearray = new short[Doomdef.RENDER_WIDTH];
+    // baseline. Non-final so resizeForRender() can swap it when
+    // the JavaFX shell changes render scale per session.
+    public static short[] negonearray = new short[Doomdef.RENDER_WIDTH];
 
     static {
-        for (int i = 0; i < negonearray.length; i++) {
-            negonearray[i] = -1;
+        java.util.Arrays.fill(negonearray, (short) -1);
+    }
+
+    // JavaFX-port deviation 41 — re-allocate per-column scratch
+    // arrays after Doomdef.setRenderMul.
+    public static void resizeForRender() {
+        if (negonearray.length != Doomdef.RENDER_WIDTH) {
+            negonearray = new short[Doomdef.RENDER_WIDTH];
+            java.util.Arrays.fill(negonearray, (short) -1);
         }
     }
 

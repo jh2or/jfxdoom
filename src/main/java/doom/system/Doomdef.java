@@ -26,14 +26,30 @@ public final class Doomdef {
     // The 3D view (R_RenderPlayerView and everything it calls) writes
     // to a *separate* high-resolution framebuffer (VVideo.viewBuffer)
     // that is RENDER_WIDTH × RENDER_HEIGHT. RENDER_MUL = 1 keeps the
-    // engine at vanilla 320×200 sample density; bump it to 2 or
-    // higher for finer wall / floor / sprite sampling. The UI buffers
+    // engine at vanilla 320×200 sample density; bump it to 2..4 for
+    // finer wall / floor / sprite sampling. The UI buffers
     // (screens[0..3]) stay at SCREENWIDTH × SCREENHEIGHT regardless,
     // and JfxDoomApp composites the two at blit time.
+    //
+    // RENDER_MUL is *mutable* — the JavaFX Startup UI lets the user
+    // pick it per session. Call setRenderMul(N) before the engine
+    // boots; the renderer modules expose resize hooks the boot
+    // sequence chains in (RMain.resizeForRender, RPlane, RThings,
+    // RDraw) so static arrays end up at the new size.
     // ----------------------------------------------------------------
-    public static final int RENDER_MUL    = 2;
-    public static final int RENDER_WIDTH  = SCREENWIDTH  * RENDER_MUL;
-    public static final int RENDER_HEIGHT = SCREENHEIGHT * RENDER_MUL;
+    public static final int MAX_RENDER_MUL = 4;
+
+    public static int RENDER_MUL    = 2;
+    public static int RENDER_WIDTH  = SCREENWIDTH  * RENDER_MUL;
+    public static int RENDER_HEIGHT = SCREENHEIGHT * RENDER_MUL;
+
+    public static void setRenderMul(int mul) {
+        if (mul < 1) mul = 1;
+        if (mul > MAX_RENDER_MUL) mul = MAX_RENDER_MUL;
+        RENDER_MUL    = mul;
+        RENDER_WIDTH  = SCREENWIDTH  * mul;
+        RENDER_HEIGHT = SCREENHEIGHT * mul;
+    }
 
     // doomdef.h line 119
     public static final int MAXPLAYERS = 4;
