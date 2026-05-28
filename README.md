@@ -3,16 +3,15 @@
 A faithful Java/JavaFX port of `linuxdoom-1.10`. Loads original
 Doom WAD files and runs the engine at 35 Hz in a JavaFX window.
 See [`PORT_COMMENTS.md`](PORT_COMMENTS.md) for notes on how the
-port was actually built (planned ideas that didn't survive
-contact with reality, deviations worth knowing about).
+port was actually built (experiences, deviations from original plans, ...)
 
 ## Prerequisites
 
-| Need                 | Version       | Notes                                     |
-|----------------------|---------------|-------------------------------------------|
-| JDK                  | 21+           | Gradle reads `release = 21` for bytecode. |
-| Gradle               | 8.x           | Bundled wrapper at `gradlew` / `gradlew.bat`. |
-| A Doom WAD           | retail / shareware / Doom II | `DOOM.WAD`, `DOOM2.WAD`, or the shareware `DOOM1.WAD`. |
+| Need       | Version                      | Notes                                                  |
+| ---------- | ---------------------------- | ------------------------------------------------------ |
+| JDK        | 21+                          | Gradle reads `release = 21` for bytecode.              |
+| Gradle     | 8.x                          | Bundled wrapper at `gradlew` / `gradlew.bat`.          |
+| A Doom WAD | retail / shareware / Doom II | `DOOM.WAD`, `DOOM2.WAD`, or the shareware `DOOM1.WAD`. |
 
 Place the WAD anywhere readable; the path is supplied via `-iwad`.
 A common spot is `reference-wads/DOOM.WAD` next to the source.
@@ -72,19 +71,19 @@ UI exposes the same set):
 
 ## Controls
 
-| Key                           | Action                  |
-|-------------------------------|-------------------------|
-| Arrow keys                    | Move / turn             |
-| `,` / `.`                     | Strafe L / R            |
-| RCtrl                         | Fire                    |
-| Space                         | Use / open doors        |
-| RAlt + arrows                 | Strafe with arrows      |
-| RShift                        | Run                     |
-| 1..7                          | Weapon select           |
-| Tab                           | Automap                 |
-| Esc                           | Menu open / close       |
-| F1..F11                       | Help / save / load / volume / detail / quicksave / endgame / messages / quickload / quit / gamma |
-| `+` / `-`                     | Screen size up / down   |
+| Key           | Action                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Arrow keys    | Move / turn                                                                                      |
+| `,` / `.`     | Strafe L / R                                                                                     |
+| RCtrl         | Fire                                                                                             |
+| Space         | Use / open doors                                                                                 |
+| RAlt + arrows | Strafe with arrows                                                                               |
+| RShift        | Run                                                                                              |
+| 1..7          | Weapon select                                                                                    |
+| Tab           | Automap                                                                                          |
+| Esc           | Menu open / close                                                                                |
+| F1..F11       | Help / save / load / volume / detail / quicksave / endgame / messages / quickload / quit / gamma |
+| `+` / `-`     | Screen size up / down                                                                            |
 
 Cheat codes (type while playing): `iddqd` (god), `idfa` /
 `idkfa` (full arsenal), `idclip` (noclip), `idclev<E><M>`,
