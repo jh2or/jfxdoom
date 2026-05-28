@@ -172,3 +172,23 @@ gradlew test
 ≈955 JUnit 5 tests covering math, WAD I/O, rendering primitives,
 playsim, sound, menu, intermission, finale, and the screen-wipe
 state machine.
+
+## License
+
+**jfxdoom** is distributed under the GNU General Public License,
+Version 2 — see [LICENSE](LICENSE).
+
+The original DOOM source code (`reference/linuxdoom-1.10/`) is
+© 1993-1996 id Software, Inc., released by id Software /
+ZeniMax Media in 1999 under GPL v2. Because this Java/JavaFX
+port is a derivative work, it inherits the same license.
+
+- DOOM source code © 1993-1996 id Software, Inc., © ZeniMax Media
+- jfxdoom (this Java/JavaFX port) © jh2or
+
+**Doom WAD files are not covered by this license.** They are
+proprietary content owned by id Software / ZeniMax / Microsoft
+and are not redistributed with this repository. The shareware
+`DOOM1.WAD` is freely redistributable under id's original
+shareware terms; the retail `DOOM.WAD` / `DOOM2.WAD` and
+commercial Doom data are not — supply your own copy.
