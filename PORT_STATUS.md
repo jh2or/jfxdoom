@@ -13,7 +13,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
   - `Partial` — only some functions ported.
   - `Blocked` — see notes.
   - `Pending` — not yet started.
-- **Tier** — Trivial (cheap), Standard (mid), Hard (heavy). See CLAUDE.md §9.
+- **Tier** — Trivial, Standard, Hard. Originally tied to a model-routing scheme (cheap / mid / heavy) that was never used in practice; see [`PORT_COMMENTS.md`](PORT_COMMENTS.md). Kept here as a rough difficulty estimate.
 
 ## 1 — Fixed point & math foundation
 

@@ -141,91 +141,7 @@ For each C file, follow this exact sequence. **Do not skip steps.**
 
 ---
 
-## 8. Model Routing — When to Use Which Model
-
-This project uses multiple model tiers to keep costs reasonable. Route tasks as follows:
-
-### Cheap tier (Haiku 4.5, Codestral for drafts)
-
-Use for:
-
-- Reading and summarizing C files
-- Translating data structures, enums, constants
-- Translating pure functions (no globals, no I/O, no state)
-- Generating JUnit test skeletons
-- Updating `PORT_STATUS.md`
-- Writing Javadoc
-- Formatting / renaming passes
-- First-draft translations of modules classified as **Trivial**
-
-### Mid tier (Sonnet 4.6) — default
-
-Use for:
-
-- Translating modules classified as **Standard**
-- Debugging test failures on first attempt
-- Wiring modules together
-- Code review of cheap-tier output
-- Most playsim code (`p_*.c` except the tricky ones)
-
-### Heavy tier (Opus 4.7)
-
-Reserve for:
-
-- Modules classified as **Hard** (see §9)
-- Bugs that survived 2 mid-tier fix attempts
-- Architectural decisions affecting multiple modules
-- Demo-compatibility bugs requiring byte-exact reasoning
-- Renderer pointer-arithmetic files (`r_draw.c`, `r_segs.c`, `r_things.c`)
-
-### Escalation ladder
-
-Every task starts on the tier matching the classification in `PORT_STATUS.md`. If the tier fails:
-
-1. Try once more on the same tier.
-2. Escalate one tier up.
-3. Try twice on that tier.
-4. Escalate again, or flag for human review.
-
-**Never start on heavy tier by default.** Most tasks resolve cheaply. Prove the task is hard before paying for hard.
-
-### Batch the boring
-
-Use Anthropic's Message Batches API (half cost, async) for:
-
-- Javadoc generation passes
-- Consistency review passes
-- Test case variation generation
-
-### Cache-friendly context
-
-These are stable and should stay in cached prompt context across sessions:
-
-- This `CLAUDE.md`
-- `reference/linuxdoom-1.10/doomdef.h`
-- `reference/linuxdoom-1.10/doomtype.h`
-- `reference/linuxdoom-1.10/r_defs.h`
-- Already-verified Java classes the current task depends on
-
-Avoid churning `CLAUDE.md` mid-project — cache invalidation costs more than it saves.
-
----
-
-## 9. Module Classification Reference
-
-Each C file in `PORT_STATUS.md` carries a classification. Use it to pick the starting tier.
-
-**Trivial** (→ cheap tier): `m_fixed.c`, `m_bbox.c`, `m_random.c`, `tables.c`, `m_swap.c`, `m_argv.c`, `m_cheat.c`
-
-**Standard** (→ mid tier): most `p_*.c`, `s_sound.c`, `g_game.c`, `am_map.c`, `hu_*.c`, `st_*.c`, `f_*.c`, `wi_stuff.c`, `m_menu.c`, `d_main.c`, `d_net.c`
-
-**Hard** (→ heavy tier): `r_draw.c`, `r_segs.c`, `r_things.c`, `r_bsp.c`, `r_plane.c`, `r_main.c`, `r_data.c`, `w_wad.c`, `z_zone.c`, `i_sound.c`, `i_video.c`
-
-If uncertain, classify as Standard and escalate on failure.
-
----
-
-## 10. Dependency Order (the build order)
+## 8. Dependency Order (the build order)
 
 Never port a module before its dependencies are Verified. The valid order:
 
@@ -233,7 +149,7 @@ Never port a module before its dependencies are Verified. The valid order:
 
 ---
 
-## 11. JavaFX Layer (deferred)
+## 9. JavaFX Layer (deferred)
 
 Do not touch the JavaFX layer until the headless engine renders frames correctly into a `byte[320*200]` framebuffer and produces audio samples into buffers. The JavaFX shell is a thin adapter:
 
@@ -246,7 +162,7 @@ The shell should be under 500 lines.
 
 ---
 
-## 12. Things You Must Not Do
+## 10. Things You Must Not Do
 
 - Do not use `float` or `double` where the C uses `fixed_t`.
 - Do not add null checks the C didn't have.
@@ -261,20 +177,19 @@ The shell should be under 500 lines.
 
 ---
 
-## 13. When Stuck
+## 11. When Stuck
 
-If a translation doesn't match expected behavior after two fix attempts at your current tier:
+If a translation doesn't match expected behavior after two fix attempts:
 
 1. Re-read the C source. Look for pointer arithmetic, byte-order assumptions, signed/unsigned casts, union access, or macro expansions you may have missed.
 2. Check `reference/linuxdoom-1.10/<file>.h` for macros that affect behavior.
-3. Escalate one model tier.
-4. If still stuck, flag in `PORT_STATUS.md` with status `Blocked` and a one-paragraph description of the symptom. Ask the human.
+3. If still stuck, flag in `PORT_STATUS.md` with status `Blocked` and a one-paragraph description of the symptom. Ask the human.
 
 Never silently commit broken code. Never mark Verified something that doesn't pass tests.
 
 ---
 
-## 14. Commit Hygiene
+## 12. Commit Hygiene
 
 - One commit per module when possible.
 - Commit message format: `port: <file.c> → <Class.java>` for translations, `fix: <description>` for bug fixes, `test: <description>` for test changes.
@@ -283,7 +198,7 @@ Never silently commit broken code. Never mark Verified something that doesn't pa
 
 ---
 
-## 15. Definition of Done (for the whole project)
+## 13. Definition of Done (for the whole project)
 
 The port is done when:
 

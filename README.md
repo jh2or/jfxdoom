@@ -2,6 +2,9 @@
 
 A faithful Java/JavaFX port of `linuxdoom-1.10`. Loads original
 Doom WAD files and runs the engine at 35 Hz in a JavaFX window.
+See [`PORT_COMMENTS.md`](PORT_COMMENTS.md) for notes on how the
+port was actually built (planned ideas that didn't survive
+contact with reality, deviations worth knowing about).
 
 ## Prerequisites
 
