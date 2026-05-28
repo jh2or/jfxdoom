@@ -35,6 +35,10 @@ bin/
 # WADs (not checked in)
 reference-wads/*.wad
 
+# Claude Code per-session state (contains absolute Windows /
+# Unix paths with the user's home directory).
+.claude/
+
 # Keep the gradle wrapper jar exception
 !gradle/wrapper/gradle-wrapper.jar
 default.cfg
