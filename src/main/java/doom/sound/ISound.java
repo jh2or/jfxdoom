@@ -116,8 +116,13 @@ public final class ISound {
             line = AudioSystem.getSourceDataLine(OUTPUT_FORMAT);
             line.open(OUTPUT_FORMAT, LINE_BUFFER_BYTES);
             line.start();
-        } catch (LineUnavailableException e) {
-            // No audio device — degrade to silent.
+        } catch (LineUnavailableException | IllegalArgumentException
+                | SecurityException e) {
+            // No usable audio device — degrade to silent. The
+            // Windows Sandbox (and other headless / no-audio
+            // environments) raise IllegalArgumentException from
+            // AudioSystem.getSourceDataLine instead of the
+            // checked LineUnavailableException.
             line = null;
         }
     }
@@ -154,9 +159,11 @@ public final class ISound {
             // reference avoids relying on that contract.
             musicReceiver = musicSynth.getReceiver();
             musicSequencer.getTransmitter().setReceiver(musicReceiver);
-        } catch (MidiUnavailableException e) {
-            // No MIDI device — silent music. Same shape as iInitSound
-            // bailing on LineUnavailableException.
+        } catch (MidiUnavailableException | IllegalArgumentException
+                | SecurityException e) {
+            // No MIDI device — silent music. Same shape as
+            // iInitSound. Headless / no-audio environments may
+            // raise IllegalArgumentException out of MidiSystem.
             musicSequencer = null;
             musicSynth = null;
             musicReceiver = null;
