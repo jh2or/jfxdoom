@@ -2,6 +2,10 @@
 
 A faithful Java/JavaFX port of `linuxdoom-1.10`. Loads original
 Doom WAD files and runs the engine at 35 Hz in a JavaFX window.
+Additionally, render resolution and display scaling has been added.
+
+The port works on windows and linux. (Tested Windows 11 and Ubuntu 26.04)
+
 See [`PORT_COMMENTS.md`](PORT_COMMENTS.md) for notes on how the
 port was actually built (experiences, deviations from original plans, ...)
 
@@ -10,41 +14,54 @@ port was actually built (experiences, deviations from original plans, ...)
 | Need       | Version                      | Notes                                                  |
 | ---------- | ---------------------------- | ------------------------------------------------------ |
 | JDK        | 21+                          | Gradle reads `release = 21` for bytecode.              |
-| Gradle     | 8.x                          | Bundled wrapper at `gradlew` / `gradlew.bat`.          |
 | A Doom WAD | retail / shareware / Doom II | `DOOM.WAD`, `DOOM2.WAD`, or the shareware `DOOM1.WAD`. |
 
-Place the WAD anywhere readable; the path is supplied via `-iwad`.
-A common spot is `reference-wads/DOOM.WAD` next to the source.
+Gradle itself is **not** a prerequisite — the bundled wrapper
+(`gradlew` / `gradlew.bat`) downloads the right version on first
+run.
 
 ## Run from source
 
 ```
-gradlew run
+./gradlew run
 ```
 
 Launched with no arguments, jfxdoom opens a **Launchpad** —
 browse to a WAD, click **Launch ▶**, and the engine boots the
 same way the original `doom.exe` would (title loop, no level
-skip). Flip the **Expert mode** switch to reveal skill / warp /
+skip). Two resolution knobs sit in the primary section:
+
+- **Display Resolution** — sizes the window. Windowed 1×–5× the
+  logical 320×200 grid, or Fullscreen with letterbox/pillarbox
+  bars when the monitor aspect differs from 4:3.
+- **Internal Render Resolution** — controls the 3D renderer's
+  sample density. 1× is vanilla 320×200; 2× / 3× / 4× render
+  the walls, floors and sprites at correspondingly higher
+  detail. The HUD, status bar, menu and title art always render
+  at 320×200 regardless and are composited on top.
+
+Flip the **Expert mode** switch to reveal skill / warp /
 episode / gameplay flags / demo recording.
 
-To skip the UI and boot straight into the engine, pass any
-CLI argument:
+To skip the Launchpad and boot straight into the engine, pass
+any CLI argument:
 
 ```
-gradlew run --args="-iwad reference-wads/DOOM.WAD"
+./gradlew run --args="-iwad reference-wads/DOOM.WAD"
 ```
 
-Without `-warp` the engine boots into the title-screen demo loop
-(TITLEPIC → demo1 → CREDIT → demo2 → HELP2 → demo3) the same way
-the original does. Press **ESC** to open the menu, **F1** for
+Without `-warp` the engine boots into the title-screen demo
+loop (Doom 1: TITLEPIC → demo1 → CREDIT → demo2 → HELP2 →
+demo3; Doom 2 has its own variant without HELP2) — same as
+the original. Press **ESC** to open the menu, **ENTER** on
+the title screen as a shortcut into the menu, **F1** for
 help, **F8** to toggle messages, **F11** to cycle gamma.
 
 Skip the title loop and drop straight onto a map:
 
 ```
-gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1"
-gradlew run --args="-iwad reference-wads/DOOM2.WAD -warp 5"
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1"
+./gradlew run --args="-iwad reference-wads/DOOM2.WAD -warp 5"
 ```
 
 Command-line flags supported (mirroring the C — the Launchpad
@@ -92,13 +109,13 @@ Cheat codes (type while playing): `iddqd` (god), `idfa` /
 
 ## Building a redistributable bundle
 
-`gradle run` is the dev path. To produce something you can hand
-to someone else without a Gradle install:
+`./gradlew run` is the dev path. To produce something you can
+hand to someone else without a Gradle install:
 
 ### Self-contained launcher directory (recommended)
 
 ```
-gradlew installDist
+./gradlew installDist
 ```
 
 The output lands in `build/install/jfxdoom/`. Run it via:
@@ -117,8 +134,8 @@ machine.
 A tarball / zip suitable for upload:
 
 ```
-gradlew distZip          # build/distributions/jfxdoom-0.1.0.zip
-gradlew distTar          # build/distributions/jfxdoom-0.1.0.tar
+./gradlew distZip          # build/distributions/jfxdoom-0.1.0.zip
+./gradlew distTar          # build/distributions/jfxdoom-0.1.0.tar
 ```
 
 ### Single executable installer (`jpackage`)
@@ -154,24 +171,32 @@ jfxdoom/
 │   ├── render/       software renderer
 │   ├── play/         playsim, AI, physics
 │   ├── sound/        ISound (javax.sound.sampled) + MUS→MIDI
-│   └── ui/           JavaFX shell + menu / status bar / HUD / wipe / finale
-├── src/test/java/doom/         JUnit 5 suite (≈955 tests)
+│   └── ui/           JavaFX shell + Launchpad + menu / status bar / HUD / wipe / finale
+├── src/test/java/doom/         JUnit 5 suite (≈963 tests)
 ├── reference-wads/             your WAD goes here (gitignored)
+├── build.gradle.kts            Gradle build script
+├── settings.gradle.kts         Gradle project settings
+├── gradle.properties           Gradle properties
 ├── PORT_STATUS.md              per-module port status + deviations list
+├── PORT_COMMENTS.md            port-experience notes (human-written)
+├── INITIAL_PROMPT.md           original prompt that bootstrapped the port
+├── CLAUDE.md                   live agent instructions (translation rules)
+├── LICENSE                     GPL v2
 └── README.md                   this file
 ```
 
-See `PORT_STATUS.md` for the per-module breakdown of which C
-files have landed, what deviates from the C source (and why),
-and what's still open (ENDOOM screen, mouse / joystick input).
+See [`PORT_STATUS.md`](PORT_STATUS.md) for the per-module
+breakdown of which C files have landed, what deviates from the
+C source (and why), and what's still open (ENDOOM screen,
+mouse / joystick input).
 
 ## Tests
 
 ```
-gradlew test
+./gradlew test
 ```
 
-≈955 JUnit 5 tests covering math, WAD I/O, rendering primitives,
+≈963 JUnit 5 tests covering math, WAD I/O, rendering primitives,
 playsim, sound, menu, intermission, finale, and the screen-wipe
 state machine.
 
