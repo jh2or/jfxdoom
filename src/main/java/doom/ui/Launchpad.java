@@ -1,13 +1,13 @@
-// Startup form shown before the engine boots when no CLI args
-// were supplied. The primary task is WAD / PWAD selection — once
-// an IWAD is picked the user can launch immediately and the
-// engine boots the same way the original doom.exe did (title
-// loop, menus, no level skip). An "Expert mode" toggle reveals
-// the rest of the README flags (-warp, -skill, -episode,
-// -nomonsters, -respawn, -fast, -deathmatch, -altdeath, -config,
-// -record, -playdemo, -timedemo, -maxdemo); when the toggle is
-// off, none of those values reach the args array even if the
-// user previously typed into them.
+// Launchpad — the JavaFX form shown before the engine boots when
+// no CLI args were supplied. The primary task is WAD / PWAD
+// selection — once an IWAD is picked the user can launch
+// immediately and the engine boots the same way the original
+// doom.exe did (title loop, menus, no level skip). An "Expert
+// mode" toggle reveals the rest of the README flags (-warp,
+// -skill, -episode, -nomonsters, -respawn, -fast, -deathmatch,
+// -altdeath, -config, -record, -playdemo, -timedemo, -maxdemo);
+// when the toggle is off, none of those values reach the args
+// array even if the user previously typed into them.
 package doom.ui;
 
 import javafx.beans.binding.Bindings;
@@ -41,7 +41,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class StartupUi {
+public final class Launchpad {
 
     public enum DisplayMode {
         SCALE_1X(1, false, "Windowed 1× (320×200)"),
@@ -119,10 +119,10 @@ public final class StartupUi {
     // Optional pre-fill (e.g. when returning from a finished
     // game session and we want to remember the last IWAD).
     private String initialIwad;
-    private DisplayMode initialDisplay = DisplayMode.SCALE_3X;
-    private int initialRenderMul = 2;
+    private DisplayMode initialDisplay = DisplayMode.SCALE_4X;
+    private int initialRenderMul = 1;
 
-    public StartupUi prefill(String iwad, DisplayMode display, int renderMul) {
+    public Launchpad prefill(String iwad, DisplayMode display, int renderMul) {
         this.initialIwad = iwad;
         if (display != null) this.initialDisplay = display;
         if (renderMul >= 1 && renderMul <= 4) this.initialRenderMul = renderMul;
@@ -151,7 +151,7 @@ public final class StartupUi {
             if (rs.mul == initialRenderMul) { renderScaleBox.setValue(rs); break; }
         }
         if (renderScaleBox.getValue() == null) {
-            renderScaleBox.setValue(renderScaleBox.getItems().get(1)); // 2× default
+            renderScaleBox.setValue(renderScaleBox.getItems().get(0)); // 1× vanilla default
         }
 
         // ---- IWAD row ----
@@ -193,10 +193,10 @@ public final class StartupUi {
         primary.add(new Label("PWADs:"),   0, r);
         primary.add(pwadList,              1, r);
         primary.add(pwadButtons,           2, r++);
-        primary.add(new Label("Display:"), 0, r);
-        primary.add(displayBox,            1, r++, 2, 1);
-        primary.add(new Label("Render:"),  0, r);
-        primary.add(renderScaleBox,        1, r++, 2, 1);
+        primary.add(new Label("Display Resolution:"),          0, r);
+        primary.add(displayBox,                                 1, r++, 2, 1);
+        primary.add(new Label("Internal Render Resolution:"),  0, r);
+        primary.add(renderScaleBox,                             1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);

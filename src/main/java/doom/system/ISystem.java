@@ -127,7 +127,7 @@ public final class ISystem {
 
     // Clear the `quitting` re-entry guard so a subsequent
     // iQuit-triggered teardown can run again. Used by the
-    // JavaFX Startup UI when the user returns to the launcher
+    // JavaFX Launchpad when the user returns to the launcher
     // and then launches a fresh game in-process.
     public static void iResetForRelaunch() {
         quitting = false;

@@ -12,7 +12,7 @@
 //
 // Boot (no-args / launcher path):
 //   1. JfxDoomApp.main(args) → Application.launch → start(Stage).
-//   2. start() shows the StartupUi scene. The user picks a WAD
+//   2. start() shows the Launchpad scene. The user picks a WAD
 //      and a DisplayMode (windowed Nx or fullscreen) and clicks
 //      Launch.
 //   3. The launch callback hands control to bootGame(), which
@@ -23,7 +23,7 @@
 //      iQuit), the overridden ISystem.quitHook calls
 //      returnToLauncher() instead of System.exit — we stop the
 //      timer, drop fullscreen, and switch the scene back to a
-//      fresh StartupUi. Closing the window is a real exit (stop()
+//      fresh Launchpad. Closing the window is a real exit (stop()
 //      sets shuttingDown and the quit hook honours it).
 //
 // Boot (CLI-args path):
@@ -70,7 +70,7 @@ public final class JfxDoomApp extends Application {
     // into argb. JavaFX then upscales argb → window by the
     // user's chosen display scale.
     //
-    // RENDER_MUL is mutable (the Startup UI lets the user pick a
+    // RENDER_MUL is mutable (the Launchpad lets the user pick a
     // render scale per session). The argb / pixelBuffer / image
     // triple is re-created in bootGame after Doomdef.setRenderMul
     // bumps the constants — UI_W is fixed (always 320) and the
@@ -79,7 +79,7 @@ public final class JfxDoomApp extends Application {
     private static final int UI_W = Doomdef.SCREENWIDTH;
     private static final double DOOM_ASPECT = 320.0 / 200.0;
     // Default windowed scale for the CLI-driven boot path.
-    private static final int DEFAULT_SCALE = 3;
+    private static final int DEFAULT_SCALE = 4;
 
     private int[] argb;
     private PixelBuffer<IntBuffer> pixelBuffer;
@@ -93,8 +93,8 @@ public final class JfxDoomApp extends Application {
     private boolean hasBootedGame;
     private boolean shuttingDown;
     private String lastIwad;
-    private StartupUi.DisplayMode lastDisplay = StartupUi.DisplayMode.SCALE_3X;
-    private int lastRenderMul = 2;
+    private Launchpad.DisplayMode lastDisplay = Launchpad.DisplayMode.SCALE_4X;
+    private int lastRenderMul = 1;
 
     public static void main(String[] args) {
         launchArgs = args;
@@ -114,16 +114,16 @@ public final class JfxDoomApp extends Application {
         };
 
         if (launchArgs.length > 0) {
-            // CLI-driven boot — skip the Startup UI entirely.
+            // CLI-driven boot — skip the Launchpad entirely.
             captureLastFromArgs(launchArgs);
-            bootGame(stage, launchArgs, StartupUi.DisplayMode.SCALE_3X, lastRenderMul);
+            bootGame(stage, launchArgs, Launchpad.DisplayMode.SCALE_4X, lastRenderMul);
         } else {
             showLauncher(stage);
         }
     }
 
     private void showLauncher(Stage stage) {
-        StartupUi ui = new StartupUi().prefill(lastIwad, lastDisplay, lastRenderMul);
+        Launchpad ui = new Launchpad().prefill(lastIwad, lastDisplay, lastRenderMul);
         Scene startupScene = ui.build(stage, (args, display, renderMul) -> {
             captureLastFromArgs(args);
             lastDisplay = display;
@@ -142,9 +142,9 @@ public final class JfxDoomApp extends Application {
 
     // Build the game canvas + key listeners, hand control to the
     // engine, then drive it at TICRATE. Called from start() (CLI
-    // path) or from the Startup UI's Launch callback.
+    // path) or from the Launchpad's Launch callback.
     private void bootGame(Stage stage, String[] args,
-                          StartupUi.DisplayMode display, int renderMul) {
+                          Launchpad.DisplayMode display, int renderMul) {
         // Apply the user's render-scale choice before any renderer
         // class allocates RENDER_*-sized scratch arrays. setRenderMul
         // updates the Doomdef constants; the resizeForRender calls
@@ -278,7 +278,7 @@ public final class JfxDoomApp extends Application {
             int vyEnd = vy + vh;
 
             // Read render dims dynamically (RENDER_MUL is a per-
-            // session value the Startup UI sets).
+            // session value the Launchpad sets).
             int renderW = Doomdef.RENDER_WIDTH;
             int renderH = Doomdef.RENDER_HEIGHT;
             int rm      = Doomdef.RENDER_MUL;
@@ -366,7 +366,7 @@ public final class JfxDoomApp extends Application {
     // Called from the overridden ISystem.quitHook. The engine has
     // already torn down audio and saved defaults by the time we
     // get here — we just stop the tic loop and swap back to a
-    // fresh StartupUi.
+    // fresh Launchpad.
     private void returnToLauncher(Stage stage) {
         if (animationTimer != null) {
             animationTimer.stop();

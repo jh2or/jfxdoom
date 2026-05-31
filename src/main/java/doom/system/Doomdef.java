@@ -31,7 +31,7 @@ public final class Doomdef {
     // (screens[0..3]) stay at SCREENWIDTH × SCREENHEIGHT regardless,
     // and JfxDoomApp composites the two at blit time.
     //
-    // RENDER_MUL is *mutable* — the JavaFX Startup UI lets the user
+    // RENDER_MUL is *mutable* — the JavaFX Launchpad lets the user
     // pick it per session. Call setRenderMul(N) before the engine
     // boots; the renderer modules expose resize hooks the boot
     // sequence chains in (RMain.resizeForRender, RPlane, RThings,
