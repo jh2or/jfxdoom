@@ -365,8 +365,9 @@ public final class JfxDoomApp extends Application {
 
     // Called from the overridden ISystem.quitHook. The engine has
     // already torn down audio and saved defaults by the time we
-    // get here — we just stop the tic loop and swap back to a
-    // fresh Launchpad.
+    // get here — we just stop the tic loop, show the ENDOOM text
+    // screen if the WAD carries one (DOS doom.exe painted it into
+    // VGA text mode on exit), and swap back to a fresh Launchpad.
     private void returnToLauncher(Stage stage) {
         if (animationTimer != null) {
             animationTimer.stop();
@@ -377,7 +378,79 @@ public final class JfxDoomApp extends Application {
         IVideo.finishUpdateHook = null;
         IVideo.setPaletteHook = null;
         IVideo.startTicHook = null;
-        showLauncher(stage);
+
+        // The WAD statics survive iQuit, so the lump is still
+        // readable here. Any failure (no WAD mounted, short lump)
+        // just skips the screen.
+        byte[] endoom = null;
+        try {
+            int lump = WWad.wCheckNumForName("ENDOOM");
+            if (lump >= 0) {
+                endoom = WWad.wCacheLumpNum(lump, ZZone.PU_CACHE);
+            }
+        } catch (Throwable t) {
+            endoom = null;
+        }
+        if (endoom != null && endoom.length >= Endoom.SCREEN_BYTES) {
+            showEndoom(stage, endoom);
+        } else {
+            showLauncher(stage);
+        }
+    }
+
+    // Paint the 80×25 ENDOOM text screen into a Canvas (8×16-px
+    // cells → 640×400) and wait for any key or click before
+    // continuing to the Launchpad. Glyph / palette / attribute
+    // decoding lives in Endoom (deviation 42).
+    private void showEndoom(Stage stage, byte[] lump) {
+        final int cellW = 8;
+        final int cellH = 16;
+        Canvas canvas = new Canvas(Endoom.COLS * cellW, Endoom.ROWS * cellH);
+        GraphicsContext g = canvas.getGraphicsContext2D();
+        g.setFont(javafx.scene.text.Font.font("Monospaced",
+                javafx.scene.text.FontWeight.BOLD, 14));
+        g.setTextBaseline(javafx.geometry.VPos.TOP);
+
+        for (int row = 0; row < Endoom.ROWS; row++) {
+            for (int col = 0; col < Endoom.COLS; col++) {
+                int idx = (row * Endoom.COLS + col) * 2;
+                char ch = Endoom.glyph(lump[idx] & 0xFF);
+                int attr = lump[idx + 1] & 0xFF;
+                g.setFill(argbToColor(Endoom.PALETTE[Endoom.bg(attr)]));
+                g.fillRect(col * cellW, row * cellH, cellW, cellH);
+                if (ch != ' ') {
+                    g.setFill(argbToColor(Endoom.PALETTE[Endoom.fg(attr)]));
+                    g.fillText(String.valueOf(ch), col * cellW, row * cellH);
+                }
+            }
+        }
+
+        StackPane root = new StackPane(canvas);
+        root.setStyle("-fx-background-color: black;");
+        Scene scene = new Scene(root);
+
+        // Any key or click dismisses. Guarded so a key press
+        // followed by a click doesn't rebuild the Launchpad twice.
+        final boolean[] dismissed = { false };
+        Runnable dismiss = () -> {
+            if (dismissed[0]) return;
+            dismissed[0] = true;
+            showLauncher(stage);
+        };
+        scene.setOnKeyPressed(e -> dismiss.run());
+        scene.setOnMouseClicked(e -> dismiss.run());
+
+        stage.setFullScreen(false);
+        stage.setScene(scene);
+        stage.setResizable(false);
+        stage.sizeToScene();
+        stage.centerOnScreen();
+        if (!stage.isShowing()) stage.show();
+    }
+
+    private static javafx.scene.paint.Color argbToColor(int argb) {
+        return javafx.scene.paint.Color.rgb(
+                (argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
     }
 
     // Resize the canvas inside the StackPane so 320:200 is

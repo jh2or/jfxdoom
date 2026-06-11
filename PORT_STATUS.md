@@ -119,11 +119,9 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 The C-side port is feature-complete; the remaining items are
 stretch goals that don't gate the engine.
 
-- **ENDOOM screen**: the C paints the `ENDOOM` WAD lump in DOS
-  text mode on quit. The Java port has no text-mode terminal —
-  ENDOOM would need a separate 80×25 text renderer in the
-  JavaFX shell (or an opt-in "throw the ENDOOM lump to stdout"
-  path). Currently not painted.
+- ~~**ENDOOM screen**~~ — done. The JavaFX shell paints the
+  ENDOOM lump into an 80×25 Canvas on quit (deviation 42);
+  any key / click continues to the Launchpad.
 - **Mouse navigation in M_Responder**: m_menu.c lines 1399–
   1446 read `ev_mouse` events with relative-motion deltas
   (`data2` / `data3`) to drive menu navigation + a click button
@@ -401,6 +399,37 @@ stretch goals that don't gate the engine.
       G_DoCompleted intermission flow lives with d_main / wi_stuff;
       the EV_ trigger callers in p_switch / p_spec only need the
       latch to fire. Same pattern as SSound's no-op stub.
+
+42. ENDOOM text screen in the JavaFX shell:
+    - DOS doom.exe copied the 4 000-byte `ENDOOM` lump into VGA
+      text memory (B800:0000) on exit — 80×25 cells of CP437
+      char + attribute byte. linuxdoom-1.10 never displayed it
+      (no DOS text mode under X11). The Java port paints it into
+      a 640×400 JavaFX Canvas (8×16-px cells) when the user
+      quits back to the Launchpad; any key / click dismisses.
+    - `doom.ui.Endoom` holds the platform-independent half:
+      embedded CP437 → Unicode glyph table (256 entries — not
+      the JDK's `IBM437` charset, which lives in the
+      `jdk.charsets` module that jlink-slimmed runtimes drop),
+      the VGA 16-colour text palette, and fg / bg / blink
+      attribute decoders. The blink bit is decoded but the
+      render is static.
+
+41. Hi-res renderer via two-buffer architecture:
+    - The 3D view renders into `VVideo.viewBuffer`
+      (RENDER_WIDTH × RENDER_HEIGHT, selectable 1×–4× of
+      320×200 from the Launchpad), while HUD / menu / status
+      bar / title art stay on the 320×200 `screens[0..3]` grid.
+      JfxDoomApp composites the two per frame (UI byte wins
+      where non-zero inside the viewport, after a per-frame
+      viewport clear via `IVideo.startFrameHook`).
+    - Visplane `top[]` / `bottom[]` widened byte[] → short[]
+      (y-coords past 255 would wrap — PrBoom's classic hi-res
+      blocker). `pspritescale` divides by BASE_WIDTH so the
+      weapon sprite keeps its on-screen size at any RENDER_MUL.
+      Renderer scratch arrays re-allocate per session via
+      `resizeForRender()` hooks (RMain / RPlane / RThings /
+      RDraw).
 
 40. `finetangent` extended to absorb r_segs.c OOB reads:
     - C `tables.c` lays `finetangent[4096]` immediately before

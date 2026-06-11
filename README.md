@@ -172,7 +172,7 @@ jfxdoom/
 │   ├── play/         playsim, AI, physics
 │   ├── sound/        ISound (javax.sound.sampled) + MUS→MIDI
 │   └── ui/           JavaFX shell + Launchpad + menu / status bar / HUD / wipe / finale
-├── src/test/java/doom/         JUnit 5 suite (≈963 tests)
+├── src/test/java/doom/         JUnit 5 suite (≈973 tests)
 ├── reference-wads/             your WAD goes here (gitignored)
 ├── build.gradle.kts            Gradle build script
 ├── settings.gradle.kts         Gradle project settings
@@ -187,8 +187,8 @@ jfxdoom/
 
 See [`PORT_STATUS.md`](PORT_STATUS.md) for the per-module
 breakdown of which C files have landed, what deviates from the
-C source (and why), and what's still open (ENDOOM screen,
-mouse / joystick input).
+C source (and why), and what's still open (mouse / joystick
+input).
 
 ## Tests
 
@@ -196,7 +196,7 @@ mouse / joystick input).
 ./gradlew test
 ```
 
-≈963 JUnit 5 tests covering math, WAD I/O, rendering primitives,
+≈973 JUnit 5 tests covering math, WAD I/O, rendering primitives,
 playsim, sound, menu, intermission, finale, and the screen-wipe
 state machine.
 
