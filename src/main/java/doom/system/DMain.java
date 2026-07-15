@@ -459,6 +459,12 @@ public final class DMain {
         boolean startingWipe = !wipeActive
                 && (Doomstat.gamestate != Doomstat.wipegamestate);
         if (startingWipe) {
+            // 3D-renderer mode leaves the view window of screens[0]
+            // at palette 0 (transparent cutout) — pull the SubScene's
+            // last frame in so the melt has real pixels to peel away.
+            if (doom.render3d.Fx3Renderer.active) {
+                doom.render3d.Fx3Renderer.captureViewToScreens0();
+            }
             doom.ui.FWipe.wipeStartScreen(0, 0,
                     Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT);
         }

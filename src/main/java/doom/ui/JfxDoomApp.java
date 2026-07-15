@@ -97,6 +97,11 @@ public final class JfxDoomApp extends Application {
     private int lastRenderMul = 1;
     private boolean lastFx3d;
 
+    // 3D-mode palette-flash tint (sub-palette entry 0) and the last
+    // applied fixedcolormap effect, updated from the render hook.
+    private javafx.scene.paint.Color fx3TintColor = javafx.scene.paint.Color.BLACK;
+    private int fx3LastFixedColormap;
+
     public static void main(String[] args) {
         launchArgs = args;
         Application.launch(JfxDoomApp.class, args);
@@ -208,6 +213,7 @@ public final class JfxDoomApp extends Application {
         // SubScene shows through. Unmanaged: positioned per frame in
         // finishUpdateHook to track the view window.
         javafx.scene.SubScene fx3Sub = null;
+        javafx.scene.shape.Rectangle fx3TintR = null;
         doom.render3d.Fx3Renderer.reset();
         if (fx3d) {
             if (javafx.application.Platform.isSupported(
@@ -215,6 +221,18 @@ public final class JfxDoomApp extends Application {
                 fx3Sub = doom.render3d.Fx3Renderer.subScene();
                 fx3Sub.setManaged(false);
                 fx3Sub.setVisible(false);
+                // Palette-flash approximation: damage/bonus/radsuit
+                // tints live in PLAYPAL sub-palettes, which only the
+                // 2D canvas obeys. Additively blending the tinted
+                // palette's "black" (entry 0 ≈ the pure tint
+                // component) over the SubScene reproduces the flash
+                // on the 3D view. Sits between SubScene and canvas.
+                fx3TintR = new javafx.scene.shape.Rectangle();
+                fx3TintR.setManaged(false);
+                fx3TintR.setVisible(false);
+                fx3TintR.setBlendMode(javafx.scene.effect.BlendMode.ADD);
+                fx3TintR.setMouseTransparent(true);
+                root.getChildren().add(0, fx3TintR);
                 root.getChildren().add(0, fx3Sub);
                 doom.render3d.Fx3Renderer.active = true;
             } else {
@@ -226,6 +244,7 @@ public final class JfxDoomApp extends Application {
             }
         }
         final javafx.scene.SubScene fx3SubScene = fx3Sub;
+        final javafx.scene.shape.Rectangle fx3Tint = fx3TintR;
 
         // Canvas / scene sizing uses the *UI* logical grid (320x200) ×
         // user-picked display scale. The renderer's RENDER_MUL only
@@ -336,13 +355,16 @@ public final class JfxDoomApp extends Application {
                         // zero (a menu/HUD overlay painted there
                         // this frame, post-startFrameHook clear),
                         // otherwise the 3D view's pixel — or, in
-                        // fx3d mode, a transparent hole so the
-                        // SubScene behind the canvas shows through.
+                        // fx3d mode, the weapon psprite pixel from
+                        // the (otherwise blank) view buffer, else a
+                        // transparent hole so the SubScene behind
+                        // the canvas shows through.
                         int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
                         if (uiPal != 0) {
                             argb[i] = palette[uiPal];
                         } else if (fx3) {
-                            argb[i] = 0;
+                            int wp = view[viewRowOff + x] & 0xff;
+                            argb[i] = (wp != 0) ? palette[wp] : 0;
                         } else {
                             argb[i] = palette[view[viewRowOff + x] & 0xff];
                         }
@@ -361,13 +383,59 @@ public final class JfxDoomApp extends Application {
                     javafx.geometry.Bounds cb = canvas.getBoundsInParent();
                     double sx = cb.getWidth() / renderW;
                     double sy = cb.getHeight() / renderH;
-                    fx3SubScene.setLayoutX(cb.getMinX() + vx * sx);
-                    fx3SubScene.setLayoutY(cb.getMinY() + vy * sy);
-                    fx3SubScene.setWidth(vw * sx);
-                    fx3SubScene.setHeight(vh * sy);
+                    double lx = cb.getMinX() + vx * sx;
+                    double ly = cb.getMinY() + vy * sy;
+                    double lw = vw * sx;
+                    double lh = vh * sy;
+                    fx3SubScene.setLayoutX(lx);
+                    fx3SubScene.setLayoutY(ly);
+                    fx3SubScene.setWidth(lw);
+                    fx3SubScene.setHeight(lh);
                     fx3SubScene.setVisible(true);
+
+                    // Palette flash: additive tint from the current
+                    // sub-palette's entry 0 (pure tint component).
+                    javafx.scene.paint.Color tint = fx3TintColor;
+                    boolean tintOn = tint != null
+                            && !tint.equals(javafx.scene.paint.Color.BLACK);
+                    fx3Tint.setLayoutX(lx);
+                    fx3Tint.setLayoutY(ly);
+                    fx3Tint.setWidth(lw);
+                    fx3Tint.setHeight(lh);
+                    fx3Tint.setFill(tintOn ? tint : javafx.scene.paint.Color.BLACK);
+                    fx3Tint.setVisible(tintOn);
+
+                    // Invulnerability / light-amp approximations via
+                    // a color-adjust pass over the SubScene.
+                    doom.play.Player p =
+                            doom.system.GGame.players[doom.system.GGame.consoleplayer];
+                    int fcm = (p != null) ? p.fixedcolormap : 0;
+                    if (fcm != fx3LastFixedColormap) {
+                        fx3LastFixedColormap = fcm;
+                        if (fcm == 32) {
+                            // INVERSECOLORMAP: desaturate + invert
+                            // (white DIFFERENCE happens via effect
+                            // chain: ColorAdjust can't invert, so
+                            // approximate with max brightness swing).
+                            javafx.scene.effect.ColorAdjust ca =
+                                    new javafx.scene.effect.ColorAdjust();
+                            ca.setSaturation(-1);
+                            ca.setBrightness(0.7);
+                            ca.setContrast(-0.6);
+                            fx3SubScene.setEffect(ca);
+                        } else if (fcm > 0) {
+                            // Light amplification visor: fullbright.
+                            javafx.scene.effect.ColorAdjust ca =
+                                    new javafx.scene.effect.ColorAdjust();
+                            ca.setBrightness(0.55);
+                            fx3SubScene.setEffect(ca);
+                        } else {
+                            fx3SubScene.setEffect(null);
+                        }
+                    }
                 } else {
                     fx3SubScene.setVisible(false);
+                    fx3Tint.setVisible(false);
                 }
             }
 
@@ -524,6 +592,11 @@ public final class JfxDoomApp extends Application {
             int b = bytes[i * 3 + 2] & 0xff;
             palette[i] = 0xff000000 | (r << 16) | (g << 8) | b;
         }
+        // Entry 0 is black in the base palette; damage/bonus/radsuit
+        // sub-palettes lift it to the pure tint component, which the
+        // 3D view reproduces as an additive overlay.
+        fx3TintColor = javafx.scene.paint.Color.rgb(
+                bytes[0] & 0xff, bytes[1] & 0xff, bytes[2] & 0xff);
     }
 
     // Translate a JavaFX KeyCode (+ typed text) to the Doom

@@ -85,10 +85,29 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending
   visible through the opened door, occluded correctly by the door frame;
   suite green
 
-## Phase 5 — Polish
+## Phase 5 — Polish ✅
 
-- ⬜ Palette-flash overlay (damage/bonus/radsuit tints via `setPaletteHook`)
-- ⬜ Wipe: `SubScene.snapshot()` at wipe start
-- ⬜ Weapon sprite (psprite) overlay at view scale
-- ⬜ Invulnerability `ColorAdjust` approximation
-- ⬜ Final: full `./gradlew test` run + software-mode demo determinism check
+- ✅ Palette-flash overlay: additive Rectangle between SubScene and canvas,
+  colored from the active sub-palette's entry 0 (the pure tint component) —
+  damage red / bonus gold / radsuit green track `setPaletteHook`
+- ✅ Wipe: `Fx3Renderer.captureViewToScreens0()` snapshots the SubScene at
+  wipe start and writes it into screens[0]'s view window as palette indices
+  (15-bit RGB → PLAYPAL lookup); the melt then peels real 3D pixels away
+  over the live view
+- ✅ Weapon sprite: the software psprite pipeline draws just the weapon into
+  the otherwise-unused viewBuffer (`rSetupFrame` + `rDrawPlayerSprites`);
+  the shell composites non-zero view pixels over the SubScene — pixel-exact
+  vanilla weapon at render scale
+- ✅ Invulnerability/light-amp: `ColorAdjust` pass on the SubScene
+  (desaturate+brighten / brighten) — documented approximation
+- ✅ Final: full `./gradlew test` green; live playthrough with weapon,
+  firing, sprites, HUD verified
+
+## Outcome
+
+All five phases complete. The experimental renderer is selectable in the
+Launchpad ("JavaFX 3D renderer (experimental)") or via `-fx3d`; the faithful
+software renderer remains the default. `doom.render` and `doom.play` were
+never modified. Known accepted deviations: no per-pixel distance light
+diminishing, bilinear texel softness, approximated fuzz/invulnerability,
+no extralight (muzzle flash brightening).

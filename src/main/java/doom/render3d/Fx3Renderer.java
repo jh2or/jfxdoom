@@ -223,6 +223,57 @@ public final class Fx3Renderer {
         List<javafx.scene.Node> inOrder = new ArrayList<>(sorted.size());
         for (int i : order) inOrder.add(sorted.get(i));
         sortedGroup.getChildren().setAll(inOrder);
+
+        // Weapon sprite: reuse the software psprite pipeline. The
+        // view buffer is unused in 3D mode, so zero it and let
+        // R_DrawPlayerSprites paint just the weapon into it; the
+        // shell composites non-zero view pixels over the SubScene.
+        // rSetupFrame only sets renderer globals — the playsim never
+        // reads them.
+        byte[] view = doom.ui.VVideo.viewBuffer;
+        if (view != null) {
+            java.util.Arrays.fill(view, (byte) 0);
+            doom.render.RMain.rSetupFrame(player);
+            doom.render.RThings.rClearSprites();
+            doom.render.RThings.rDrawPlayerSprites();
+        }
+    }
+
+    // Wipe support: paint the SubScene's last rendered frame into
+    // screens[0]'s view window as palette indices, so FWipe's start
+    // capture melts the real 3D view instead of a black hole. Called
+    // by DMain right before wipeStartScreen; runs on the FX thread.
+    public static void captureViewToScreens0() {
+        if (subScene == null || !subScene.isVisible()) return;
+        byte[] ui = doom.ui.VVideo.screens[0];
+        if (ui == null) return;
+
+        javafx.scene.image.WritableImage snap = subScene.snapshot(null, null);
+        javafx.scene.image.PixelReader pr = snap.getPixelReader();
+        int sw = (int) snap.getWidth();
+        int sh = (int) snap.getHeight();
+        if (sw <= 0 || sh <= 0) return;
+
+        int rm = doom.system.Doomdef.RENDER_MUL;
+        int vx = doom.render.RDraw.viewwindowx / rm;
+        int vy = doom.render.RDraw.viewwindowy / rm;
+        int vw = doom.render.RDraw.scaledviewwidth / rm;
+        int vh = doom.render.RDraw.viewheight / rm;
+        if (vw <= 0 || vh <= 0) return;
+
+        byte[] toPal = Fx3Textures.rgbToPalette();
+        int uiW = doom.system.Doomdef.SCREENWIDTH;
+        for (int y = 0; y < vh; y++) {
+            int sy = y * sh / vh;
+            int row = (vy + y) * uiW + vx;
+            for (int x = 0; x < vw; x++) {
+                int argb = pr.getArgb(x * sw / vw, sy);
+                int r = (argb >> 16) & 0xff;
+                int g = (argb >> 8) & 0xff;
+                int b = argb & 0xff;
+                ui[row + x] = toPal[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)];
+            }
+        }
     }
 
     private static double dist2(double x, double y, double cx, double cy) {

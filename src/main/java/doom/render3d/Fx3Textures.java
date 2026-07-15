@@ -92,12 +92,46 @@ public final class Fx3Textures {
     }
 
     private static byte[] playpal;
+    private static byte[] rgbToPal;
 
     public static void reset() {
         images.clear();
         materials.clear();
         spriteHeights.clear();
         playpal = null;
+        rgbToPal = null;
+    }
+
+    // 15-bit RGB → nearest PLAYPAL-0 index, for the wipe capture
+    // (RGB snapshot back to the palette-indexed screens[0]). Built
+    // lazily — ~8M distance checks once per session.
+    public static byte[] rgbToPalette() {
+        if (rgbToPal == null) {
+            try {
+                if (playpal == null) {
+                    playpal = WWad.wCacheLumpName("PLAYPAL", ZZone.PU_CACHE);
+                }
+            } catch (IOException ex) {
+                return new byte[32768];
+            }
+            byte[] t = new byte[32768];
+            for (int c = 0; c < 32768; c++) {
+                int r = ((c >> 10) & 31) << 3;
+                int g = ((c >> 5) & 31) << 3;
+                int b = (c & 31) << 3;
+                int best = 0, bestD = Integer.MAX_VALUE;
+                for (int i = 0; i < 256; i++) {
+                    int dr = r - (playpal[i * 3] & 0xff);
+                    int dg = g - (playpal[i * 3 + 1] & 0xff);
+                    int db = b - (playpal[i * 3 + 2] & 0xff);
+                    int d = dr * dr + dg * dg + db * db;
+                    if (d < bestD) { bestD = d; best = i; }
+                }
+                t[c] = (byte) best;
+            }
+            rgbToPal = t;
+        }
+        return rgbToPal;
     }
 
     private static int key(int kind, int num, int lightnum) {
