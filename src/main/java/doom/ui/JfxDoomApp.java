@@ -95,6 +95,7 @@ public final class JfxDoomApp extends Application {
     private String lastIwad;
     private Launchpad.DisplayMode lastDisplay = Launchpad.DisplayMode.SCALE_4X;
     private int lastRenderMul = 1;
+    private boolean lastFx3d;
 
     public static void main(String[] args) {
         launchArgs = args;
@@ -114,21 +115,32 @@ public final class JfxDoomApp extends Application {
         };
 
         if (launchArgs.length > 0) {
-            // CLI-driven boot — skip the Launchpad entirely.
+            // CLI-driven boot — skip the Launchpad entirely. The
+            // -fx3d flag selects the experimental scene-graph
+            // renderer (3D_OVERHAUL.md); the engine's arg parser
+            // ignores flags it doesn't know.
             captureLastFromArgs(launchArgs);
-            bootGame(stage, launchArgs, Launchpad.DisplayMode.SCALE_4X, lastRenderMul);
+            boolean fx3d = false;
+            for (String a : launchArgs) {
+                if ("-fx3d".equals(a)) fx3d = true;
+            }
+            lastFx3d = fx3d;
+            bootGame(stage, launchArgs, Launchpad.DisplayMode.SCALE_4X,
+                    lastRenderMul, fx3d);
         } else {
             showLauncher(stage);
         }
     }
 
     private void showLauncher(Stage stage) {
-        Launchpad ui = new Launchpad().prefill(lastIwad, lastDisplay, lastRenderMul);
-        Scene startupScene = ui.build(stage, (args, display, renderMul) -> {
+        Launchpad ui = new Launchpad()
+                .prefill(lastIwad, lastDisplay, lastRenderMul, lastFx3d);
+        Scene startupScene = ui.build(stage, (args, display, renderMul, fx3d) -> {
             captureLastFromArgs(args);
             lastDisplay = display;
             lastRenderMul = renderMul;
-            bootGame(stage, args, display, renderMul);
+            lastFx3d = fx3d;
+            bootGame(stage, args, display, renderMul, fx3d);
         });
         stage.setFullScreen(false);
         stage.setScene(startupScene);
@@ -144,7 +156,8 @@ public final class JfxDoomApp extends Application {
     // engine, then drive it at TICRATE. Called from start() (CLI
     // path) or from the Launchpad's Launch callback.
     private void bootGame(Stage stage, String[] args,
-                          Launchpad.DisplayMode display, int renderMul) {
+                          Launchpad.DisplayMode display, int renderMul,
+                          boolean fx3d) {
         // Apply the user's render-scale choice before any renderer
         // class allocates RENDER_*-sized scratch arrays. setRenderMul
         // updates the Doomdef constants; the resizeForRender calls
@@ -186,6 +199,33 @@ public final class JfxDoomApp extends Application {
         // Black bars when the canvas doesn't fill the stage
         // (fullscreen aspect mismatch).
         root.setStyle("-fx-background-color: black;");
+
+        // Experimental scene-graph 3D renderer (3D_OVERHAUL.md): a
+        // SubScene layered *behind* the canvas renders the world
+        // view on the GPU; the canvas keeps all 2D (status bar,
+        // border, HUD, menu, automap, wipe) and gets transparent
+        // pixels punched out of the active view window so the
+        // SubScene shows through. Unmanaged: positioned per frame in
+        // finishUpdateHook to track the view window.
+        javafx.scene.SubScene fx3Sub = null;
+        doom.render3d.Fx3Renderer.reset();
+        if (fx3d) {
+            if (javafx.application.Platform.isSupported(
+                    javafx.application.ConditionalFeature.SCENE3D)) {
+                fx3Sub = doom.render3d.Fx3Renderer.subScene();
+                fx3Sub.setManaged(false);
+                fx3Sub.setVisible(false);
+                root.getChildren().add(0, fx3Sub);
+                doom.render3d.Fx3Renderer.active = true;
+            } else {
+                // Same degrade-gracefully policy as audio (Windows
+                // Sandbox: no D3D pipeline → no SCENE3D).
+                System.err.println(
+                        "jfxdoom: SCENE3D not supported by this JavaFX "
+                        + "pipeline — falling back to the software renderer.");
+            }
+        }
+        final javafx.scene.SubScene fx3SubScene = fx3Sub;
 
         // Canvas / scene sizing uses the *UI* logical grid (320x200) ×
         // user-picked display scale. The renderer's RENDER_MUL only
@@ -283,28 +323,60 @@ public final class JfxDoomApp extends Application {
             int renderH = Doomdef.RENDER_HEIGHT;
             int rm      = Doomdef.RENDER_MUL;
 
+            boolean fx3 = doom.render3d.Fx3Renderer.active;
+
             int i = 0;
             for (int y = 0; y < renderH; y++) {
                 int uiRowOff = (y / rm) * UI_W;
                 boolean rowInView = viewActive && y >= vy && y < vyEnd;
                 int viewRowOff = y * renderW;
                 for (int x = 0; x < renderW; x++, i++) {
-                    int pal;
                     if (rowInView && x >= vx && x < vxEnd) {
                         // viewport zone: prefer the UI byte if non-
                         // zero (a menu/HUD overlay painted there
                         // this frame, post-startFrameHook clear),
-                        // otherwise the 3D view's pixel.
+                        // otherwise the 3D view's pixel — or, in
+                        // fx3d mode, a transparent hole so the
+                        // SubScene behind the canvas shows through.
                         int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
-                        pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
+                        if (uiPal != 0) {
+                            argb[i] = palette[uiPal];
+                        } else if (fx3) {
+                            argb[i] = 0;
+                        } else {
+                            argb[i] = palette[view[viewRowOff + x] & 0xff];
+                        }
                     } else {
-                        pal = ui[uiRowOff + (x / rm)] & 0xff;
+                        argb[i] = palette[ui[uiRowOff + (x / rm)] & 0xff];
                     }
-                    argb[i] = palette[pal];
+                }
+            }
+
+            // Track the view window with the SubScene: same rect,
+            // scaled from render pixels to canvas pixels, offset by
+            // the canvas position inside the StackPane (fullscreen
+            // letterboxing centres it).
+            if (fx3SubScene != null) {
+                if (viewActive) {
+                    javafx.geometry.Bounds cb = canvas.getBoundsInParent();
+                    double sx = cb.getWidth() / renderW;
+                    double sy = cb.getHeight() / renderH;
+                    fx3SubScene.setLayoutX(cb.getMinX() + vx * sx);
+                    fx3SubScene.setLayoutY(cb.getMinY() + vy * sy);
+                    fx3SubScene.setWidth(vw * sx);
+                    fx3SubScene.setHeight(vh * sy);
+                    fx3SubScene.setVisible(true);
+                } else {
+                    fx3SubScene.setVisible(false);
                 }
             }
 
             pixelBuffer.updateBuffer(b -> null);
+            if (fx3) {
+                // Transparent holes don't overwrite last frame's
+                // pixels — clear before the stretch-blit.
+                gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            }
             gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
         };
         IVideo.setPaletteHook = bytes -> uploadPalette(bytes);
@@ -377,6 +449,8 @@ public final class JfxDoomApp extends Application {
         IVideo.finishUpdateHook = null;
         IVideo.setPaletteHook = null;
         IVideo.startTicHook = null;
+        // Drop the 3D scene so the next boot starts clean.
+        doom.render3d.Fx3Renderer.reset();
         showLauncher(stage);
     }
 

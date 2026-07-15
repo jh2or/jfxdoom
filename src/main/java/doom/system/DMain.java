@@ -473,7 +473,14 @@ public final class DMain {
                 } else {
                     Player p = GGame.players[GGame.consoleplayer];
                     if (p != null && p.mo != null) {
-                        RMain.rRenderPlayerView(p);
+                        // Experimental JavaFX scene-graph renderer
+                        // (see 3D_OVERHAUL.md) — opt-in per session;
+                        // the software renderer stays the default.
+                        if (doom.render3d.Fx3Renderer.active) {
+                            doom.render3d.Fx3Renderer.renderPlayerView(p);
+                        } else {
+                            RMain.rRenderPlayerView(p);
+                        }
                     }
                 }
                 // C: redrawsbar = wipe || (viewheight != 200 && fullscreen),

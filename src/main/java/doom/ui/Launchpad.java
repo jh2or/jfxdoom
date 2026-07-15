@@ -67,7 +67,8 @@ public final class Launchpad {
 
     @FunctionalInterface
     public interface LaunchCallback {
-        void onLaunch(String[] args, DisplayMode display, int renderMul);
+        void onLaunch(String[] args, DisplayMode display, int renderMul,
+                      boolean fx3dRenderer);
     }
 
     private final TextField iwadField = new TextField();
@@ -90,6 +91,11 @@ public final class Launchpad {
                     new RenderScale(2, "2× (640×400)"),
                     new RenderScale(3, "3× (960×600)"),
                     new RenderScale(4, "4× (1280×800)")));
+    // Experimental JavaFX scene-graph 3D renderer (3D_OVERHAUL.md).
+    // Off = the faithful software renderer.
+    private final CheckBox fx3dRenderer =
+            new CheckBox("JavaFX 3D renderer (experimental)");
+
     private final CheckBox expertMode = new CheckBox("Expert mode");
 
     private final ComboBox<String> skillBox = new ComboBox<>(FXCollections.observableArrayList(
@@ -121,11 +127,14 @@ public final class Launchpad {
     private String initialIwad;
     private DisplayMode initialDisplay = DisplayMode.SCALE_4X;
     private int initialRenderMul = 1;
+    private boolean initialFx3d;
 
-    public Launchpad prefill(String iwad, DisplayMode display, int renderMul) {
+    public Launchpad prefill(String iwad, DisplayMode display, int renderMul,
+                             boolean fx3d) {
         this.initialIwad = iwad;
         if (display != null) this.initialDisplay = display;
         if (renderMul >= 1 && renderMul <= 4) this.initialRenderMul = renderMul;
+        this.initialFx3d = fx3d;
         return this;
     }
 
@@ -147,6 +156,7 @@ public final class Launchpad {
         // Apply prefill values.
         if (initialIwad != null) iwadField.setText(initialIwad);
         displayBox.setValue(initialDisplay);
+        fx3dRenderer.setSelected(initialFx3d);
         for (RenderScale rs : renderScaleBox.getItems()) {
             if (rs.mul == initialRenderMul) { renderScaleBox.setValue(rs); break; }
         }
@@ -197,6 +207,12 @@ public final class Launchpad {
         primary.add(displayBox,                                 1, r++, 2, 1);
         primary.add(new Label("Internal Render Resolution:"),  0, r);
         primary.add(renderScaleBox,                             1, r++, 2, 1);
+        Label fx3dHelp = new Label("(GPU scene-graph world view — lighting/look deviates from vanilla)");
+        fx3dHelp.setStyle("-fx-text-fill: gray;");
+        HBox fx3dRow = new HBox(10, fx3dRenderer, fx3dHelp);
+        fx3dRow.setAlignment(Pos.CENTER_LEFT);
+        primary.add(new Label("Renderer:"), 0, r);
+        primary.add(fx3dRow,                1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);
@@ -276,7 +292,8 @@ public final class Launchpad {
         launch.setOnAction(e -> {
             RenderScale rs = renderScaleBox.getValue();
             int mul = (rs != null) ? rs.mul : 2;
-            callback.onLaunch(assembleArgs(), displayBox.getValue(), mul);
+            callback.onLaunch(assembleArgs(), displayBox.getValue(), mul,
+                    fx3dRenderer.isSelected());
         });
         Region spring = new Region();
         HBox.setHgrow(spring, Priority.ALWAYS);
