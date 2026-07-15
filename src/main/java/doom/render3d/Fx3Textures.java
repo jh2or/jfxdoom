@@ -197,7 +197,9 @@ public final class Fx3Textures {
             try {
                 byte[] raw = WWad.wCacheLumpNum(
                         RData.firstspritelump + lump, ZZone.PU_CACHE);
-                h = ((raw[4] & 0xff) | ((raw[5] & 0xff) << 8));
+                // patch_t header: width @0–1, HEIGHT @2–3 (little-
+                // endian shorts), leftoffset @4–5, topoffset @6–7.
+                h = ((raw[2] & 0xff) | ((raw[3] & 0xff) << 8));
             } catch (IOException ex) {
                 h = 0;
             }
