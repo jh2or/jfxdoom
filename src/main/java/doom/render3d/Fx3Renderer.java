@@ -225,19 +225,38 @@ public final class Fx3Renderer {
         sortedGroup.getChildren().setAll(inOrder);
 
         // Weapon sprite: reuse the software psprite pipeline. The
-        // view buffer is unused in 3D mode, so zero it and let
-        // R_DrawPlayerSprites paint just the weapon into it; the
-        // shell composites non-zero view pixels over the SubScene.
-        // rSetupFrame only sets renderer globals — the playsim never
-        // reads them.
+        // view buffer is unused in 3D mode, so let
+        // R_DrawPlayerSprites paint just the weapon into it and have
+        // the shell composite it over the SubScene. rSetupFrame only
+        // sets renderer globals — the playsim never reads them.
+        //
+        // Transparency cannot be keyed on palette index 0 alone: the
+        // weapon art legitimately contains index 0 (black outlines,
+        // dark metal after colormap shading). So the weapon is drawn
+        // TWICE, over a 0-fill and a 1-fill: pixels that differ
+        // between passes are background, pixels that agree were
+        // drawn. The shell tests `pass1[i]==0 && view[i]==1` for
+        // transparency.
         byte[] view = doom.ui.VVideo.viewBuffer;
         if (view != null) {
-            java.util.Arrays.fill(view, (byte) 0);
+            if (weaponPass1 == null || weaponPass1.length != view.length) {
+                weaponPass1 = new byte[view.length];
+            }
             doom.render.RMain.rSetupFrame(player);
+            java.util.Arrays.fill(view, (byte) 0);
+            doom.render.RThings.rClearSprites();
+            doom.render.RThings.rDrawPlayerSprites();
+            System.arraycopy(view, 0, weaponPass1, 0, view.length);
+            java.util.Arrays.fill(view, (byte) 1);
             doom.render.RThings.rClearSprites();
             doom.render.RThings.rDrawPlayerSprites();
         }
     }
+
+    // First weapon pass (drawn over a 0-fill); the shell compares it
+    // with viewBuffer (drawn over a 1-fill) to mask the weapon.
+    // Null until the first 3D frame.
+    public static byte[] weaponPass1;
 
     // Wipe support: paint the SubScene's last rendered frame into
     // screens[0]'s view window as palette indices, so FWipe's start
@@ -262,11 +281,23 @@ public final class Fx3Renderer {
         if (vw <= 0 || vh <= 0) return;
 
         byte[] toPal = Fx3Textures.rgbToPalette();
+        byte[] view = doom.ui.VVideo.viewBuffer;
+        int renderW = doom.system.Doomdef.RENDER_WIDTH;
         int uiW = doom.system.Doomdef.SCREENWIDTH;
         for (int y = 0; y < vh; y++) {
             int sy = y * sh / vh;
             int row = (vy + y) * uiW + vx;
             for (int x = 0; x < vw; x++) {
+                // The weapon overlay lives in the view buffer, not
+                // the SubScene — pull it into the capture with the
+                // same two-pass mask the shell uses.
+                int vi = ((vy + y) * rm) * renderW + (vx + x) * rm;
+                if (weaponPass1 != null && view != null
+                        && vi < view.length
+                        && !(weaponPass1[vi] == 0 && view[vi] == 1)) {
+                    ui[row + x] = view[vi];
+                    continue;
+                }
                 int argb = pr.getArgb(x * sw / vw, sy);
                 int r = (argb >> 16) & 0xff;
                 int g = (argb >> 8) & 0xff;

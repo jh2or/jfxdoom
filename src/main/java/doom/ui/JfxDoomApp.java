@@ -343,6 +343,7 @@ public final class JfxDoomApp extends Application {
             int rm      = Doomdef.RENDER_MUL;
 
             boolean fx3 = doom.render3d.Fx3Renderer.active;
+            byte[] weaponPass1 = doom.render3d.Fx3Renderer.weaponPass1;
 
             int i = 0;
             for (int y = 0; y < renderH; y++) {
@@ -363,8 +364,14 @@ public final class JfxDoomApp extends Application {
                         if (uiPal != 0) {
                             argb[i] = palette[uiPal];
                         } else if (fx3) {
-                            int wp = view[viewRowOff + x] & 0xff;
-                            argb[i] = (wp != 0) ? palette[wp] : 0;
+                            // Weapon mask: drawn pixels agree across
+                            // the two psprite passes; background is
+                            // 0 in pass 1 and 1 in the view buffer.
+                            int vi = viewRowOff + x;
+                            int wp = view[vi] & 0xff;
+                            boolean background = weaponPass1 == null
+                                    || (weaponPass1[vi] == 0 && wp == 1);
+                            argb[i] = background ? 0 : palette[wp];
                         } else {
                             argb[i] = palette[view[viewRowOff + x] & 0xff];
                         }
