@@ -83,6 +83,7 @@ public final class Fx3Renderer {
         subScene = null;
         levelHolder = null;
         builtFor = null;
+        Fx3Textures.reset();
     }
 
     // The R_RenderPlayerView counterpart: make sure the level mesh is
@@ -97,6 +98,10 @@ public final class Fx3Renderer {
             builtFor = PSetup.sectors;
             builtHeightsHash = hash;
         }
+
+        // Animated flats/textures + switch changes: re-resolve the
+        // translation tables and swap diffuse maps that moved.
+        Fx3Textures.refreshTranslations();
 
         // Doom map (x, y, z-up) → JavaFX (x, -z, y).
         camTranslate.setX(player.mo.x / 65536.0);

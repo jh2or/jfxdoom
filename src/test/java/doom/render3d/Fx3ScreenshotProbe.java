@@ -66,10 +66,25 @@ class Fx3ScreenshotProbe {
                     DMain.dDoomLoop();
                 }
 
-                WritableImage img = sub.snapshot(null, null);
                 Files.createDirectories(Path.of("build/probe"));
+                WritableImage img = sub.snapshot(null, null);
                 savePng(img, Path.of("build/probe/fx3_e1m1.png"));
-                System.err.println("fx3.probe: wrote build/probe/fx3_e1m1.png");
+
+                // Extra viewpoints: spin the player (camera-only
+                // state) and re-render. West faces the zigzag
+                // window strip (upper/lower walls + sky beyond),
+                // south the STARTAN back wall.
+                int[] angles = { 0x80000000, 0xC0000000, 0x00000000 };
+                String[] names = { "w", "s", "e" };
+                for (int a = 0; a < angles.length; a++) {
+                    doom.system.GGame.players[0].mo.angle = angles[a];
+                    for (int tic = 0; tic < 3; tic++) {
+                        DMain.dDoomLoop();
+                    }
+                    savePng(sub.snapshot(null, null),
+                            Path.of("build/probe/fx3_e1m1_" + names[a] + ".png"));
+                }
+                System.err.println("fx3.probe: wrote build/probe/fx3_e1m1*.png");
             } catch (Throwable t) {
                 fail[0] = t;
             } finally {

@@ -27,14 +27,24 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending
   winding correct, 64° vertical FOV matches this port's square-pixel projection);
   live `-fx3d` run shows 3D view + opaque status-bar composite
 
-## Phase 2 — Textures & lighting
+## Phase 2 — Textures & lighting ✅
 
-- ⬜ `Fx3Textures` — decode textures/flats → `WritableImage` via PLAYPAL
-- ⬜ Tile-bake + grid split so all UVs ∈ [0,1] (no wrap mode in JavaFX)
-- ⬜ Nearest-neighbour pre-upscale for crisp texels
-- ⬜ Wall UVs: pegging (`ML_DONTPEGTOP`/`BOTTOM`), `textureoffset`/`rowoffset`, `seg.offset`
-- ⬜ Flat UVs: 64-aligned world mapping
-- ⬜ Per-light-bucket tinted material cache + fake contrast
+- ✅ `Fx3Textures` — composites column/post textures (R_GenerateComposite
+  equivalent) and 64×64 flats, shades through COLORMAP (authentic non-linear
+  palette shading, cm = (15−lightnum)×2−2), resolves via PLAYPAL → `WritableImage`
+- ✅ Tile-bake + grid split so all UVs ∈ [0,1] (no wrap mode in JavaFX):
+  per-texture pitch = size × tiles covering ≥128 map units; walls split on
+  that grid, flats on the world-aligned 128-unit grid
+- ✅ Nearest-neighbour ×2 pre-upscale for crisper bilinear sampling
+- ✅ Wall UVs: pegging (`ML_DONTPEGTOP`/`BOTTOM` per r_segs.c, zTexTop form),
+  `textureoffset`/`rowoffset`, `seg.offset`
+- ✅ Flat UVs: 64-aligned world mapping (u = x, v = −y)
+- ✅ Material cache per (kind, base index, lightnum) + fake contrast ±1 lightnum
+- ✅ Bonus (pulled forward from Phase 3): animated flats/walls + switches work
+  via `refreshTranslations()` — materials re-resolve
+  `RData.flattranslation`/`texturetranslation` each tic and swap diffuse maps
+- ✅ Verified: probe snapshots N/W/S/E at E1M1 start vs software render —
+  texture choice, alignment, flat phase, light tone all match; suite green
 
 ## Phase 3 — Dynamic world
 
