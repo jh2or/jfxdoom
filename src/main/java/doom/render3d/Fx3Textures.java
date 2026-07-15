@@ -59,6 +59,7 @@ public final class Fx3Textures {
 
     public static final int KIND_WALL = 0;
     public static final int KIND_FLAT = 1;
+    public static final int KIND_SKY  = 2;
 
     private Fx3Textures() {
     }
@@ -125,6 +126,14 @@ public final class Fx3Textures {
         return material(KIND_FLAT, flatnum, lightnum);
     }
 
+    // Sky: always fullbright (the software renderer draws it with
+    // colormap 0 regardless of sector light), baked 2× tiled
+    // horizontally so Fx3Sky's 128-column segments always land
+    // inside [0,1].
+    public static PhongMaterial skyMaterial(int texnum) {
+        return material(KIND_SKY, texnum, 15);
+    }
+
     private static PhongMaterial material(int kind, int num, int lightnum) {
         int ln = clampLight(lightnum);
         MatEntry e = materials.get(key(kind, num, ln));
@@ -152,6 +161,7 @@ public final class Fx3Textures {
     }
 
     private static int translate(int kind, int num) {
+        if (kind == KIND_SKY) return num;
         if (kind == KIND_WALL) {
             if (RData.texturetranslation != null
                     && num >= 0 && num < RData.texturetranslation.length) {
@@ -176,9 +186,11 @@ public final class Fx3Textures {
         Image img = images.get(key(kind, num, lightnum));
         if (img == null) {
             try {
-                img = (kind == KIND_WALL)
-                        ? bakeWall(num, lightnum)
-                        : bakeFlat(num, lightnum);
+                img = switch (kind) {
+                    case KIND_WALL -> bakeWall(num, lightnum);
+                    case KIND_FLAT -> bakeFlat(num, lightnum);
+                    default        -> bakeSky(num);
+                };
             } catch (IOException ex) {
                 // Missing lump — a 1×1 magenta marker beats crashing
                 // the view thread.
@@ -199,6 +211,13 @@ public final class Fx3Textures {
         int tilesU = Math.max(1, (BAKE_UNITS + w - 1) / w);
         int tilesV = Math.max(1, (BAKE_UNITS + h - 1) / h);
         return bake(idx, w, h, tilesU, tilesV, lightnum);
+    }
+
+    private static Image bakeSky(int texnum) throws IOException {
+        RData.Texture tex = RData.textures[texnum];
+        int[] idx = decodeTexture(tex);
+        // lightnum 15 → colormap 0 (fullbright).
+        return bake(idx, tex.width, tex.height, 2, 1, 15);
     }
 
     private static Image bakeFlat(int flatnum, int lightnum) throws IOException {

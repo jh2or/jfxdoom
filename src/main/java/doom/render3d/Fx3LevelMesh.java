@@ -69,15 +69,26 @@ public final class Fx3LevelMesh {
     // (a new level allocates new arrays).
     private static Sector[] polysFor;
     private static double[][] polys;
+    private static Map<Sector, Integer> sectorIndex;
 
-    // Build the whole level as a Group of MeshViews, one per
-    // (kind, texture, light bucket) batch, using the *current*
-    // sector heights. Phase 3 replaces rebuild-on-height-change with
-    // in-place point updates.
-    public static Group build() {
+    // Split-rebuild support (Phase 3): the level is built as two
+    // groups. The static group holds everything owned by sectors
+    // that have never moved/relit; the dynamic group holds geometry
+    // of sectors that have (doors, lifts, crushers, blinking
+    // lights) plus scroller-line segs — it is small and cheap to
+    // rebuild per tic while something is in motion. A wall seg is
+    // dynamic if either of its sectors is, or its linedef scrolls.
+    //
+    // build(dyn, true) emits only dynamic geometry; build(dyn,
+    // false) only static. dyn == null means "all static".
+    public static Group build(boolean[] dynamicSectors, boolean dynamicPass) {
         if (polysFor != PSetup.sectors) {
             polys = Fx3SubsectorPolys.buildAll();
             polysFor = PSetup.sectors;
+            sectorIndex = new java.util.IdentityHashMap<>();
+            for (int i = 0; i < PSetup.numsectors; i++) {
+                sectorIndex.put(PSetup.sectors[i], i);
+            }
         }
 
         Map<Long, Batch> batches = new HashMap<>();
@@ -88,6 +99,7 @@ public final class Fx3LevelMesh {
             if (poly.length < 6) continue;
             Subsector ss = PSetup.subsectors[i];
             Sector sec = ss.sector;
+            if (isDynamic(dynamicSectors, sec) != dynamicPass) continue;
             double floor = Fx3SubsectorPolys.fx(sec.floorheight);
             double ceil  = Fx3SubsectorPolys.fx(sec.ceilingheight);
             int lightnum = sec.lightlevel >> 4;
@@ -110,6 +122,10 @@ public final class Fx3LevelMesh {
             Line line = seg.linedef;
             Sector front = seg.frontsector;
             Sector back  = seg.backsector;
+            boolean dyn = isDynamic(dynamicSectors, front)
+                    || (back != null && isDynamic(dynamicSectors, back))
+                    || isScroller(line);
+            if (dyn != dynamicPass) continue;
             double x1 = Fx3SubsectorPolys.fx(seg.v1.x);
             double y1 = Fx3SubsectorPolys.fx(seg.v1.y);
             double x2 = Fx3SubsectorPolys.fx(seg.v2.x);
@@ -181,17 +197,17 @@ public final class Fx3LevelMesh {
         return group;
     }
 
-    // A light hash over all sector heights so the renderer can detect
-    // moving sectors and rebuild (Phase 1 stopgap — Phase 3 mutates
-    // points in place instead).
-    public static long sectorHeightsHash() {
-        long h = 1469598103934665603L;
-        for (int i = 0; i < PSetup.numsectors; i++) {
-            Sector s = PSetup.sectors[i];
-            h = (h ^ s.floorheight) * 1099511628211L;
-            h = (h ^ s.ceilingheight) * 1099511628211L;
-        }
-        return h;
+    private static boolean isDynamic(boolean[] dynamicSectors, Sector sec) {
+        if (dynamicSectors == null) return false;
+        Integer idx = sectorIndex.get(sec);
+        return idx != null && dynamicSectors[idx];
+    }
+
+    // Linedef special 48: "Scroll Texture Left" — P_UpdateSpecials
+    // bumps the sidedef's textureoffset every tic, which is baked
+    // into our UVs, so scroller segs live in the dynamic group.
+    static boolean isScroller(Line line) {
+        return line != null && line.special == 48;
     }
 
     // ---- batching ----

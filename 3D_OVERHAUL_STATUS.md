@@ -46,12 +46,25 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending
 - ✅ Verified: probe snapshots N/W/S/E at E1M1 start vs software render —
   texture choice, alignment, flat phase, light tone all match; suite green
 
-## Phase 3 — Dynamic world
+## Phase 3 — Dynamic world ✅
 
-- ⬜ Incremental sector floor/ceiling height updates (point mutation, no rebuild)
-- ⬜ Animated flats/textures (`PSpec` anim tables), switch textures
-- ⬜ Wall scrollers (line special 48)
-- ⬜ Sky cylinder (`RSky.skytexture`), sky-flat holes
+- ✅ Split static/dynamic rebuild instead of point mutation (simpler, handles
+  topology changes from moving heights): sectors join the dynamic set the
+  first time their state (heights, lightlevel, floor/ceiling pic) deviates
+  from the load-time baseline; the small dynamic group rebuilds per state
+  change, the static group only when a new sector starts moving or a switch
+  texture flips (side-texture hash)
+- ✅ Animated flats/textures via translation-table map swapping (Phase 2);
+  switch textures via full-rebuild trigger; blinking lights via the dynamic
+  set (lightlevel deviation)
+- ✅ Wall scrollers (line special 48): scroller segs live in the dynamic
+  group, textureoffset in the dynamic hash
+- ✅ Sky cylinder (`Fx3Sky`): 8×45° camera-locked segments, 2×-tiled
+  fullbright SKY texture, vanilla proportions (row 100 on the horizon,
+  4 repeats per turn); sky-flat/sky-wall holes show through
+- ✅ Verified: probe drives a real DR door via the playsim (mid-swing +
+  fully open — geometry tracks, pegging correct), sky + animated nukage
+  courtyard render vanilla-like; suite green
 
 ## Phase 4 — Sprites & masked geometry
 
