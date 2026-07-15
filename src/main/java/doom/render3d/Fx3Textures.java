@@ -57,9 +57,12 @@ public final class Fx3Textures {
     // Flats are 64×64 and world-aligned: 2×2 tiles = 128-unit pitch.
     static final int FLAT_PITCH = BAKE_UNITS;
 
-    public static final int KIND_WALL = 0;
-    public static final int KIND_FLAT = 1;
-    public static final int KIND_SKY  = 2;
+    public static final int KIND_WALL    = 0;
+    public static final int KIND_FLAT    = 1;
+    public static final int KIND_SKY     = 2;
+    public static final int KIND_SPRITE  = 3; // patch lump, alpha
+    public static final int KIND_SPRITEF = 4; // horizontally flipped
+    public static final int KIND_MASKED  = 5; // wall texture with alpha
 
     private Fx3Textures() {
     }
@@ -93,6 +96,7 @@ public final class Fx3Textures {
     public static void reset() {
         images.clear();
         materials.clear();
+        spriteHeights.clear();
         playpal = null;
     }
 
@@ -134,6 +138,40 @@ public final class Fx3Textures {
         return material(KIND_SKY, texnum, 15);
     }
 
+    // Sprite patch (relative sprite-lump index, as in
+    // Spriteframe.lump). Alpha where posts don't cover; flip mirrors
+    // in the bake so quads keep constant UVs.
+    public static PhongMaterial spriteMaterial(int lump, int lightnum,
+                                               boolean flip) {
+        return material(flip ? KIND_SPRITEF : KIND_SPRITE, lump, lightnum);
+    }
+
+    // Two-sided midtexture: like a wall bake but transparent where
+    // posts don't cover, and never tiled vertically (r_segs draws
+    // masked textures as a single vertical run).
+    public static PhongMaterial maskedMaterial(int texnum, int lightnum) {
+        return material(KIND_MASKED, texnum, lightnum);
+    }
+
+    // Sprite patch pixel height (patch header), needed for quad
+    // geometry; RData only caches width/offsets as fixed_t.
+    private static final Map<Integer, Integer> spriteHeights = new HashMap<>();
+
+    public static int spriteHeight(int lump) {
+        Integer h = spriteHeights.get(lump);
+        if (h == null) {
+            try {
+                byte[] raw = WWad.wCacheLumpNum(
+                        RData.firstspritelump + lump, ZZone.PU_CACHE);
+                h = ((raw[4] & 0xff) | ((raw[5] & 0xff) << 8));
+            } catch (IOException ex) {
+                h = 0;
+            }
+            spriteHeights.put(lump, h);
+        }
+        return h;
+    }
+
     private static PhongMaterial material(int kind, int num, int lightnum) {
         int ln = clampLight(lightnum);
         MatEntry e = materials.get(key(kind, num, ln));
@@ -161,8 +199,10 @@ public final class Fx3Textures {
     }
 
     private static int translate(int kind, int num) {
-        if (kind == KIND_SKY) return num;
-        if (kind == KIND_WALL) {
+        if (kind == KIND_SKY || kind == KIND_SPRITE || kind == KIND_SPRITEF) {
+            return num;
+        }
+        if (kind == KIND_WALL || kind == KIND_MASKED) {
             if (RData.texturetranslation != null
                     && num >= 0 && num < RData.texturetranslation.length) {
                 return RData.texturetranslation[num];
@@ -187,9 +227,12 @@ public final class Fx3Textures {
         if (img == null) {
             try {
                 img = switch (kind) {
-                    case KIND_WALL -> bakeWall(num, lightnum);
-                    case KIND_FLAT -> bakeFlat(num, lightnum);
-                    default        -> bakeSky(num);
+                    case KIND_WALL    -> bakeWall(num, lightnum);
+                    case KIND_FLAT    -> bakeFlat(num, lightnum);
+                    case KIND_SKY     -> bakeSky(num);
+                    case KIND_SPRITE  -> bakeSprite(num, lightnum, false);
+                    case KIND_SPRITEF -> bakeSprite(num, lightnum, true);
+                    default           -> bakeMasked(num, lightnum);
                 };
             } catch (IOException ex) {
                 // Missing lump — a 1×1 magenta marker beats crashing
@@ -207,7 +250,7 @@ public final class Fx3Textures {
         RData.Texture tex = RData.textures[texnum];
         int w = tex.width;
         int h = tex.height;
-        int[] idx = decodeTexture(tex);
+        int[] idx = decodeTexture(tex, false);
         int tilesU = Math.max(1, (BAKE_UNITS + w - 1) / w);
         int tilesV = Math.max(1, (BAKE_UNITS + h - 1) / h);
         return bake(idx, w, h, tilesU, tilesV, lightnum);
@@ -215,9 +258,44 @@ public final class Fx3Textures {
 
     private static Image bakeSky(int texnum) throws IOException {
         RData.Texture tex = RData.textures[texnum];
-        int[] idx = decodeTexture(tex);
+        int[] idx = decodeTexture(tex, false);
         // lightnum 15 → colormap 0 (fullbright).
         return bake(idx, tex.width, tex.height, 2, 1, 15);
+    }
+
+    // Masked midtexture: transparent holes, tiled horizontally only
+    // (masked walls never tile vertically).
+    private static Image bakeMasked(int texnum, int lightnum) throws IOException {
+        RData.Texture tex = RData.textures[texnum];
+        int[] idx = decodeTexture(tex, true);
+        int tilesU = Math.max(1, (BAKE_UNITS + tex.width - 1) / tex.width);
+        return bake(idx, tex.width, tex.height, tilesU, 1, lightnum);
+    }
+
+    private static Image bakeSprite(int lump, int lightnum, boolean flip)
+            throws IOException {
+        byte[] raw = WWad.wCacheLumpNum(RData.firstspritelump + lump,
+                ZZone.PU_CACHE);
+        Patch p = Patch.fromLump(raw);
+        spriteHeights.put(lump, p.height);
+        int[] idx = new int[p.width * p.height];
+        java.util.Arrays.fill(idx, -1);
+        for (int x = 0; x < p.width; x++) {
+            int tx = flip ? p.width - 1 - x : x;
+            int ofs = p.columnofs[x];
+            while ((p.data[ofs] & 0xff) != 0xff) {
+                int topdelta = p.data[ofs] & 0xff;
+                int length = p.data[ofs + 1] & 0xff;
+                for (int i = 0; i < length; i++) {
+                    int ty = topdelta + i;
+                    if (ty >= 0 && ty < p.height) {
+                        idx[ty * p.width + tx] = p.data[ofs + 3 + i] & 0xff;
+                    }
+                }
+                ofs += length + 4;
+            }
+        }
+        return bake(idx, p.width, p.height, 1, 1, lightnum);
     }
 
     private static Image bakeFlat(int flatnum, int lightnum) throws IOException {
@@ -230,12 +308,17 @@ public final class Fx3Textures {
     }
 
     // Composite a column/post texture into a full index grid, exactly
-    // what R_GenerateComposite produces (uncovered texels → 0, like
-    // the zeroed composite cache).
-    private static int[] decodeTexture(RData.Texture tex) throws IOException {
+    // what R_GenerateComposite produces. keepHoles=false → uncovered
+    // texels stay 0 (like the zeroed composite cache); true → −1,
+    // which bake() turns into transparent pixels.
+    private static int[] decodeTexture(RData.Texture tex, boolean keepHoles)
+            throws IOException {
         int w = tex.width;
         int h = tex.height;
         int[] idx = new int[w * h];
+        if (keepHoles) {
+            java.util.Arrays.fill(idx, -1);
+        }
         for (RData.TexPatch tp : tex.patches) {
             if (tp.patch < 0) continue;
             Patch p = Patch.fromLump(WWad.wCacheLumpNum(tp.patch, ZZone.PU_CACHE));
@@ -276,6 +359,10 @@ public final class Fx3Textures {
         int[] argb = new int[w * h];
         for (int i = 0; i < argb.length; i++) {
             int pi = idx[i];
+            if (pi < 0) {
+                // Uncovered texel of a masked texture / sprite.
+                continue;
+            }
             int shaded = (map != null) ? (map[cm * 256 + pi] & 0xff) : pi;
             int r = playpal[shaded * 3]     & 0xff;
             int g = playpal[shaded * 3 + 1] & 0xff;

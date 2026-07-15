@@ -66,11 +66,24 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending
   fully open — geometry tracks, pegging correct), sky + animated nukage
   courtyard render vanilla-like; suite green
 
-## Phase 4 — Sprites & masked geometry
+## Phase 4 — Sprites & masked geometry ✅
 
-- ⬜ `Fx3Sprites` — mobj billboards, rotation frames via `Spritedef`/`Spriteframe`
-- ⬜ Two-sided midtextures (masked quads)
-- ⬜ Back-to-front distance sort + `DepthTest.DISABLE` for masked nodes
+- ✅ `Fx3Sprites` — one billboard MeshView per live mobj (identity-pooled,
+  mark-and-swept via `Sector.thinglist`), rotation frames via
+  `Spritedef`/`Spriteframe` with R_ProjectSprite's rotation formula, flip
+  baked into the cached image, vanilla offsets (−spriteoffset /
+  +spritetopoffset), fullbright frames, MF_SHADOW ≈ node opacity 0.35
+- ✅ Two-sided midtextures: per-facing masked quads (alpha image, tiled
+  horizontally only, single vertical run with r_segs texturemid rule),
+  CullFace.BACK, emitted by the static/dynamic passes
+- ✅ Depth handling — better than planned: depth test stays ON; JavaFX
+  renders in scene-graph order, so a sorted group after the opaque world
+  gets wall occlusion from the depth buffer for free, and the per-frame
+  back-to-front sort (masked + sprites together) handles alpha-writes-depth
+  between translucent nodes. No `DepthTest.DISABLE` needed.
+- ✅ Verified: dead marine / barrels / armor render at the start; zombiemen
+  visible through the opened door, occluded correctly by the door frame;
+  suite green
 
 ## Phase 5 — Polish
 

@@ -65,9 +65,15 @@ public final class Fx3Renderer {
     private static List<Side> scrollerSides;
     private static long sideTexHash;
     private static long dynamicHash;
-    private static Group staticGroup;
-    private static Group dynamicGroup;
+    private static Fx3LevelMesh.Built staticBuilt;
+    private static Fx3LevelMesh.Built dynamicBuilt;
     private static Fx3Sky sky;
+
+    // Alpha-carrying nodes (masked walls + sprites) render after the
+    // opaque world, back-to-front — JavaFX draws in scene-graph
+    // order with the depth buffer on, so this group must stay last.
+    private static Group sortedGroup;
+    private static final Fx3Sprites sprites = new Fx3Sprites();
 
     private Fx3Renderer() {
     }
@@ -105,9 +111,11 @@ public final class Fx3Renderer {
         subScene = null;
         levelHolder = null;
         builtFor = null;
-        staticGroup = null;
-        dynamicGroup = null;
+        staticBuilt = null;
+        dynamicBuilt = null;
+        sortedGroup = null;
         sky = null;
+        sprites.clear();
         Fx3Textures.reset();
     }
 
@@ -147,16 +155,18 @@ public final class Fx3Renderer {
         }
 
         if (full) {
-            staticGroup = Fx3LevelMesh.build(dynamicSectors, false);
-            dynamicGroup = Fx3LevelMesh.build(dynamicSectors, true);
-            levelHolder.getChildren().setAll(sky.node, staticGroup, dynamicGroup);
+            staticBuilt = Fx3LevelMesh.build(dynamicSectors, false);
+            dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true);
+            if (sortedGroup == null) sortedGroup = new Group();
+            levelHolder.getChildren().setAll(sky.node,
+                    staticBuilt.world(), dynamicBuilt.world(), sortedGroup);
             dynamicHash = computeDynamicHash();
         } else {
             long dh = computeDynamicHash();
             if (dh != dynamicHash) {
                 dynamicHash = dh;
-                dynamicGroup = Fx3LevelMesh.build(dynamicSectors, true);
-                levelHolder.getChildren().set(2, dynamicGroup);
+                dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true);
+                levelHolder.getChildren().set(2, dynamicBuilt.world());
             }
         }
 
@@ -165,9 +175,11 @@ public final class Fx3Renderer {
         Fx3Textures.refreshTranslations();
 
         // Doom map (x, y, z-up) → JavaFX (x, -z, y).
-        double fxX = player.mo.x / 65536.0;
+        double camX = player.mo.x / 65536.0;
+        double camYmap = player.mo.y / 65536.0;
+        double fxX = camX;
         double fxY = -(player.viewz / 65536.0);
-        double fxZ = player.mo.y / 65536.0;
+        double fxZ = camYmap;
         camTranslate.setX(fxX);
         camTranslate.setY(fxY);
         camTranslate.setZ(fxZ);
@@ -179,7 +191,43 @@ public final class Fx3Renderer {
         // in JavaFX X/Z ⇒ θ = 90° − a.
         double angleDeg = (player.mo.angle & 0xFFFFFFFFL)
                 * (360.0 / 4294967296.0);
-        camYaw.setAngle(90.0 - angleDeg);
+        double yawDeg = 90.0 - angleDeg;
+        camYaw.setAngle(yawDeg);
+
+        // Sprites + masked walls: gather, sort back-to-front from
+        // the camera, and re-set the render-order group.
+        List<Fx3Sprites.Entry> sprEntries =
+                sprites.update(player, camX, camYmap, yawDeg);
+        List<javafx.scene.Node> sorted = new ArrayList<>(
+                sprEntries.size() + staticBuilt.masked().size()
+                        + dynamicBuilt.masked().size());
+        List<double[]> keys = new ArrayList<>(sorted.size());
+        for (var mv : staticBuilt.masked()) {
+            double[] mid = (double[]) mv.getUserData();
+            sorted.add(mv);
+            keys.add(new double[] { dist2(mid[0], mid[1], camX, camYmap) });
+        }
+        for (var mv : dynamicBuilt.masked()) {
+            double[] mid = (double[]) mv.getUserData();
+            sorted.add(mv);
+            keys.add(new double[] { dist2(mid[0], mid[1], camX, camYmap) });
+        }
+        for (Fx3Sprites.Entry e : sprEntries) {
+            sorted.add(e.node());
+            keys.add(new double[] { dist2(e.mx(), e.my(), camX, camYmap) });
+        }
+        Integer[] order = new Integer[sorted.size()];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        java.util.Arrays.sort(order,
+                (a, b) -> Double.compare(keys.get(b)[0], keys.get(a)[0]));
+        List<javafx.scene.Node> inOrder = new ArrayList<>(sorted.size());
+        for (int i : order) inOrder.add(sorted.get(i));
+        sortedGroup.getChildren().setAll(inOrder);
+    }
+
+    private static double dist2(double x, double y, double cx, double cy) {
+        double dx = x - cx, dy = y - cy;
+        return dx * dx + dy * dy;
     }
 
     private static void captureLevelBaseline() {

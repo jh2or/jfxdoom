@@ -55,7 +55,9 @@ import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.TriangleMesh;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class Fx3LevelMesh {
@@ -81,7 +83,16 @@ public final class Fx3LevelMesh {
     //
     // build(dyn, true) emits only dynamic geometry; build(dyn,
     // false) only static. dyn == null means "all static".
-    public static Group build(boolean[] dynamicSectors, boolean dynamicPass) {
+    //
+    // Result: the opaque world Group plus the masked (two-sided
+    // midtexture) quads as individual MeshViews — those carry alpha
+    // and must render after the world, distance-sorted together with
+    // sprites (JavaFX has no alpha test; render order = scene-graph
+    // order). Each masked node's userData is its map-space midpoint
+    // {x, y} for the per-frame sort.
+    public record Built(Group world, List<MeshView> masked) {}
+
+    public static Built build(boolean[] dynamicSectors, boolean dynamicPass) {
         if (polysFor != PSetup.sectors) {
             polys = Fx3SubsectorPolys.buildAll();
             polysFor = PSetup.sectors;
@@ -92,6 +103,7 @@ public final class Fx3LevelMesh {
         }
 
         Map<Long, Batch> batches = new HashMap<>();
+        List<MeshView> masked = new ArrayList<>();
 
         // Floors and ceilings.
         for (int i = 0; i < PSetup.numsubsectors; i++) {
@@ -188,13 +200,76 @@ public final class Fx3LevelMesh {
                             u0, zTexTop, rowofs);
                 }
             }
+            // Masked midtexture (grates, exit signs): drawn once
+            // vertically (never tiled), clipped to the opening.
+            // r_segs.c: texturemid = DONTPEGBOTTOM
+            //   ? max(floors) + texheight : min(ceilings).
+            if (side.midtexture > 0) {
+                int tex = side.midtexture;
+                double openBot = Math.max(ffloor, bfloor);
+                double openTop = Math.min(fceil, bceil);
+                if (openTop > openBot) {
+                    int texH = Fx3Textures.textureHeight(tex);
+                    double zTexTop = (pegBottom ? openBot + texH : openTop)
+                            + rowofs;
+                    double ztop = Math.min(openTop, zTexTop);
+                    double zbot = Math.max(openBot, zTexTop - texH);
+                    if (ztop > zbot) {
+                        Batch mb = new Batch(Fx3Textures.KIND_MASKED, tex,
+                                Math.max(0, Math.min(15, lightnum)));
+                        addMasked(mb, tex, x1, y1, x2, y2, zbot, ztop,
+                                u0, zTexTop);
+                        MeshView mv = mb.toMeshView();
+                        mv.setUserData(new double[] {
+                                (x1 + x2) / 2, (y1 + y2) / 2 });
+                        masked.add(mv);
+                    }
+                }
+            }
         }
 
         Group group = new Group();
         for (Batch b : batches.values()) {
             group.getChildren().add(b.toMeshView());
         }
-        return group;
+        return new Built(group, masked);
+    }
+
+    // Masked quad: vertical run is a single texture pass (V within
+    // one tile by construction), horizontal still splits on the
+    // bake-grid like ordinary walls. Note the masked image is baked
+    // with tilesV = 1, so pitchV here is just the texture height.
+    private static void addMasked(Batch b, int texnum,
+                                  double x1, double y1, double x2, double y2,
+                                  double zbot, double ztop,
+                                  double u0, double zTexTop) {
+        double len = Math.hypot(x2 - x1, y2 - y1);
+        if (len < 1e-6) return;
+        double pitchU = Fx3Textures.wallPitchU(texnum);
+        double texH = Fx3Textures.textureHeight(texnum);
+        float vT = (float) ((zTexTop - ztop) / texH);
+        float vB = (float) ((zTexTop - zbot) / texH);
+
+        int cu0 = (int) Math.floor(u0 / pitchU);
+        int cu1 = (int) Math.floor((u0 + len - 1e-9) / pitchU);
+        for (int cu = cu0; cu <= cu1; cu++) {
+            double ua = Math.max(u0, cu * pitchU);
+            double ub = Math.min(u0 + len, (cu + 1) * pitchU);
+            if (ub - ua < 1e-6) continue;
+            double ta = (ua - u0) / len;
+            double tb = (ub - u0) / len;
+            double xa = x1 + ta * (x2 - x1), ya = y1 + ta * (y2 - y1);
+            double xb = x1 + tb * (x2 - x1), yb = y1 + tb * (y2 - y1);
+            float iua = (float) ((ua - cu * pitchU) / pitchU);
+            float iub = (float) ((ub - cu * pitchU) / pitchU);
+
+            int ia = b.point(xa, ztop, ya, iua, vT);
+            int ib = b.point(xb, ztop, yb, iub, vT);
+            int ic = b.point(xb, zbot, yb, iub, vB);
+            int id = b.point(xa, zbot, ya, iua, vB);
+            b.tri(ia, ic, ib);
+            b.tri(ia, id, ic);
+        }
     }
 
     private static boolean isDynamic(boolean[] dynamicSectors, Sector sec) {
@@ -392,11 +467,18 @@ public final class Fx3LevelMesh {
             mesh.getFaces().setAll(f);
 
             MeshView mv = new MeshView(mesh);
-            mv.setMaterial(kind == Fx3Textures.KIND_WALL
-                    ? Fx3Textures.wallMaterial(num, lightnum)
-                    : Fx3Textures.flatMaterial(num, lightnum));
-            mv.setCullFace(kind == Fx3Textures.KIND_WALL
-                    ? CullFace.BACK : CullFace.NONE);
+            mv.setMaterial(switch (kind) {
+                case Fx3Textures.KIND_WALL ->
+                        Fx3Textures.wallMaterial(num, lightnum);
+                case Fx3Textures.KIND_MASKED ->
+                        Fx3Textures.maskedMaterial(num, lightnum);
+                default -> Fx3Textures.flatMaterial(num, lightnum);
+            });
+            // Flats are never coplanar-duplicated → NONE is safe;
+            // walls and masked quads exist once per facing → BACK
+            // prevents z-fighting between the two facings.
+            mv.setCullFace(kind == Fx3Textures.KIND_FLAT
+                    ? CullFace.NONE : CullFace.BACK);
             return mv;
         }
     }

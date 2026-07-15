@@ -49,8 +49,7 @@ class Fx3ScreenshotProbe {
                 }
                 DMain.dDoomMain(new String[] {
                         "-iwad", WAD_PATH.toString(),
-                        "-warp", "1", "1",
-                        "-nomonsters" });
+                        "-warp", "1", "1" });
 
                 Fx3Renderer.active = true;
                 SubScene sub = Fx3Renderer.subScene();
