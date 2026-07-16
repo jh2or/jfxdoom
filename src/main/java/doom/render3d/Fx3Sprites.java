@@ -103,7 +103,18 @@ public final class Fx3Sprites {
                 SpriteNode sn = pool.computeIfAbsent(m, k -> new SpriteNode());
                 sn.stamp = stamp;
                 sn.shape(lump, flip, lightnum);
-                sn.place(mx, -(m.z / 65536.0), my, camYawDeg);
+                // Sprite-clip adjustment (standard hardware-port
+                // tweak): lots of sprite art extends below the feet
+                // (height > topoffset). The software renderer paints
+                // sprites over the already-drawn floor so it never
+                // shows, but the depth buffer would sink them into
+                // the ground — raise grounded things so the quad's
+                // bottom rests on the floor. Airborne things
+                // (missiles, ceiling hangers, falling) keep their
+                // true position.
+                double raise = (m.z <= m.floorz)
+                        ? Math.max(0, sn.sinkBelowFeet) : 0;
+                sn.place(mx, -(m.z / 65536.0) - raise, my, camYawDeg);
                 sn.view.setOpacity(
                         (m.flags & Mobj.MF_SHADOW) != 0 ? 0.35 : 1.0);
                 out.add(new Entry(sn.view, mx, my));
@@ -133,6 +144,9 @@ public final class Fx3Sprites {
         int shownLump = -1;
         boolean shownFlip;
         int shownLight = -1;
+        // How far (map units) the art hangs below the feet; > 0
+        // means a grounded thing needs raising (see update()).
+        double sinkBelowFeet;
 
         SpriteNode() {
             mesh = new TriangleMesh();
@@ -161,6 +175,7 @@ public final class Fx3Sprites {
             float xr = xl + (float) (RData.spritewidth[lump] / 65536.0);
             float yTop = (float) -(RData.spritetopoffset[lump] / 65536.0);
             float yBot = yTop + Fx3Textures.spriteHeight(lump);
+            sinkBelowFeet = yBot;
             mesh.getPoints().setAll(
                     xl, yTop, 0,
                     xr, yTop, 0,
