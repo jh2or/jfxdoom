@@ -53,6 +53,12 @@ public final class Fx3Renderer {
     // branches on it.
     public static boolean active;
 
+    // Side-by-side mode (3D_SIDEBYSIDE_PLAN.md): the software
+    // renderer runs too, each frame, into VVideo.viewBuffer for its
+    // own pane. The 3D renderer must not touch that buffer, and the
+    // shared screens[0] wipe capture is skipped.
+    public static boolean sideBySide;
+
     private static SubScene subScene;
     private static Group levelHolder;
     private static final Translate camTranslate = new Translate();
@@ -108,6 +114,7 @@ public final class Fx3Renderer {
     // Launchpad so the next boot starts clean.
     public static void reset() {
         active = false;
+        sideBySide = false;
         subScene = null;
         levelHolder = null;
         builtFor = null;
@@ -115,6 +122,8 @@ public final class Fx3Renderer {
         dynamicBuilt = null;
         sortedGroup = null;
         sky = null;
+        weaponPass1 = null;
+        weaponPass2 = null;
         sprites.clear();
         Fx3Textures.reset();
     }
@@ -224,45 +233,59 @@ public final class Fx3Renderer {
         for (int i : order) inOrder.add(sorted.get(i));
         sortedGroup.getChildren().setAll(inOrder);
 
-        // Weapon sprite: reuse the software psprite pipeline. The
-        // view buffer is unused in 3D mode, so let
-        // R_DrawPlayerSprites paint just the weapon into it and have
-        // the shell composite it over the SubScene. rSetupFrame only
-        // sets renderer globals — the playsim never reads them.
+        // Weapon sprite: reuse the software psprite pipeline, drawn
+        // into the renderer's OWN buffers so viewBuffer stays free
+        // for the software pane in side-by-side mode. RDraw re-reads
+        // VVideo.viewBuffer on every draw call, so the reference is
+        // swapped in for the psprite pass and restored — no
+        // doom.render changes. rSetupFrame only sets renderer
+        // globals; the playsim never reads them.
         //
         // Transparency cannot be keyed on palette index 0 alone: the
         // weapon art legitimately contains index 0 (black outlines,
         // dark metal after colormap shading). So the weapon is drawn
         // TWICE, over a 0-fill and a 1-fill: pixels that differ
         // between passes are background, pixels that agree were
-        // drawn. The shell tests `pass1[i]==0 && view[i]==1` for
-        // transparency.
-        byte[] view = doom.ui.VVideo.viewBuffer;
-        if (view != null) {
-            if (weaponPass1 == null || weaponPass1.length != view.length) {
-                weaponPass1 = new byte[view.length];
+        // drawn. The shell tests `pass1[i]==0 && pass2[i]==1` for
+        // transparency and reads the color from pass2.
+        byte[] real = doom.ui.VVideo.viewBuffer;
+        if (real != null) {
+            if (weaponPass1 == null || weaponPass1.length != real.length) {
+                weaponPass1 = new byte[real.length];
+                weaponPass2 = new byte[real.length];
             }
             doom.render.RMain.rSetupFrame(player);
-            java.util.Arrays.fill(view, (byte) 0);
-            doom.render.RThings.rClearSprites();
-            doom.render.RThings.rDrawPlayerSprites();
-            System.arraycopy(view, 0, weaponPass1, 0, view.length);
-            java.util.Arrays.fill(view, (byte) 1);
-            doom.render.RThings.rClearSprites();
-            doom.render.RThings.rDrawPlayerSprites();
+            try {
+                doom.ui.VVideo.viewBuffer = weaponPass1;
+                java.util.Arrays.fill(weaponPass1, (byte) 0);
+                doom.render.RThings.rClearSprites();
+                doom.render.RThings.rDrawPlayerSprites();
+                doom.ui.VVideo.viewBuffer = weaponPass2;
+                java.util.Arrays.fill(weaponPass2, (byte) 1);
+                doom.render.RThings.rClearSprites();
+                doom.render.RThings.rDrawPlayerSprites();
+            } finally {
+                doom.ui.VVideo.viewBuffer = real;
+            }
         }
     }
 
-    // First weapon pass (drawn over a 0-fill); the shell compares it
-    // with viewBuffer (drawn over a 1-fill) to mask the weapon.
-    // Null until the first 3D frame.
+    // The two weapon passes (drawn over a 0- and a 1-fill); the
+    // shell masks the weapon by comparing them. Null until the
+    // first 3D frame.
     public static byte[] weaponPass1;
+    public static byte[] weaponPass2;
 
     // Wipe support: paint the SubScene's last rendered frame into
     // screens[0]'s view window as palette indices, so FWipe's start
     // capture melts the real 3D view instead of a black hole. Called
     // by DMain right before wipeStartScreen; runs on the FX thread.
     public static void captureViewToScreens0() {
+        // screens[0] is shared by both panes in side-by-side mode —
+        // injecting 3D pixels would corrupt the software pane's
+        // melt. Both panes then wipe like pure software mode
+        // (accepted compromise, 3D_SIDEBYSIDE_PLAN.md).
+        if (sideBySide) return;
         if (subScene == null || !subScene.isVisible()) return;
         byte[] ui = doom.ui.VVideo.screens[0];
         if (ui == null) return;
@@ -281,21 +304,21 @@ public final class Fx3Renderer {
         if (vw <= 0 || vh <= 0) return;
 
         byte[] toPal = Fx3Textures.rgbToPalette();
-        byte[] view = doom.ui.VVideo.viewBuffer;
         int renderW = doom.system.Doomdef.RENDER_WIDTH;
         int uiW = doom.system.Doomdef.SCREENWIDTH;
         for (int y = 0; y < vh; y++) {
             int sy = y * sh / vh;
             int row = (vy + y) * uiW + vx;
             for (int x = 0; x < vw; x++) {
-                // The weapon overlay lives in the view buffer, not
-                // the SubScene — pull it into the capture with the
-                // same two-pass mask the shell uses.
+                // The weapon overlay lives in the weapon-pass
+                // buffers, not the SubScene — pull it into the
+                // capture with the same two-pass mask the shell
+                // uses.
                 int vi = ((vy + y) * rm) * renderW + (vx + x) * rm;
-                if (weaponPass1 != null && view != null
-                        && vi < view.length
-                        && !(weaponPass1[vi] == 0 && view[vi] == 1)) {
-                    ui[row + x] = view[vi];
+                if (weaponPass1 != null && weaponPass2 != null
+                        && vi < weaponPass2.length
+                        && !(weaponPass1[vi] == 0 && weaponPass2[vi] == 1)) {
+                    ui[row + x] = weaponPass2[vi];
                     continue;
                 }
                 int argb = pr.getArgb(x * sw / vw, sy);

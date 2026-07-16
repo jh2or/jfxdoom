@@ -103,6 +103,25 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending
 - ✅ Final: full `./gradlew test` green; live playthrough with weapon,
   firing, sprites, HUD verified
 
+## Side-by-side mode (3D_SIDEBYSIDE_PLAN.md) ✅
+
+- ✅ Launchpad renderer ComboBox: Software / JavaFX 3D / Side-by-side
+  (horizontal) / Stacked (vertical); CLI `-sbs` / `-sbsv`; render-resolution
+  combo enabled in side-by-side (applies to the software pane), greyed only
+  for pure 3D
+- ✅ One window, two equal panes, one playsim — both renderers read the same
+  tic (`DMain.dDisplay` runs software first, then the scene graph)
+- ✅ Buffer conflict solved: the fx3 weapon pass draws into its own
+  `weaponPass1/2` buffers via a `VVideo.viewBuffer` reference swap (RDraw
+  re-reads the field per call) — `viewBuffer` belongs to the software pane
+  again; the borrow-hack in pure 3D mode is gone too
+- ✅ Dual composite in the shell (`BlitSurface` per pane: software classic /
+  fx3 cutout), dual fullscreen aspect fitter, per-pane SubScene tracking
+- ✅ Wipe compromise as approved: shared screens[0] melts like software mode
+  on both panes (`captureViewToScreens0` disabled in side-by-side)
+- ✅ Verified: live `-sbs` run — same tic both panes (weapon, corpse,
+  barrels, HUD identical), suite green
+
 ## Outcome
 
 All five phases complete. The experimental renderer is selectable in the

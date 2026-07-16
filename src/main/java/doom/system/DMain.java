@@ -482,7 +482,15 @@ public final class DMain {
                         // Experimental JavaFX scene-graph renderer
                         // (see 3D_OVERHAUL.md) — opt-in per session;
                         // the software renderer stays the default.
+                        // Side-by-side mode runs BOTH against the
+                        // same tic (both only read game state, so
+                        // they can never diverge); software first so
+                        // viewBuffer holds its pane's frame before
+                        // the 3D pass runs.
                         if (doom.render3d.Fx3Renderer.active) {
+                            if (doom.render3d.Fx3Renderer.sideBySide) {
+                                RMain.rRenderPlayerView(p);
+                            }
                             doom.render3d.Fx3Renderer.renderPlayerView(p);
                         } else {
                             RMain.rRenderPlayerView(p);
