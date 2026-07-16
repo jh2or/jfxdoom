@@ -205,7 +205,14 @@ public final class Launchpad {
         primary.add(pwadButtons,           2, r++);
         primary.add(new Label("Display Resolution:"),          0, r);
         primary.add(displayBox,                                 1, r++, 2, 1);
-        primary.add(new Label("Internal Render Resolution:"),  0, r);
+        // The internal render scale only matters for the software
+        // renderer; the 3D renderer draws at display resolution
+        // (its weapon overlay uses a fixed 2× internally), so grey
+        // the row out while the experimental renderer is selected.
+        Label renderScaleLabel = new Label("Internal Render Resolution:");
+        renderScaleLabel.disableProperty().bind(fx3dRenderer.selectedProperty());
+        renderScaleBox.disableProperty().bind(fx3dRenderer.selectedProperty());
+        primary.add(renderScaleLabel,                           0, r);
         primary.add(renderScaleBox,                             1, r++, 2, 1);
         Label fx3dHelp = new Label("(GPU scene-graph world view — lighting/look deviates from vanilla)");
         fx3dHelp.setStyle("-fx-text-fill: gray;");

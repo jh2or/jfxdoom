@@ -163,6 +163,16 @@ public final class JfxDoomApp extends Application {
     private void bootGame(Stage stage, String[] args,
                           Launchpad.DisplayMode display, int renderMul,
                           boolean fx3d) {
+        // In 3D-renderer mode the world draws at display resolution;
+        // the render buffer only carries the weapon overlay, pinned
+        // to 2× so the (greyed-out) Launchpad scale truly has no
+        // effect.
+        boolean fx3Supported = fx3d
+                && javafx.application.Platform.isSupported(
+                        javafx.application.ConditionalFeature.SCENE3D);
+        if (fx3Supported) {
+            renderMul = 2;
+        }
         // Apply the user's render-scale choice before any renderer
         // class allocates RENDER_*-sized scratch arrays. setRenderMul
         // updates the Doomdef constants; the resizeForRender calls
@@ -216,8 +226,7 @@ public final class JfxDoomApp extends Application {
         javafx.scene.shape.Rectangle fx3TintR = null;
         doom.render3d.Fx3Renderer.reset();
         if (fx3d) {
-            if (javafx.application.Platform.isSupported(
-                    javafx.application.ConditionalFeature.SCENE3D)) {
+            if (fx3Supported) {
                 fx3Sub = doom.render3d.Fx3Renderer.subScene();
                 fx3Sub.setManaged(false);
                 fx3Sub.setVisible(false);
