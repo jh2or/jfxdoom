@@ -114,6 +114,36 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | i_net.c       | `doom.system.INet`       | Standard | Pending | Single-player stub first.                          |
 | d_net.c       | `doom.system.DNet`       | Standard | Partial | Single-player stub: D_QuitNetGame / NetUpdate / TryRunTics no-op. Full ticcmd-exchange protocol lands when multiplayer comes online. |
 
+## 8 — Experimental JavaFX scene-graph renderer (no C counterpart)
+
+Opt-in alternative world renderer (`doom.render3d`) selected via the
+Launchpad's Renderer combo or `-fx3d` / `-sbs` / `-sbsv`. NOT a
+translation of any C file — it renders the world with JavaFX's native
+3D scene graph (SubScene + PerspectiveCamera + TriangleMesh) while the
+software renderer remains the default and the faithful path. It only
+*reads* engine state (`PSetup.*` arrays, player mobj); `doom.render` and
+`doom.play` are unmodified, so demo determinism is untouched. Design,
+accepted fidelity deviations (no distance light diminishing, bilinear
+texels, approximated fuzz/invulnerability) and per-phase status live in
+`3D_OVERHAUL.md` / `3D_OVERHAUL_STATUS.md` / `3D_SIDEBYSIDE_PLAN.md`.
+
+| Java class                        | Status   | Notes                                                    |
+| --------------------------------- | -------- | -------------------------------------------------------- |
+| `doom.render3d.Fx3Renderer`       | Verified | Facade: SubScene/camera, `renderPlayerView(Player)` mirrors R_RenderPlayerView; static/dynamic split rebuild (moving/relit sectors promote into a small per-tic group); weapon overlay via the software psprite pipeline into own buffers (two-pass mask, `VVideo.viewBuffer` reference swap); wipe capture (SubScene snapshot → PLAYPAL indices); `sideBySide` runs alongside the software renderer. |
+| `doom.render3d.Fx3SubsectorPolys` | Verified | Closed convex polygon per BSP subsector: level bbox clipped down the node partition planes (R_PointOnSide side convention) + exact parent-linedef seg clip + convex-hull repair for rounded vanilla NODES data (partition lines can sit ~5 map units off the true line). Headless; unit-tested against E1M1–E1M9. |
+| `doom.render3d.Fx3LevelMesh`      | Verified | Wall quads from segs (mid/upper/lower, r_segs pegging rules as zTexTop) + flat fans from the subsector polygons; per-texture bake-grid splits keep UVs ∈ [0,1] (JavaFX has no wrap mode); masked two-sided midtextures as per-facing alpha quads; sky flats/sky↔sky uppers skipped. |
+| `doom.render3d.Fx3Textures`       | Verified | Composites column/post textures + flats + sprite patches, shades through COLORMAP per 16-level light index (+ fake contrast), tiles + ×2 nearest pre-upscale → PhongMaterial diffuse maps; animation/switches via `texturetranslation`/`flattranslation` re-resolution each tic; 15-bit RGB → PLAYPAL table for the wipe capture. |
+| `doom.render3d.Fx3Sprites`        | Verified | One billboard per live mobj (pooled via `Sector.thinglist`), R_ProjectSprite rotation-frame selection, vanilla offsets, grounded sprites raised so art doesn't sink below the floor (standard hardware-port tweak), MF_SHADOW ≈ opacity. Translucent nodes (sprites + masked walls) render after the opaque world, distance-sorted back-to-front per frame. |
+| `doom.render3d.Fx3Sky`            | Verified | Camera-position-locked 8×45° cylinder, fullbright 2×-tiled sky texture at vanilla proportions (row 100 on the horizon, 4 repeats per turn). |
+
+Shell integration: `DMain.dDisplay` branches software / fx3 / both
+(side-by-side); `JfxDoomApp` layers the SubScene beneath a per-pane
+canvas whose view window is punched transparent (UI overlays stay
+opaque); palette flashes become an additive tint rectangle;
+invulnerability/light-amp approximate via ColorAdjust. Side-by-side
+runs both renderers against the same tic in two equal panes (HBox /
+VBox), each with its own composite surface.
+
 ## Open TODO items
 
 The C-side port is feature-complete; the remaining items are
