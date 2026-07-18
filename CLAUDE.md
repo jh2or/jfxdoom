@@ -16,6 +16,7 @@ jfxdoom/
 │   ├── wad/        WAD loading
 │   ├── fixed/      fixed-point math
 │   ├── render/     software renderer
+│   ├── render3d/   experimental JavaFX scene-graph renderer (opt-in; see §9)
 │   ├── play/       game logic, physics, thinkers
 │   ├── sound/      audio
 │   └── ui/         JavaFX shell (last to be built)
@@ -159,6 +160,31 @@ Do not touch the JavaFX layer until the headless engine renders frames correctly
 - Timing: `AnimationTimer` drives the game tick at 35 Hz (Doom's native tic rate).
 
 The shell should be under 500 lines.
+
+### 9a. Experimental scene-graph renderer (`doom.render3d`)
+
+`doom.render3d` is an **opt-in alternative** world renderer (Launchpad
+"Renderer" combo / `-fx3d`, `-sbs`, `-sbsv`) that draws with JavaFX's
+native 3D scene graph. It is NOT a C translation and the faithfulness
+rules of §2 do not apply *inside* it — but strict rules govern its
+boundary:
+
+- The software renderer stays the **default**. The definition of done
+  (§13) is measured against the software path only.
+- `doom.render3d` may only **read** engine state (`PSetup.*` arrays,
+  `RData` tables, the player mobj). Never modify `doom.render` or
+  `doom.play` for its benefit; demo determinism must be provably
+  untouched.
+- Fixed-point → float conversion (`x / 65536.0`) is allowed here at the
+  view boundary only — the §4 fixed-point rules still bind everywhere
+  else.
+- Side-by-side modes run both renderers against the same tic; the
+  weapon overlay reuses the software psprite pipeline via a
+  `VVideo.viewBuffer` reference swap (restore it in a `finally`).
+- Design, accepted fidelity deviations, and status: `3D_OVERHAUL.md`,
+  `3D_SIDEBYSIDE_PLAN.md`, `3D_OVERHAUL_STATUS.md`. Keep the status
+  file current when changing this package (same spirit as §12 for
+  PORT_STATUS.md).
 
 ---
 

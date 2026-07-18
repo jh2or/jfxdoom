@@ -43,7 +43,7 @@ tasks.test {
     // Forward selected `-Dkey=value` flags from the Gradle JVM
     // into the test JVM so diagnostic probes (e.g. E1M1ScreenshotProbe)
     // can be armed without a separate runner.
-    listOf("e1m1.probe").forEach { k ->
+    listOf("e1m1.probe", "fx3.probe").forEach { k ->
         System.getProperty(k)?.let { systemProperty(k, it) }
     }
 }

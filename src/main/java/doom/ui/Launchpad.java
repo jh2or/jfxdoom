@@ -65,9 +65,30 @@ public final class Launchpad {
         public String toString() { return label; }
     }
 
+    // Which renderer(s) drive the world view (3D_OVERHAUL.md /
+    // 3D_SIDEBYSIDE_PLAN.md). Side-by-side modes run the single
+    // playsim through BOTH renderers — two equal panes, same tic.
+    public enum RendererMode {
+        SOFTWARE("Software (faithful)"),
+        FX3D("JavaFX 3D (experimental)"),
+        SBS_H("Side-by-side (software | 3D)"),
+        SBS_V("Stacked (software / 3D)");
+
+        private final String label;
+
+        RendererMode(String label) { this.label = label; }
+
+        public boolean usesFx3() { return this != SOFTWARE; }
+        public boolean sideBySide() { return this == SBS_H || this == SBS_V; }
+
+        @Override
+        public String toString() { return label; }
+    }
+
     @FunctionalInterface
     public interface LaunchCallback {
-        void onLaunch(String[] args, DisplayMode display, int renderMul);
+        void onLaunch(String[] args, DisplayMode display, int renderMul,
+                      RendererMode renderer);
     }
 
     private final TextField iwadField = new TextField();
@@ -90,6 +111,10 @@ public final class Launchpad {
                     new RenderScale(2, "2× (640×400)"),
                     new RenderScale(3, "3× (960×600)"),
                     new RenderScale(4, "4× (1280×800)")));
+    // Renderer selection (software / experimental 3D / side-by-side).
+    private final ComboBox<RendererMode> rendererBox =
+            new ComboBox<>(FXCollections.observableArrayList(RendererMode.values()));
+
     private final CheckBox expertMode = new CheckBox("Expert mode");
 
     private final ComboBox<String> skillBox = new ComboBox<>(FXCollections.observableArrayList(
@@ -121,11 +146,14 @@ public final class Launchpad {
     private String initialIwad;
     private DisplayMode initialDisplay = DisplayMode.SCALE_4X;
     private int initialRenderMul = 1;
+    private RendererMode initialRenderer = RendererMode.SOFTWARE;
 
-    public Launchpad prefill(String iwad, DisplayMode display, int renderMul) {
+    public Launchpad prefill(String iwad, DisplayMode display, int renderMul,
+                             RendererMode renderer) {
         this.initialIwad = iwad;
         if (display != null) this.initialDisplay = display;
         if (renderMul >= 1 && renderMul <= 4) this.initialRenderMul = renderMul;
+        if (renderer != null) this.initialRenderer = renderer;
         return this;
     }
 
@@ -147,6 +175,7 @@ public final class Launchpad {
         // Apply prefill values.
         if (initialIwad != null) iwadField.setText(initialIwad);
         displayBox.setValue(initialDisplay);
+        rendererBox.setValue(initialRenderer);
         for (RenderScale rs : renderScaleBox.getItems()) {
             if (rs.mul == initialRenderMul) { renderScaleBox.setValue(rs); break; }
         }
@@ -195,8 +224,25 @@ public final class Launchpad {
         primary.add(pwadButtons,           2, r++);
         primary.add(new Label("Display Resolution:"),          0, r);
         primary.add(displayBox,                                 1, r++, 2, 1);
-        primary.add(new Label("Internal Render Resolution:"),  0, r);
+        // The internal render scale only matters when the software
+        // renderer draws a world view (software + side-by-side
+        // modes); pure 3D draws at display resolution with the
+        // weapon overlay pinned internally, so only that entry greys
+        // the row out.
+        Label renderScaleLabel = new Label("Internal Render Resolution:");
+        var pure3d = Bindings.createBooleanBinding(
+                () -> rendererBox.getValue() == RendererMode.FX3D,
+                rendererBox.valueProperty());
+        renderScaleLabel.disableProperty().bind(pure3d);
+        renderScaleBox.disableProperty().bind(pure3d);
+        primary.add(renderScaleLabel,                           0, r);
         primary.add(renderScaleBox,                             1, r++, 2, 1);
+        Label fx3dHelp = new Label("(3D / side-by-side: GPU scene graph — look deviates from vanilla)");
+        fx3dHelp.setStyle("-fx-text-fill: gray;");
+        HBox rendererRow = new HBox(10, rendererBox, fx3dHelp);
+        rendererRow.setAlignment(Pos.CENTER_LEFT);
+        primary.add(new Label("Renderer:"), 0, r);
+        primary.add(rendererRow,            1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);
@@ -276,7 +322,9 @@ public final class Launchpad {
         launch.setOnAction(e -> {
             RenderScale rs = renderScaleBox.getValue();
             int mul = (rs != null) ? rs.mul : 2;
-            callback.onLaunch(assembleArgs(), displayBox.getValue(), mul);
+            RendererMode mode = rendererBox.getValue();
+            callback.onLaunch(assembleArgs(), displayBox.getValue(), mul,
+                    (mode != null) ? mode : RendererMode.SOFTWARE);
         });
         Region spring = new Region();
         HBox.setHgrow(spring, Priority.ALWAYS);

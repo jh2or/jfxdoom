@@ -34,11 +34,22 @@ skip). Two resolution knobs sit in the primary section:
 - **Display Resolution** — sizes the window. Windowed 1×–5× the
   logical 320×200 grid, or Fullscreen with letterbox/pillarbox
   bars when the monitor aspect differs from 4:3.
-- **Internal Render Resolution** — controls the 3D renderer's
-  sample density. 1× is vanilla 320×200; 2× / 3× / 4× render
-  the walls, floors and sprites at correspondingly higher
-  detail. The HUD, status bar, menu and title art always render
-  at 320×200 regardless and are composited on top.
+- **Internal Render Resolution** — controls the *software*
+  renderer's sample density. 1× is vanilla 320×200; 2× / 3× /
+  4× render the walls, floors and sprites at correspondingly
+  higher detail. The HUD, status bar, menu and title art always
+  render at 320×200 regardless and are composited on top.
+  (Greyed out for the pure JavaFX 3D renderer, which draws at
+  display resolution; in side-by-side modes it applies to the
+  software pane.)
+- **Renderer** — which renderer draws the world view:
+  - *Software (faithful)* — the ported vanilla renderer
+    (default).
+  - *JavaFX 3D (experimental)* — GPU scene-graph renderer, see
+    below.
+  - *Side-by-side (software | 3D)* / *Stacked (software / 3D)* —
+    both renderers at once in two equal panes, driven by the
+    same game tic.
 
 Flip the **Expert mode** switch to reveal skill / warp /
 episode / gameplay flags / demo recording.
@@ -85,6 +96,45 @@ exposes the same set):
 -timedemo <name>    same, but bail with timing info at end
 -maxdemo <KB>       grow the recording buffer past the default 128 KiB
 ```
+
+Port-specific flags (no C counterpart):
+
+```
+-fx3d               use the experimental JavaFX scene-graph renderer
+-sbs                side-by-side mode (software pane left, 3D pane right)
+-sbsv               stacked mode (software pane top, 3D pane bottom)
+```
+
+## The experimental JavaFX 3D renderer
+
+Besides the faithful software renderer, the port ships an
+**opt-in** second renderer that draws the world view with
+JavaFX's native 3D scene graph (`SubScene` + `PerspectiveCamera`
++ `TriangleMesh`) on the GPU instead of blitting the software
+framebuffer. Level geometry is rebuilt from the BSP (closed
+subsector polygons), textures/flats/sprites are decoded through
+COLORMAP + PLAYPAL into materials, doors/lifts/blinking lights
+update live, the sky is a camera-locked cylinder, and the weapon
+overlay is still drawn pixel-exact by the software psprite
+pipeline. The 2D layers (status bar, HUD, menus, automap,
+intermission, screen melt) remain the software implementation on
+both renderers.
+
+It is deliberately **not** vanilla-faithful — JavaFX has no
+shaders or fog, so the biggest visible difference is the missing
+distance-based light diminishing (sectors are lit flat at their
+light level; the software renderer darkens surfaces with
+distance). Texel filtering is bilinear-ish, and the spectre fuzz
+/ invulnerability effects are approximated. The playsim is
+shared and unmodified, so demos and gameplay are bit-identical
+regardless of renderer.
+
+The **side-by-side / stacked** modes run both renderers against
+the same tic in two equal panes — handy for comparing them; the
+lighting difference is immediately visible. Design and status
+notes live in [`3D_OVERHAUL.md`](3D_OVERHAUL.md),
+[`3D_SIDEBYSIDE_PLAN.md`](3D_SIDEBYSIDE_PLAN.md) and
+[`3D_OVERHAUL_STATUS.md`](3D_OVERHAUL_STATUS.md).
 
 ## Controls
 
@@ -169,6 +219,7 @@ jfxdoom/
 │   ├── wad/          WAD loader, zone memory
 │   ├── fixed/        fixed-point math
 │   ├── render/       software renderer
+│   ├── render3d/     experimental JavaFX scene-graph renderer (opt-in)
 │   ├── play/         playsim, AI, physics
 │   ├── sound/        ISound (javax.sound.sampled) + MUS→MIDI
 │   └── ui/           JavaFX shell + Launchpad + menu / status bar / HUD / wipe / finale
@@ -179,6 +230,9 @@ jfxdoom/
 ├── gradle.properties           Gradle properties
 ├── PORT_STATUS.md              per-module port status + deviations list
 ├── PORT_COMMENTS.md            port-experience notes (human-written)
+├── 3D_OVERHAUL.md              3D-renderer design plan + accepted fidelity deviations
+├── 3D_OVERHAUL_STATUS.md       3D-renderer implementation status (all phases)
+├── 3D_SIDEBYSIDE_PLAN.md       side-by-side mode design plan
 ├── INITIAL_PROMPT.md           original prompt that bootstrapped the port
 ├── CLAUDE.md                   live agent instructions (translation rules)
 ├── LICENSE                     GPL v2

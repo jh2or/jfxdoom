@@ -459,6 +459,12 @@ public final class DMain {
         boolean startingWipe = !wipeActive
                 && (Doomstat.gamestate != Doomstat.wipegamestate);
         if (startingWipe) {
+            // 3D-renderer mode leaves the view window of screens[0]
+            // at palette 0 (transparent cutout) — pull the SubScene's
+            // last frame in so the melt has real pixels to peel away.
+            if (doom.render3d.Fx3Renderer.active) {
+                doom.render3d.Fx3Renderer.captureViewToScreens0();
+            }
             doom.ui.FWipe.wipeStartScreen(0, 0,
                     Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT);
         }
@@ -473,7 +479,22 @@ public final class DMain {
                 } else {
                     Player p = GGame.players[GGame.consoleplayer];
                     if (p != null && p.mo != null) {
-                        RMain.rRenderPlayerView(p);
+                        // Experimental JavaFX scene-graph renderer
+                        // (see 3D_OVERHAUL.md) — opt-in per session;
+                        // the software renderer stays the default.
+                        // Side-by-side mode runs BOTH against the
+                        // same tic (both only read game state, so
+                        // they can never diverge); software first so
+                        // viewBuffer holds its pane's frame before
+                        // the 3D pass runs.
+                        if (doom.render3d.Fx3Renderer.active) {
+                            if (doom.render3d.Fx3Renderer.sideBySide) {
+                                RMain.rRenderPlayerView(p);
+                            }
+                            doom.render3d.Fx3Renderer.renderPlayerView(p);
+                        } else {
+                            RMain.rRenderPlayerView(p);
+                        }
                     }
                 }
                 // C: redrawsbar = wipe || (viewheight != 200 && fullscreen),

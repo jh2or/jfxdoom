@@ -81,10 +81,6 @@ public final class JfxDoomApp extends Application {
     // Default windowed scale for the CLI-driven boot path.
     private static final int DEFAULT_SCALE = 4;
 
-    private int[] argb;
-    private PixelBuffer<IntBuffer> pixelBuffer;
-    private WritableImage image;
-
     // 256-entry ARGB palette. Indexed by VVideo.screens[0] bytes.
     private final int[] palette = new int[256];
 
@@ -95,6 +91,41 @@ public final class JfxDoomApp extends Application {
     private String lastIwad;
     private Launchpad.DisplayMode lastDisplay = Launchpad.DisplayMode.SCALE_4X;
     private int lastRenderMul = 1;
+    private Launchpad.RendererMode lastRenderer = Launchpad.RendererMode.SOFTWARE;
+
+    // One blit target: canvas + ARGB buffer + PixelBuffer-backed
+    // image. Software mode uses one, pure 3D one, side-by-side two
+    // (one per pane, composited differently).
+    private static final class BlitSurface {
+        final Canvas canvas = new Canvas();
+        final GraphicsContext gc = canvas.getGraphicsContext2D();
+        final int[] argb;
+        final PixelBuffer<IntBuffer> pixelBuffer;
+        final WritableImage image;
+
+        BlitSurface(int w, int h) {
+            gc.setImageSmoothing(false); // pixel-perfect upscale
+            argb = new int[w * h];
+            pixelBuffer = new PixelBuffer<>(w, h, IntBuffer.wrap(argb),
+                    PixelFormat.getIntArgbPreInstance());
+            image = new WritableImage(pixelBuffer);
+        }
+
+        // clearFirst: the fx3 composite writes transparent holes,
+        // which don't overwrite last frame's pixels on their own.
+        void blit(boolean clearFirst) {
+            pixelBuffer.updateBuffer(b -> null);
+            if (clearFirst) {
+                gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            }
+            gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
+        }
+    }
+
+    // 3D-mode palette-flash tint (sub-palette entry 0) and the last
+    // applied fixedcolormap effect, updated from the render hook.
+    private javafx.scene.paint.Color fx3TintColor = javafx.scene.paint.Color.BLACK;
+    private int fx3LastFixedColormap;
 
     public static void main(String[] args) {
         launchArgs = args;
@@ -114,21 +145,35 @@ public final class JfxDoomApp extends Application {
         };
 
         if (launchArgs.length > 0) {
-            // CLI-driven boot — skip the Launchpad entirely.
+            // CLI-driven boot — skip the Launchpad entirely. The
+            // -fx3d / -sbs / -sbsv flags select the experimental
+            // scene-graph renderer resp. the side-by-side modes
+            // (3D_OVERHAUL.md, 3D_SIDEBYSIDE_PLAN.md); the engine's
+            // arg parser ignores flags it doesn't know.
             captureLastFromArgs(launchArgs);
-            bootGame(stage, launchArgs, Launchpad.DisplayMode.SCALE_4X, lastRenderMul);
+            Launchpad.RendererMode mode = Launchpad.RendererMode.SOFTWARE;
+            for (String a : launchArgs) {
+                if ("-fx3d".equals(a)) mode = Launchpad.RendererMode.FX3D;
+                else if ("-sbs".equals(a))  mode = Launchpad.RendererMode.SBS_H;
+                else if ("-sbsv".equals(a)) mode = Launchpad.RendererMode.SBS_V;
+            }
+            lastRenderer = mode;
+            bootGame(stage, launchArgs, Launchpad.DisplayMode.SCALE_4X,
+                    lastRenderMul, mode);
         } else {
             showLauncher(stage);
         }
     }
 
     private void showLauncher(Stage stage) {
-        Launchpad ui = new Launchpad().prefill(lastIwad, lastDisplay, lastRenderMul);
-        Scene startupScene = ui.build(stage, (args, display, renderMul) -> {
+        Launchpad ui = new Launchpad()
+                .prefill(lastIwad, lastDisplay, lastRenderMul, lastRenderer);
+        Scene startupScene = ui.build(stage, (args, display, renderMul, renderer) -> {
             captureLastFromArgs(args);
             lastDisplay = display;
             lastRenderMul = renderMul;
-            bootGame(stage, args, display, renderMul);
+            lastRenderer = renderer;
+            bootGame(stage, args, display, renderMul, renderer);
         });
         stage.setFullScreen(false);
         stage.setScene(startupScene);
@@ -140,13 +185,38 @@ public final class JfxDoomApp extends Application {
         if (!stage.isShowing()) stage.show();
     }
 
-    // Build the game canvas + key listeners, hand control to the
+    // Build the game pane(s) + key listeners, hand control to the
     // engine, then drive it at TICRATE. Called from start() (CLI
     // path) or from the Launchpad's Launch callback.
     private void bootGame(Stage stage, String[] args,
-                          Launchpad.DisplayMode display, int renderMul) {
-        // Apply the user's render-scale choice before any renderer
-        // class allocates RENDER_*-sized scratch arrays. setRenderMul
+                          Launchpad.DisplayMode display, int renderMul,
+                          Launchpad.RendererMode modeIn) {
+        Launchpad.RendererMode mode =
+                (modeIn != null) ? modeIn : Launchpad.RendererMode.SOFTWARE;
+        if (mode.usesFx3() && !javafx.application.Platform.isSupported(
+                javafx.application.ConditionalFeature.SCENE3D)) {
+            // Same degrade-gracefully policy as audio (Windows
+            // Sandbox: no D3D pipeline → no SCENE3D).
+            System.err.println(
+                    "jfxdoom: SCENE3D not supported by this JavaFX "
+                    + "pipeline — falling back to the software renderer.");
+            mode = Launchpad.RendererMode.SOFTWARE;
+        }
+        // In pure 3D mode the world draws at display resolution and
+        // the render buffer only carries the weapon overlay — pinned
+        // to 2× so the (greyed-out) Launchpad scale truly has no
+        // effect. Side-by-side honours the user's choice: it applies
+        // to the software pane (and, incidentally, the 3D pane's
+        // weapon overlay).
+        if (mode == Launchpad.RendererMode.FX3D) {
+            renderMul = 2;
+        }
+        boolean fx3 = mode.usesFx3();
+        boolean sbs = mode.sideBySide();
+        boolean sbsHorizontal = mode == Launchpad.RendererMode.SBS_H;
+
+        // Apply the render-scale choice before any renderer class
+        // allocates RENDER_*-sized scratch arrays. setRenderMul
         // updates the Doomdef constants; the resizeForRender calls
         // swap module-level static arrays (RMain, RPlane, RThings,
         // RDraw) to match. VVideo.viewBuffer re-allocates inside
@@ -157,17 +227,15 @@ public final class JfxDoomApp extends Application {
         doom.render.RThings.resizeForRender();
         doom.render.RDraw.resizeForRender();
 
-        // (Re-)allocate the ARGB blit buffer + PixelBuffer +
-        // WritableImage at the new RENDER_* size. Each is wrapped
-        // around the previous one, so we re-create the whole chain.
         int w = Doomdef.RENDER_WIDTH;
         int h = Doomdef.RENDER_HEIGHT;
-        if (argb == null || argb.length != w * h) {
-            argb = new int[w * h];
-            pixelBuffer = new PixelBuffer<>(w, h, IntBuffer.wrap(argb),
-                    PixelFormat.getIntArgbPreInstance());
-            image = new WritableImage(pixelBuffer);
-        }
+
+        // One surface per pane: the software composite needs one in
+        // software + side-by-side modes, the fx3 cutout composite in
+        // fx3 + side-by-side modes.
+        final BlitSurface swSurface =
+                (mode != Launchpad.RendererMode.FX3D) ? new BlitSurface(w, h) : null;
+        final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
 
         // Engine state needs a fresh start on re-launch: clear
         // the quitting guard and drop the previous WAD list so
@@ -177,31 +245,100 @@ public final class JfxDoomApp extends Application {
             DMain.dResetWadFiles();
         }
 
-        Canvas canvas = new Canvas();
-        GraphicsContext gc = canvas.getGraphicsContext2D();
-        // Pixel-perfect upscale.
-        gc.setImageSmoothing(false);
+        // Experimental scene-graph 3D renderer (3D_OVERHAUL.md): a
+        // SubScene layered *behind* its pane's canvas renders the
+        // world view on the GPU; the canvas keeps all 2D (status
+        // bar, border, HUD, menu, automap, wipe) and gets
+        // transparent pixels punched out of the active view window
+        // so the SubScene shows through. Unmanaged: positioned per
+        // frame in finishUpdateHook to track the view window.
+        javafx.scene.SubScene fx3Sub = null;
+        javafx.scene.shape.Rectangle fx3TintR = null;
+        doom.render3d.Fx3Renderer.reset();
+        if (fx3) {
+            fx3Sub = doom.render3d.Fx3Renderer.subScene();
+            fx3Sub.setManaged(false);
+            fx3Sub.setVisible(false);
+            // Palette-flash approximation: damage/bonus/radsuit
+            // tints live in PLAYPAL sub-palettes, which only the
+            // 2D canvas obeys. Additively blending the tinted
+            // palette's "black" (entry 0 ≈ the pure tint
+            // component) over the SubScene reproduces the flash
+            // on the 3D view. Sits between SubScene and canvas.
+            fx3TintR = new javafx.scene.shape.Rectangle();
+            fx3TintR.setManaged(false);
+            fx3TintR.setVisible(false);
+            fx3TintR.setBlendMode(javafx.scene.effect.BlendMode.ADD);
+            fx3TintR.setMouseTransparent(true);
+            doom.render3d.Fx3Renderer.active = true;
+            doom.render3d.Fx3Renderer.sideBySide = sbs;
+        }
+        final javafx.scene.SubScene fx3SubScene = fx3Sub;
+        final javafx.scene.shape.Rectangle fx3Tint = fx3TintR;
 
-        StackPane root = new StackPane(canvas);
-        // Black bars when the canvas doesn't fill the stage
-        // (fullscreen aspect mismatch).
-        root.setStyle("-fx-background-color: black;");
+        // Pane assembly. Each pane is a black StackPane holding its
+        // canvas (and, for the 3D pane, the SubScene + tint rect
+        // beneath it). Side-by-side puts both panes — always the
+        // same size — into an HBox (software left) or VBox
+        // (software top).
+        StackPane swPane = null;
+        if (swSurface != null) {
+            swPane = new StackPane(swSurface.canvas);
+            swPane.setStyle("-fx-background-color: black;");
+        }
+        StackPane fxPane = null;
+        if (fxSurface != null) {
+            fxPane = new StackPane();
+            fxPane.getChildren().addAll(fx3Sub, fx3TintR, fxSurface.canvas);
+            fxPane.setStyle("-fx-background-color: black;");
+        }
+        javafx.scene.Parent root;
+        if (sbs) {
+            javafx.scene.layout.Pane pair;
+            if (sbsHorizontal) {
+                javafx.scene.layout.HBox hb =
+                        new javafx.scene.layout.HBox(swPane, fxPane);
+                hb.setAlignment(javafx.geometry.Pos.CENTER);
+                pair = hb;
+            } else {
+                javafx.scene.layout.VBox vb =
+                        new javafx.scene.layout.VBox(swPane, fxPane);
+                vb.setAlignment(javafx.geometry.Pos.CENTER);
+                pair = vb;
+            }
+            pair.setStyle("-fx-background-color: black;");
+            root = pair;
+        } else {
+            root = (fxPane != null) ? fxPane : swPane;
+        }
 
         // Canvas / scene sizing uses the *UI* logical grid (320x200) ×
-        // user-picked display scale. The renderer's RENDER_MUL only
-        // affects sample density inside that same window — JavaFX
-        // scales the hi-res argb image to fit.
+        // user-picked display scale per pane. The renderer's
+        // RENDER_MUL only affects sample density inside that window —
+        // JavaFX scales the hi-res argb image to fit.
         int uiH = Doomdef.SCREENHEIGHT;
+        Canvas[] canvases = (sbs)
+                ? new Canvas[] { swSurface.canvas, fxSurface.canvas }
+                : new Canvas[] { (fxSurface != null ? fxSurface : swSurface).canvas };
         Scene scene;
         if (display != null && display.fullscreen) {
             scene = new Scene(root);
-            installAspectFitter(canvas, scene);
+            if (sbs) {
+                installAspectFitterDual(swSurface.canvas, fxSurface.canvas,
+                        scene, sbsHorizontal);
+            } else {
+                installAspectFitter(canvases[0], scene);
+            }
         } else {
             int scale = (display != null) ? display.scale : DEFAULT_SCALE;
             if (scale <= 0) scale = DEFAULT_SCALE;
-            canvas.setWidth(UI_W * scale);
-            canvas.setHeight(uiH * scale);
-            scene = new Scene(root, UI_W * scale, uiH * scale);
+            for (Canvas c : canvases) {
+                c.setWidth(UI_W * scale);
+                c.setHeight(uiH * scale);
+            }
+            int sceneW = UI_W * scale * ((sbs && sbsHorizontal) ? 2 : 1);
+            int sceneH = uiH * scale * ((sbs && !sbsHorizontal) ? 2 : 1);
+            scene = new Scene(root, sceneW, sceneH);
         }
 
         scene.setOnKeyPressed(e -> {
@@ -274,38 +411,98 @@ public final class JfxDoomApp extends Application {
                     && !doom.ui.AmMap.automapactive
                     && vw > 0 && vh > 0;
 
-            int vxEnd = vx + vw;
-            int vyEnd = vy + vh;
-
             // Read render dims dynamically (RENDER_MUL is a per-
             // session value the Launchpad sets).
             int renderW = Doomdef.RENDER_WIDTH;
             int renderH = Doomdef.RENDER_HEIGHT;
             int rm      = Doomdef.RENDER_MUL;
 
-            int i = 0;
-            for (int y = 0; y < renderH; y++) {
-                int uiRowOff = (y / rm) * UI_W;
-                boolean rowInView = viewActive && y >= vy && y < vyEnd;
-                int viewRowOff = y * renderW;
-                for (int x = 0; x < renderW; x++, i++) {
-                    int pal;
-                    if (rowInView && x >= vx && x < vxEnd) {
-                        // viewport zone: prefer the UI byte if non-
-                        // zero (a menu/HUD overlay painted there
-                        // this frame, post-startFrameHook clear),
-                        // otherwise the 3D view's pixel.
-                        int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
-                        pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
-                    } else {
-                        pal = ui[uiRowOff + (x / rm)] & 0xff;
+            // Software pane: UI over viewBuffer (the classic
+            // composite).
+            if (swSurface != null) {
+                compositeSoftware(swSurface.argb, ui, view, viewActive,
+                        vx, vy, vw, vh, renderW, renderH, rm);
+                swSurface.blit(false);
+            }
+
+            // 3D pane: UI opaque, weapon psprite from the two-pass
+            // mask, transparent holes over the SubScene.
+            if (fxSurface != null) {
+                compositeFx3(fxSurface.argb, ui, viewActive,
+                        vx, vy, vw, vh, renderW, renderH, rm);
+            }
+
+            // Track the view window with the SubScene: same rect,
+            // scaled from render pixels to canvas pixels, offset by
+            // the canvas position inside its pane (fullscreen
+            // letterboxing centres it).
+            if (fx3SubScene != null) {
+                if (viewActive) {
+                    javafx.geometry.Bounds cb =
+                            fxSurface.canvas.getBoundsInParent();
+                    double sx = cb.getWidth() / renderW;
+                    double sy = cb.getHeight() / renderH;
+                    double lx = cb.getMinX() + vx * sx;
+                    double ly = cb.getMinY() + vy * sy;
+                    double lw = vw * sx;
+                    double lh = vh * sy;
+                    fx3SubScene.setLayoutX(lx);
+                    fx3SubScene.setLayoutY(ly);
+                    fx3SubScene.setWidth(lw);
+                    fx3SubScene.setHeight(lh);
+                    fx3SubScene.setVisible(true);
+
+                    // Palette flash: additive tint from the current
+                    // sub-palette's entry 0 (pure tint component).
+                    javafx.scene.paint.Color tint = fx3TintColor;
+                    boolean tintOn = tint != null
+                            && !tint.equals(javafx.scene.paint.Color.BLACK);
+                    fx3Tint.setLayoutX(lx);
+                    fx3Tint.setLayoutY(ly);
+                    fx3Tint.setWidth(lw);
+                    fx3Tint.setHeight(lh);
+                    fx3Tint.setFill(tintOn ? tint : javafx.scene.paint.Color.BLACK);
+                    fx3Tint.setVisible(tintOn);
+
+                    // Invulnerability / light-amp approximations via
+                    // a color-adjust pass over the SubScene.
+                    doom.play.Player p =
+                            doom.system.GGame.players[doom.system.GGame.consoleplayer];
+                    int fcm = (p != null) ? p.fixedcolormap : 0;
+                    if (fcm != fx3LastFixedColormap) {
+                        fx3LastFixedColormap = fcm;
+                        if (fcm == 32) {
+                            // INVERSECOLORMAP: desaturate + invert
+                            // (white DIFFERENCE happens via effect
+                            // chain: ColorAdjust can't invert, so
+                            // approximate with max brightness swing).
+                            javafx.scene.effect.ColorAdjust ca =
+                                    new javafx.scene.effect.ColorAdjust();
+                            ca.setSaturation(-1);
+                            ca.setBrightness(0.7);
+                            ca.setContrast(-0.6);
+                            fx3SubScene.setEffect(ca);
+                        } else if (fcm > 0) {
+                            // Light amplification visor: fullbright.
+                            javafx.scene.effect.ColorAdjust ca =
+                                    new javafx.scene.effect.ColorAdjust();
+                            ca.setBrightness(0.55);
+                            fx3SubScene.setEffect(ca);
+                        } else {
+                            fx3SubScene.setEffect(null);
+                        }
                     }
-                    argb[i] = palette[pal];
+                } else {
+                    fx3SubScene.setVisible(false);
+                    fx3Tint.setVisible(false);
                 }
             }
 
-            pixelBuffer.updateBuffer(b -> null);
-            gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
+            if (fxSurface != null) {
+                // Transparent holes don't overwrite last frame's
+                // pixels — blit clears first.
+                fxSurface.blit(true);
+            }
         };
         IVideo.setPaletteHook = bytes -> uploadPalette(bytes);
         IVideo.startTicHook = () -> {
@@ -378,6 +575,9 @@ public final class JfxDoomApp extends Application {
         IVideo.finishUpdateHook = null;
         IVideo.setPaletteHook = null;
         IVideo.startTicHook = null;
+        // Drop the 3D scene so the next boot starts clean —
+        // regardless of whether ENDOOM or the Launchpad shows next.
+        doom.render3d.Fx3Renderer.reset();
 
         // The WAD statics survive iQuit, so the lump is still
         // readable here. Any failure (no WAD mounted, short lump)
@@ -453,6 +653,70 @@ public final class JfxDoomApp extends Application {
                 (argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
     }
 
+    // Software composite: for pixels inside the active view window
+    // the view buffer wins unless a UI overlay painted there this
+    // frame (post-startFrameHook clear); outside, the UI buffer is
+    // nearest-neighbour upscaled by RENDER_MUL.
+    private void compositeSoftware(int[] out, byte[] ui, byte[] view,
+                                   boolean viewActive, int vx, int vy,
+                                   int vw, int vh,
+                                   int renderW, int renderH, int rm) {
+        int vxEnd = vx + vw;
+        int vyEnd = vy + vh;
+        int i = 0;
+        for (int y = 0; y < renderH; y++) {
+            int uiRowOff = (y / rm) * UI_W;
+            boolean rowInView = viewActive && y >= vy && y < vyEnd;
+            int viewRowOff = y * renderW;
+            for (int x = 0; x < renderW; x++, i++) {
+                int pal;
+                if (rowInView && x >= vx && x < vxEnd) {
+                    int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
+                    pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
+                } else {
+                    pal = ui[uiRowOff + (x / rm)] & 0xff;
+                }
+                out[i] = palette[pal];
+            }
+        }
+    }
+
+    // Fx3 composite: UI overlays stay opaque, the weapon psprite
+    // comes from Fx3Renderer's two-pass mask (drawn pixels agree
+    // across the passes; background is 0 in pass 1 and 1 in pass 2),
+    // everything else in the view window becomes a transparent hole
+    // over the SubScene.
+    private void compositeFx3(int[] out, byte[] ui,
+                              boolean viewActive, int vx, int vy,
+                              int vw, int vh,
+                              int renderW, int renderH, int rm) {
+        byte[] pass1 = doom.render3d.Fx3Renderer.weaponPass1;
+        byte[] pass2 = doom.render3d.Fx3Renderer.weaponPass2;
+        int vxEnd = vx + vw;
+        int vyEnd = vy + vh;
+        int i = 0;
+        for (int y = 0; y < renderH; y++) {
+            int uiRowOff = (y / rm) * UI_W;
+            boolean rowInView = viewActive && y >= vy && y < vyEnd;
+            int viewRowOff = y * renderW;
+            for (int x = 0; x < renderW; x++, i++) {
+                if (rowInView && x >= vx && x < vxEnd) {
+                    int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
+                    if (uiPal != 0) {
+                        out[i] = palette[uiPal];
+                    } else {
+                        int vi = viewRowOff + x;
+                        boolean background = pass1 == null || pass2 == null
+                                || (pass1[vi] == 0 && pass2[vi] == 1);
+                        out[i] = background ? 0 : palette[pass2[vi] & 0xff];
+                    }
+                } else {
+                    out[i] = palette[ui[uiRowOff + (x / rm)] & 0xff];
+                }
+            }
+        }
+    }
+
     // Resize the canvas inside the StackPane so 320:200 is
     // preserved when the scene is larger or a different aspect
     // ratio than the engine's native ratio. Black bars appear via
@@ -475,6 +739,38 @@ public final class JfxDoomApp extends Application {
             }
             canvas.setWidth(cw);
             canvas.setHeight(ch);
+        };
+        scene.widthProperty().addListener(l);
+        scene.heightProperty().addListener(l);
+        l.invalidated(null);
+    }
+
+    // Fullscreen fitter for the side-by-side pair: each pane gets
+    // half the scene (width for horizontal, height for stacked) and
+    // fits 320:200 inside its half; both canvases always end up the
+    // same size. Black bars appear via the container's background.
+    private static void installAspectFitterDual(Canvas a, Canvas b,
+                                                Scene scene,
+                                                boolean horizontal) {
+        InvalidationListener l = obs -> {
+            double sw = scene.getWidth();
+            double sh = scene.getHeight();
+            if (sw <= 0 || sh <= 0) return;
+            double boxW = horizontal ? sw / 2 : sw;
+            double boxH = horizontal ? sh : sh / 2;
+            double ba = boxW / boxH;
+            double cw, ch;
+            if (ba > DOOM_ASPECT) {
+                ch = boxH;
+                cw = boxH * DOOM_ASPECT;
+            } else {
+                cw = boxW;
+                ch = boxW / DOOM_ASPECT;
+            }
+            a.setWidth(cw);
+            a.setHeight(ch);
+            b.setWidth(cw);
+            b.setHeight(ch);
         };
         scene.widthProperty().addListener(l);
         scene.heightProperty().addListener(l);
@@ -523,6 +819,11 @@ public final class JfxDoomApp extends Application {
             int b = bytes[i * 3 + 2] & 0xff;
             palette[i] = 0xff000000 | (r << 16) | (g << 8) | b;
         }
+        // Entry 0 is black in the base palette; damage/bonus/radsuit
+        // sub-palettes lift it to the pure tint component, which the
+        // 3D view reproduces as an additive overlay.
+        fx3TintColor = javafx.scene.paint.Color.rgb(
+                bytes[0] & 0xff, bytes[1] & 0xff, bytes[2] & 0xff);
     }
 
     // Translate a JavaFX KeyCode (+ typed text) to the Doom
