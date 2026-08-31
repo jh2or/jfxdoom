@@ -244,6 +244,32 @@ breakdown of which C files have landed, what deviates from the
 C source (and why), and what's still open (mouse / joystick
 input).
 
+## Dev container
+
+`.devcontainer/` describes a Debian bookworm container with JDK 21
+and the native GTK / X11 / GL / ALSA libraries JavaFX needs on
+Linux. Open the repository in VS Code and choose *Reopen in
+Container* (or `devcontainer up --workspace-folder .`).
+
+Creation compiles the project (`./gradlew compileJava
+compileTestJava`), so the container is proven to build before you
+touch it. From then on the usual commands work unchanged —
+`./gradlew test`, `./gradlew installDist`, `./gradlew run`.
+
+The game needs a display. The container includes the `desktop-lite`
+feature, which runs an X server on `:1` and serves it over noVNC at
+<http://localhost:6080> (password `vscode`) — launch with:
+
+```
+.devcontainer/run-doom.sh -iwad reference-wads/DOOM.WAD -warp 1 1
+```
+
+and the JavaFX window appears in that browser tab. The script forces
+JavaFX's software pipeline (`-Dprism.order=sw`, no GPU in a
+container) and falls back to a throwaway Xvfb server if no display is
+available. WADs are gitignored, so put yours in `reference-wads/` on
+the host — the workspace bind mount makes them visible inside.
+
 ## Tests
 
 ```

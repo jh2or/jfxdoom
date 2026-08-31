@@ -1,0 +1,50 @@
+{
+  "name": "jfxdoom (JDK 21 + JavaFX)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // desktop-lite gives the container an Xvfb display (:1), a light
+  // window manager and noVNC — so `./gradlew run` opens a real
+  // JavaFX window you can look at in a browser at localhost:6080
+  // (password: vscode). Compiling and testing do not need it.
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "password": "vscode",
+      "webPort": "6080",
+      "vncPort": "5901"
+    }
+  },
+
+  "containerEnv": {
+    "DISPLAY": ":1"
+  },
+
+  "forwardPorts": [6080, 5901],
+  "portsAttributes": {
+    "6080": { "label": "noVNC (desktop)", "onAutoForward": "silent" },
+    "5901": { "label": "VNC", "onAutoForward": "silent" }
+  },
+
+  // Keep the Gradle distribution + dependency cache across rebuilds.
+  "mounts": [
+    "source=jfxdoom-gradle,target=/home/vscode/.gradle,type=volume"
+  ],
+
+  "postCreateCommand": ".devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle"
+      ],
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "interactive",
+        "java.import.gradle.wrapper.enabled": true
+      }
+    }
+  },
+
+  "remoteUser": "vscode"
+}

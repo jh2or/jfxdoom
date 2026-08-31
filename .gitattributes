@@ -1,0 +1,5 @@
+# Scripts executed inside the Linux dev container must keep LF endings
+# even when the repository is checked out on Windows with autocrlf.
+gradlew text eol=lf
+*.sh text eol=lf
+gradlew.bat text eol=crlf
