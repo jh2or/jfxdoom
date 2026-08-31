@@ -21,7 +21,10 @@ if [ -d reference/linuxdoom-1.10/.git ]; then
     fi
 fi
 
-chmod +x gradlew .devcontainer/*.sh
+# Best-effort: a bind mount from a Windows host reports fixed
+# permissions and rejects chmod outright (the files are already
+# executable there, and the exec bit is recorded in git besides).
+chmod +x gradlew .devcontainer/*.sh 2>/dev/null || true
 
 # Downloads the Gradle 9.1.0 distribution named in
 # gradle/wrapper/gradle-wrapper.properties, resolves JavaFX 21.0.4

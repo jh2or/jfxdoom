@@ -267,7 +267,14 @@ feature, which runs an X server on `:1` and serves it over noVNC at
 and the JavaFX window appears in that browser tab. The script forces
 JavaFX's software pipeline (`-Dprism.order=sw`, no GPU in a
 container) and falls back to a throwaway Xvfb server if no display is
-available. WADs are gitignored, so put yours in `reference-wads/` on
+available.
+
+The virtual screen is 1920×1080×24 (`VNC_RESOLUTION` in
+`devcontainer.json`). It has to stay larger than the game window —
+desktop-lite's own default of 1440×768 is shorter than the default
+1280×800 window, and a frame the window manager cannot fit clips the
+canvas on every side. Raise it further for the side-by-side modes,
+which are twice as wide (or tall) as a single pane. WADs are gitignored, so put yours in `reference-wads/` on
 the host — the workspace bind mount makes them visible inside.
 
 ## Tests

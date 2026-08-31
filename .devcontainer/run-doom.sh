@@ -27,4 +27,6 @@ if [ -n "${DISPLAY:-}" ] && xdpyinfo >/dev/null 2>&1; then
 fi
 
 echo "No usable DISPLAY; starting a private Xvfb server (nothing to look at)."
-exec xvfb-run -a --server-args="-screen 0 1280x800x24" ./gradlew run "${args[@]}"
+# Roomier than the default 1280x800 game window, so the frame is never
+# constrained (a clipped frame crops the centred canvas on all sides).
+exec xvfb-run -a --server-args="-screen 0 1920x1080x24" ./gradlew run "${args[@]}"

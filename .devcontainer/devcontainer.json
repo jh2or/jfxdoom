@@ -17,7 +17,13 @@
   },
 
   "containerEnv": {
-    "DISPLAY": ":1"
+    "DISPLAY": ":1",
+    // desktop-lite defaults to 1440x768x16. The game window is
+    // 320x200 x4 = 1280x800 by default, so it does not fit the 768px
+    // height — the window manager shrinks the frame and the canvas,
+    // centred in its StackPane, gets clipped on every side. 16-bit
+    // colour also bands Doom's palette. Give it room and true colour.
+    "VNC_RESOLUTION": "1920x1080x24"
   },
 
   "forwardPorts": [6080, 5901],

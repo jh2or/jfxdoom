@@ -39,6 +39,10 @@ reference-wads/*.wad
 # Unix paths with the user's home directory).
 .claude/
 
+# Written by the dev container CLI on first start (resolved feature
+# versions); regenerated automatically, machine-local.
+.devcontainer/devcontainer-lock.json
+
 # Keep the gradle wrapper jar exception
 !gradle/wrapper/gradle-wrapper.jar
 default.cfg
