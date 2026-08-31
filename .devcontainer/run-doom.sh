@@ -17,13 +17,35 @@ export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dprism.order=sw"
 
 args=()
 if [ "$#" -gt 0 ]; then
-    args=(--args "$*")
+    # Must be --args=<value>, not --args <value>: Doom's flags start
+    # with a dash, and Gradle would read the value as another option.
+    args=("--args=$*")
 fi
+
+# Keep the window maximised for the first two minutes after launch.
+# ~/.fluxbox/apps maximises it when it maps, but the Launchpad and the
+# game share a single Stage and installing the game scene calls
+# sizeToScene(), which can shrink the frame back below the canvas size
+# and reintroduce the cropping. Re-asserting covers that switch; after
+# the two minutes the window is the user's to arrange.
+keep_maximized() {
+    local deadline=$(( $(date +%s) + 120 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        wmctrl -r jfxdoom -b add,maximized_vert,maximized_horz 2>/dev/null || true
+        sleep 2
+    done
+}
 
 if [ -n "${DISPLAY:-}" ] && xdpyinfo >/dev/null 2>&1; then
     # desktop-lite's X server is up — the window shows at :6080.
     echo "Using DISPLAY=$DISPLAY (noVNC: http://localhost:6080, password: vscode)"
-    exec ./gradlew run "${args[@]}"
+    ./gradlew run "${args[@]}" &
+    game=$!
+    keep_maximized &
+    keeper=$!
+    trap 'kill "$keeper" 2>/dev/null || true' EXIT
+    wait "$game"
+    exit $?
 fi
 
 echo "No usable DISPLAY; starting a private Xvfb server (nothing to look at)."

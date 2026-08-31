@@ -270,11 +270,14 @@ container) and falls back to a throwaway Xvfb server if no display is
 available.
 
 The virtual screen is 1920×1080×24 (`VNC_RESOLUTION` in
-`devcontainer.json`). It has to stay larger than the game window —
-desktop-lite's own default of 1440×768 is shorter than the default
-1280×800 window, and a frame the window manager cannot fit clips the
-canvas on every side. Raise it further for the side-by-side modes,
-which are twice as wide (or tall) as a single pane. WADs are gitignored, so put yours in `reference-wads/` on
+`devcontainer.json`), and the game window is maximized on sight by a
+fluxbox rule (`.devcontainer/fluxbox-apps`, installed as
+`~/.fluxbox/apps`). Both matter: the stage is non-resizable and sized
+to its scene, so whenever the frame ends up smaller than the canvas,
+the canvas — centred in a `StackPane` — is clipped on all four sides
+instead of scaled. Maximized it is letterboxed instead. `run-doom.sh`
+re-asserts the maximize for two minutes, covering the Launchpad → game
+scene switch, which resizes the shared stage. WADs are gitignored, so put yours in `reference-wads/` on
 the host — the workspace bind mount makes them visible inside.
 
 ## Tests

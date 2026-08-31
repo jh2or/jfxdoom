@@ -1,0 +1,23 @@
+# Installed as ~/.fluxbox/apps by the Dockerfile.
+#
+# desktop-lite writes this file itself, but only when it does not
+# already exist — so shipping it in the image keeps our rules and the
+# feature's own default below.
+
+# jfxdoom's Stage is non-resizable and sized to its scene (320x200 x
+# the chosen display scale, 1280x800 by default). Under a window
+# manager the frame can end up smaller than that scene, and the canvas
+# — centred in a StackPane — is then clipped on all four sides rather
+# than scaled down. Maximised, the window always has room; the canvas
+# keeps its exact size and is letterboxed instead of cropped.
+#
+# Matched on WM_CLASS, which the JVM derives from the main class.
+[app] (name=doom.ui.JfxDoomApp)
+  [Maximized]	{yes}
+[end]
+
+# desktop-lite's own default, kept verbatim.
+[transient] (role=GtkFileChooserDialog)
+  [Dimensions]	{70% 70%}
+  [Position]	(CENTER)	{0 0}
+[end]

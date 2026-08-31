@@ -16,6 +16,8 @@ FROM mcr.microsoft.com/devcontainers/java:1-21-bookworm
 #   libasound2                 javax.sound.sampled (SFX) via ALSA
 #   xvfb, xauth, x11-utils     headless X server for `gradlew run`
 #                              (xvfb-run shells out to xauth)
+#   wmctrl                     maximises the game window (see .fluxbox
+#                              /apps and run-doom.sh)
 #
 # The base image ships /etc/apt/sources.list.d/yarn.list, whose signing
 # key is no longer in the keyring — it makes `apt-get update` fail hard.
@@ -39,6 +41,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list \
         xvfb \
         xauth \
         x11-utils \
+        wmctrl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,3 +49,8 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list \
 # devcontainer.json inherits vscode ownership instead of root's.
 RUN mkdir -p /home/vscode/.gradle \
     && chown -R vscode:vscode /home/vscode/.gradle
+
+# Window rules for the desktop-lite window manager. The feature only
+# writes ~/.fluxbox/apps when it is absent, so this one survives.
+COPY fluxbox-apps /home/vscode/.fluxbox/apps
+RUN chown -R vscode:vscode /home/vscode/.fluxbox
