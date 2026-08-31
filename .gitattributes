@@ -1,5 +1,24 @@
-# Scripts executed inside the Linux dev container must keep LF endings
-# even when the repository is checked out on Windows with autocrlf.
-gradlew text eol=lf
-*.sh text eol=lf
-gradlew.bat text eol=crlf
+# Line endings.
+#
+# The repository is edited from Windows *and* from the Linux dev
+# container, which bind-mounts the same working tree and the same .git.
+# One tree cannot hold two conventions, so the endings are pinned here
+# instead of being left to each side's core.autocrlf: attributes win
+# over autocrlf, so both gits see identical bytes and neither reports
+# phantom "whole file changed" diffs.
+#
+# LF in the index and LF in the working tree, on every platform.
+* text=auto eol=lf
+
+# Windows batch files are the exception: CRLF in the working tree on
+# every platform (eol=crlf is not platform-dependent, so this still
+# looks the same from both sides). Linux never executes them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch these, whatever the content sniffing thinks.
+*.jar binary
+*.png binary
+*.wad binary
+*.lmp binary
+*.dat binary

@@ -8,6 +8,19 @@ cd "$(dirname "$0")/.."
 # refuses to operate on "dubious" repositories otherwise.
 git config --global --add safe.directory "$PWD" || true
 
+# reference/linuxdoom-1.10 is a nested git repo, so the parent's
+# .gitattributes does not govern it. If it was cloned on Windows with
+# core.autocrlf=true, every file in it reads as modified from Linux.
+if [ -d reference/linuxdoom-1.10/.git ]; then
+    git config --global --add safe.directory "$PWD/reference/linuxdoom-1.10" || true
+    git -C reference/linuxdoom-1.10 config core.autocrlf false
+    if [ -n "$(git -C reference/linuxdoom-1.10 status --porcelain)" ]; then
+        echo "note: reference/linuxdoom-1.10 has CRLF working-tree files."
+        echo "      renormalize (endings only, no content change) with:"
+        echo "      (cd reference/linuxdoom-1.10 && git ls-files -z | xargs -0 rm -- && git checkout -- .)"
+    fi
+fi
+
 chmod +x gradlew .devcontainer/*.sh
 
 # Downloads the Gradle 9.1.0 distribution named in
