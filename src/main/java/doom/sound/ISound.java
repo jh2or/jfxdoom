@@ -87,7 +87,7 @@ public final class ISound {
 
     public static final Channel[] channels = new Channel[NUM_CHANNELS];
 
-    private static SourceDataLine line;
+    private static BufferedSoundOutput output;
     private static int            nextHandle = 1;
     private static final byte[]   mixBufferI16 = new byte[SAMPLES_PER_TIC * 4];
     private static final short[]  mixL = new short[SAMPLES_PER_TIC];
@@ -103,36 +103,31 @@ public final class ISound {
     //
     // I_InitSound
     // i_sound.c — Open + buffer the platform audio device.
-    // Buffer = ~1 s of stereo 16-bit @ 22050 Hz (4 bytes/frame).
-    // The previous code opened with OUTPUT_RATE *bytes* (≈250 ms)
-    // which left no headroom when the game loop briefly fell
-    // behind — iSubmitSound's "drop the tic if the line is near-
-    // full" path would silence SFX mid-shot on a frame-rate dip.
+    // The device holds up to one second; the non-blocking adapter retains
+    // another eight tics during short catch-up bursts.
     private static final int LINE_BUFFER_BYTES = OUTPUT_RATE * 4;
 
     public static void iInitSound() {
-        if (line != null) return;
+        if (output != null) return;
+        SourceDataLine opened = null;
         try {
-            line = AudioSystem.getSourceDataLine(OUTPUT_FORMAT);
-            line.open(OUTPUT_FORMAT, LINE_BUFFER_BYTES);
-            line.start();
+            opened = AudioSystem.getSourceDataLine(OUTPUT_FORMAT);
+            opened.open(OUTPUT_FORMAT, LINE_BUFFER_BYTES);
+            opened.start();
+            output = new BufferedSoundOutput(opened, mixBufferI16.length * 8);
         } catch (LineUnavailableException | IllegalArgumentException
                 | SecurityException e) {
-            // No usable audio device — degrade to silent. The
-            // Windows Sandbox (and other headless / no-audio
-            // environments) raise IllegalArgumentException from
-            // AudioSystem.getSourceDataLine instead of the
-            // checked LineUnavailableException.
-            line = null;
+            if (opened != null) opened.close();
+            output = null; // No usable audio device: continue silently.
         }
     }
 
     // i_sound.c — I_ShutdownSound.
     public static void iShutdownSound() {
-        if (line != null) {
-            line.drain();
-            line.close();
-            line = null;
+        if (output != null) {
+            BufferedSoundOutput old = output;
+            output = null;
+            old.close();
         }
     }
 
@@ -307,7 +302,7 @@ public final class ISound {
     }
 
     public static void iSubmitSound() {
-        if (line == null) return;
+        if (output == null) return;
 
         // Zero the per-tic mix.
         for (int i = 0; i < SAMPLES_PER_TIC; i++) {
@@ -345,16 +340,7 @@ public final class ISound {
             mixBufferI16[i * 4 + 2] = (byte) (mixR[i]        & 0xff);
             mixBufferI16[i * 4 + 3] = (byte) ((mixR[i] >> 8) & 0xff);
         }
-        // Blocking write. The previous non-blocking variant
-        // dropped the whole tic whenever the line couldn't fit
-        // another 2 520 B — which on a brief frame-rate dip
-        // chopped gunshots / footsteps mid-sample. The line's
-        // ~1 s buffer (LINE_BUFFER_BYTES) is big enough that
-        // bursting a few catch-up tics from the AnimationTimer's
-        // multi-tick loop fits without blocking; once it does
-        // back up, blocking briefly is preferable to silencing
-        // the SFX.
-        line.write(mixBufferI16, 0, mixBufferI16.length);
+        output.submit(mixBufferI16);
     }
 
     //

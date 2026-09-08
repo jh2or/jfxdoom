@@ -179,6 +179,38 @@ these transitions, repeated fast/normal launches, CLI/demo respawn flags, and
 The demo regression explicitly skips if `reference-wads/DOOM.WAD` is unavailable;
 it checks repeatability, not equivalence to an original-engine reference.
 
+## Frame scheduling and audio follow-up (fix/frame-scheduling)
+
+The JavaFX clock now runs at most four simulation tics per pulse and renders
+once after that batch. Excess wall-clock debt after a long stall is discarded;
+simulation commands are never skipped or reordered, so sustained overload
+slows game time instead of trapping input behind unlimited catch-up work.
+`DMain.dDoomLoop` remains the one-tic/one-frame headless entry point, while
+`dRunTic` supports the shell's batched presentation. A quit during a batch
+cancels its remaining tics and rendering, even while the launcher callback
+is still queued on JavaFX. The engine checks quit state immediately after
+event processing so no further gameplay ticker runs after a quit event.
+Wipes advance by the number of simulated tics in each batch, preserving their
+duration when several tics share one presentation.
+
+SFX writes use only frame-aligned `SourceDataLine.available()` capacity.
+A bounded eight-tic PCM queue preserves short bursts; sustained device
+backpressure drops the oldest queued audio rather than blocking simulation.
+Shutdown stops/flushes/closes the device without waiting for a drain.
+
+Validation: `TicSchedulerTest` covers command order, one presentation per
+batch, a 60-second stall, fractional pulses, and a real menu quit event with
+a deferred launcher callback. `DMainWipeTest` verifies equal wipe duration
+for single-tic and four-tic presentations.
+`BufferedSoundOutputTest` uses a fake device that rejects blocking writes to
+check partial capacity, burst preservation, ring wrap, overload, and shutdown.
+A JavaFX smoke test exposed an additional shell issue: F1–F12 were absent from
+key translation, making function-key shortcuts unreachable. Their Doom scan-code
+mapping is now covered explicitly, and the deferred-quit regression starts with
+the real mapped F10 shortcut and confirms the quit prompt before sending Y.
+The full test suite passes with a local Doom WAD. Interactive audio latency
+and JavaFX responsiveness still need a real display/audio device check.
+
 ## Open TODO items
 
 The C-side port is feature-complete; the remaining items are

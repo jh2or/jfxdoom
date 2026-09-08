@@ -545,18 +545,14 @@ public final class JfxDoomApp extends Application {
 
         hasBootedGame = true;
         animationTimer = new AnimationTimer() {
-            long lastNs = 0;
-            final long ticNs = 1_000_000_000L / Doomdef.TICRATE;
+            final TicScheduler scheduler = new TicScheduler();
 
             @Override
             public void handle(long now) {
-                if (lastNs == 0) {
-                    lastNs = now;
-                }
-                while (now - lastNs >= ticNs) {
-                    DMain.dDoomLoop();
-                    lastNs += ticNs;
-                }
+                scheduler.pulse(now, () -> {
+                    DMain.dRunTic();
+                    return animationTimer == this && !ISystem.isQuitting();
+                }, DMain::dDisplay);
             }
         };
         animationTimer.start();
@@ -843,7 +839,7 @@ public final class JfxDoomApp extends Application {
     // either way). For printable ASCII the typed character takes
     // precedence over the KeyCode mapping; modifier and special
     // keys fall back to the KeyCode switch.
-    private static int mapKey(KeyCode k, String text) {
+    static int mapKey(KeyCode k, String text) {
         // Layout-aware shortcut for printable ASCII (esp. the
         // screen-size keys '-' / '=' / ',' / '.').
         if (text != null && text.length() == 1) {
@@ -861,6 +857,18 @@ public final class JfxDoomApp extends Application {
             case ENTER:       return Doomdef.KEY_ENTER;
             case BACK_SPACE:  return Doomdef.KEY_BACKSPACE;
             case PAUSE:       return Doomdef.KEY_PAUSE;
+            case F1:          return Doomdef.KEY_F1;
+            case F2:          return Doomdef.KEY_F2;
+            case F3:          return Doomdef.KEY_F3;
+            case F4:          return Doomdef.KEY_F4;
+            case F5:          return Doomdef.KEY_F5;
+            case F6:          return Doomdef.KEY_F6;
+            case F7:          return Doomdef.KEY_F7;
+            case F8:          return Doomdef.KEY_F8;
+            case F9:          return Doomdef.KEY_F9;
+            case F10:          return Doomdef.KEY_F10;
+            case F11:          return Doomdef.KEY_F11;
+            case F12:          return Doomdef.KEY_F12;
             case SHIFT:       return Doomdef.KEY_RSHIFT;
             case CONTROL:     return Doomdef.KEY_RCTRL;
             case ALT:         return Doomdef.KEY_RALT;
