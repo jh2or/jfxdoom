@@ -770,3 +770,13 @@ stretch goals that don't gate the engine.
     - Only T_MovePlane is ported from p_floor.c; T_MoveFloor,
       EV_DoFloor, and EV_BuildStairs reach into yet-to-port helpers
       and land with the fuller p_spec port.
+
+
+### Save/load correctness follow-up (branch `fix/save-load`)
+
+- Game save files now wrap the section codec in a versioned `JFXS` envelope containing game mode, episode/map/skill, level time, player seat, gameplay flags, both RNG positions, a SHA-256 map fingerprint, length and CRC32. Loading recreates the saved base level before applying modifications, restores runtime settings, exits demo/automap state, cancels queued title advancement and restarts the HUD/status bar.
+- External save data is fully checked before changing the active world: version, length/checksum, map identity, player roster, state/type/sprite/texture/sector indexes, thinker/special tags, mover capacity and duplicate sector movers. Truncated, corrupt, incompatible-map and legacy files are rejected with the existing load-failed message. This validation protects against malformed save data; it does not make unrelated engine failures while constructing an independently broken WAD transactional.
+- Repeated unarchive clears active ceiling/platform tables so movers do not accumulate. Description lengths over 255 bytes no longer allocate trailing garbage in the file.
+- Compatibility: previous Java saves and vanilla `.dsg` files cannot be loaded; previous Java files contain no map metadata and cannot safely be migrated automatically. The original section codec and its documented vanilla omissions (including fire flicker thinkers and target/tracer references) remain unchanged. The new `respawnparm` declaration matches `fix/gameplay-fidelity`; that branch supplies its CLI/demo initialization behavior.
+- Verification: `bash gradlew test --max-workers=2` passes with the local Doom WAD. Five new real-WAD tests cover cross-level restoration and identical re-save, repeated same-level moving ceilings, loading from a title/demo screen, malformed/truncated/semantic rejection without mutation, and the file API/long descriptions. Tests explicitly skip if no Doom WAD is installed.
+- Manual check: save in E1M1 after changing health/ammo and opening a door, start E1M2 or end the game to the title screen, then load the slot. Confirm E1M1, position, inventory and the moving world resume; repeat the load and continue playing. Truncate a *copy* of a save, place it in a spare slot, and confirm loading reports failure while the active game remains playable.

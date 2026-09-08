@@ -95,6 +95,111 @@ public final class PSaveg {
         }
     }
 
+    /** Validate the entire external payload without changing the active world. */
+    public static void validate(byte[] data, int sectors, byte[] mapLines, int console)
+            throws IOException {
+        in = new DataInputStream(new ByteArrayInputStream(data));
+        try {
+            boolean[] active = new boolean[Doomdef.MAXPLAYERS];
+            for (int i = 0; i < active.length; i++) active[i] = in.readBoolean();
+            if (!active[console]) throw new IOException("Inactive console player");
+            for (boolean seat : active) if (seat) {
+                Player player = new Player();
+                readPlayer(player);
+                index(player.playerstate, 0, 3);
+                index(player.readyweapon, 0, Doomdef.NUMWEAPONS);
+                if (player.pendingweapon != Doomdef.wp_nochange)
+                    index(player.pendingweapon, 0, Doomdef.NUMWEAPONS);
+                index(player.fixedcolormap, 0, 32);
+            }
+            for (int i = 0; i < sectors; i++) {
+                in.readShort(); in.readShort();
+                index(in.readShort(), 0, doom.render.RData.numflats);
+                index(in.readShort(), 0, doom.render.RData.numflats);
+                in.readShort(); in.readShort(); in.readShort();
+            }
+            java.nio.ByteBuffer topology = java.nio.ByteBuffer.wrap(mapLines)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            for (int offset = 0; offset < mapLines.length; offset += 14) {
+                in.skipNBytes(6);
+                for (int side = 0; side < 2; side++) {
+                    if (topology.getShort(offset + 10 + side * 2) == -1) continue;
+                    in.skipNBytes(4);
+                    for (int texture = 0; texture < 3; texture++)
+                        index(in.readShort(), 0, doom.render.RData.numtextures);
+                }
+            }
+            boolean[] found = new boolean[Doomdef.MAXPLAYERS];
+            int tag;
+            while ((tag = in.readUnsignedByte()) != TC_END) {
+                if (tag != TC_MOBJ) throw new IOException("Unknown thinker tag");
+                in.skipNBytes(16);
+                int sprite = in.readInt();
+                index(sprite, 0, doom.render.RThings.numsprites);
+                int frame = in.readInt() & Mobj.FF_FRAMEMASK;
+                index(frame, 0, doom.render.RThings.sprites[sprite].numframes);
+                int seat = in.readInt();
+                index(seat, 0, Doomdef.MAXPLAYERS + 1);
+                if (seat > 0) {
+                    if (!active[seat - 1] || found[seat - 1]) throw new IOException("Invalid player mobj");
+                    found[seat - 1] = true;
+                }
+                index(in.readInt(), 0, Info.mobjinfo.length);
+                in.skipNBytes(7 * 4L);
+                index(in.readInt(), -1, Info.states.length);
+                in.skipNBytes(7 * 4L);
+                if (in.readBoolean()) in.skipNBytes(20);
+            }
+            for (int i = 0; i < active.length; i++)
+                if (active[i] && !found[i]) throw new IOException("Missing player mobj");
+            int ceilings = 0, plats = 0;
+            boolean[] occupied = new boolean[sectors];
+            while ((tag = in.readUnsignedByte()) != TC_ENDSPECIALS) {
+                switch (tag) {
+                    case TC_CEILING -> {
+                        if (++ceilings > PCeilng.MAXCEILINGS) throw new IOException("Too many ceilings");
+                        in.readBoolean(); index(in.readInt(), 0, 6); moverSector(occupied);
+                        in.skipNBytes(12); in.readBoolean(); in.skipNBytes(12);
+                    }
+                    case TC_DOOR -> { index(in.readInt(), 0, 8); moverSector(occupied); in.skipNBytes(20); }
+                    case TC_FLOOR -> {
+                        index(in.readInt(), 0, 13); in.readBoolean(); moverSector(occupied);
+                        in.skipNBytes(8); index(in.readInt(), 0, doom.render.RData.numflats);
+                        in.skipNBytes(8);
+                    }
+                    case TC_PLAT -> {
+                        if (++plats > PPlats.MAXPLATS) throw new IOException("Too many platforms");
+                        in.readBoolean(); moverSector(occupied); in.skipNBytes(20);
+                        index(in.readInt(), 0, 4); index(in.readInt(), 0, 4);
+                        in.readBoolean(); in.readInt(); index(in.readInt(), 0, 5);
+                    }
+                    case TC_FLASH -> { sector(sectors); in.skipNBytes(20); }
+                    case TC_STROBE -> { sector(sectors); in.skipNBytes(20); }
+                    case TC_GLOW -> { sector(sectors); in.skipNBytes(12); }
+                    default -> throw new IOException("Unknown special tag");
+                }
+            }
+            if (in.available() != 0) throw new IOException("Trailing save data");
+        } catch (IndexOutOfBoundsException e) {
+            throw new IOException("Invalid saved index", e);
+        } finally {
+            in = null;
+        }
+    }
+
+    private static void moverSector(boolean[] occupied) throws IOException {
+        int sector = in.readInt();
+        index(sector, 0, occupied.length);
+        if (occupied[sector]) throw new IOException("Duplicate sector mover");
+        occupied[sector] = true;
+    }
+
+    private static void sector(int count) throws IOException { index(in.readInt(), 0, count); }
+
+    private static void index(int value, int min, int max) throws IOException {
+        if (value < min || value >= max) throw new IOException("Invalid saved index: " + value);
+    }
+
     //
     // P_ArchivePlayers
     // p_saveg.c lines 47–72.
@@ -537,6 +642,8 @@ public final class PSaveg {
     }
 
     public static void pUnArchiveSpecials() throws IOException {
+        java.util.Arrays.fill(PCeilng.activeceilings, null);
+        java.util.Arrays.fill(PPlats.activeplats, null);
         while (true) {
             int tclass = in.readByte() & 0xFF;
             switch (tclass) {
