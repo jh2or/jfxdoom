@@ -375,11 +375,15 @@ public final class DMain {
     // the C; Java runs one iteration per call so the JavaFX shell
     // (AnimationTimer) drives cadence.
     //
-    // The full C body interleaves G_Ticker / M_Ticker / G_BuildTiccmd
-    // and the screen-wipe machinery. Until those land, this is the
-    // skeleton: pump audio + start a frame + run one tic via
-    // PTick.pTicker + render the player view + finish update.
+    // Headless callers retain the one-tic/one-frame entry point. The
+    // JavaFX shell batches dRunTic calls and presents only the latest state.
     public static void dDoomLoop() {
+        dRunTic();
+        dDisplay();
+    }
+
+    /** Advance one simulation tic and its audio without rendering. */
+    public static void dRunTic() {
         IVideo.iStartFrame();
         IVideo.iStartTic();
 
@@ -401,8 +405,6 @@ public final class DMain {
         // uses the JavaFX AnimationTimer's 35 Hz schedule to keep
         // the engine tick-locked.
         GGame.gTicker();
-
-        dDisplay();
 
         ISound.iUpdateSound();
         ISound.iSubmitSound();

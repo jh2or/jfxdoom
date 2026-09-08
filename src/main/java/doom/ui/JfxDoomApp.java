@@ -543,18 +543,14 @@ public final class JfxDoomApp extends Application {
 
         hasBootedGame = true;
         animationTimer = new AnimationTimer() {
-            long lastNs = 0;
-            final long ticNs = 1_000_000_000L / Doomdef.TICRATE;
+            final TicScheduler scheduler = new TicScheduler();
 
             @Override
             public void handle(long now) {
-                if (lastNs == 0) {
-                    lastNs = now;
-                }
-                while (now - lastNs >= ticNs) {
-                    DMain.dDoomLoop();
-                    lastNs += ticNs;
-                }
+                scheduler.pulse(now, () -> {
+                    DMain.dRunTic();
+                    return animationTimer == this;
+                }, DMain::dDisplay);
             }
         };
         animationTimer.start();
