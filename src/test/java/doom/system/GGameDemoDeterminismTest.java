@@ -57,7 +57,7 @@ class GGameDemoDeterminismTest {
         List<String> result = new ArrayList<>();
         for (int tic = 0; tic < 210; tic++) {
             GGame.gTicker();
-            PTick.gametic++;
+            assertEquals(tic + 1, PTick.gametic, "One game tic per demo command");
             assertTrue(Doomstat.demoplayback, "Built-in demo must cover the sampled interval");
             StringBuilder state = new StringBuilder().append(MRandom.prndindex).append(':');
             for (Thinker thinker = PTick.thinkercap.next; thinker != PTick.thinkercap; thinker = thinker.next) {
