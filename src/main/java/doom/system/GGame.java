@@ -21,6 +21,9 @@
 package doom.system;
 
 import doom.play.Player;
+import doom.play.Info;
+import doom.play.MRandom;
+import doom.fixed.Fixed;
 import doom.play.PTick;
 import doom.play.Ticcmd;
 
@@ -577,7 +580,7 @@ public final class GGame {
         demoBuffer[demoP++] = (byte) Doomstat.gameepisode;
         demoBuffer[demoP++] = (byte) Doomstat.gamemap;
         demoBuffer[demoP++] = (byte) Doomstat.deathmatch;
-        demoBuffer[demoP++] = (byte) (Doomstat.respawnmonsters ? 1 : 0);
+        demoBuffer[demoP++] = (byte) (Doomstat.respawnparm ? 1 : 0);
         demoBuffer[demoP++] = (byte) (Doomstat.fastparm ? 1 : 0);
         demoBuffer[demoP++] = (byte) (Doomstat.nomonsters ? 1 : 0);
         demoBuffer[demoP++] = (byte) consoleplayer;
@@ -619,7 +622,7 @@ public final class GGame {
         int episode = demoBuffer[demoP++] & 0xff;
         int map     = demoBuffer[demoP++] & 0xff;
         Doomstat.deathmatch       = demoBuffer[demoP++] & 0xff;
-        Doomstat.respawnmonsters  = demoBuffer[demoP++] != 0;
+        Doomstat.respawnparm      = demoBuffer[demoP++] != 0;
         Doomstat.fastparm         = demoBuffer[demoP++] != 0;
         Doomstat.nomonsters       = demoBuffer[demoP++] != 0;
         consoleplayer             = demoBuffer[demoP++] & 0xff;
@@ -653,6 +656,7 @@ public final class GGame {
             Doomstat.netgame = false;
             Doomstat.deathmatch = 0;
             playeringame[1] = playeringame[2] = playeringame[3] = false;
+            Doomstat.respawnparm = false;
             Doomstat.respawnmonsters = false;
             Doomstat.fastparm = false;
             Doomstat.nomonsters = false;
@@ -709,10 +713,7 @@ public final class GGame {
         // active seat → no player. Seed it explicitly here.
         playeringame[0] = true;
         playeringame[1] = playeringame[2] = playeringame[3] = false;
-        // The C separately clears `respawnparm` (the -respawn cmdline
-        // flag) and `respawnmonsters` (which gInitNew re-derives from
-        // skill). The Java port only carries respawnmonsters; gInitNew
-        // overwrites it below so no clear here is needed.
+        Doomstat.respawnparm     = false;
         Doomstat.respawnmonsters = false;
         Doomstat.fastparm        = false;
         Doomstat.nomonsters      = false;
@@ -734,14 +735,32 @@ public final class GGame {
     // g_game.c lines 1393–1469. Queues a level load. Caller sets
     // skill + episode + map; G_Ticker picks ga_loadlevel up on the
     // next tic.
+    // Keep the unmodified table values: repeated -fast launches must not
+    // halve already-fast states, and odd normal durations must restore exactly.
+    private static final int[] normalSargTics = new int[Info.S_SARG_PAIN2 - Info.S_SARG_RUN1 + 1];
+    static {
+        for (int i = 0; i < normalSargTics.length; i++) {
+            normalSargTics[i] = Info.states[Info.S_SARG_RUN1 + i].tics;
+        }
+    }
+
     public static void gInitNew(int skill, int episode, int map) {
+        MRandom.mClearRandom();
+        boolean fast = Doomstat.fastparm || skill == Doomstat.sk_nightmare;
+        for (int i = 0; i < normalSargTics.length; i++) {
+            Info.states[Info.S_SARG_RUN1 + i].tics =
+                    fast ? normalSargTics[i] >> 1 : normalSargTics[i];
+        }
+        Info.mobjinfo[Info.MT_BRUISERSHOT].speed = (fast ? 20 : 15) * Fixed.FRACUNIT;
+        Info.mobjinfo[Info.MT_HEADSHOT].speed = (fast ? 20 : 10) * Fixed.FRACUNIT;
+        Info.mobjinfo[Info.MT_TROOPSHOT].speed = (fast ? 20 : 10) * Fixed.FRACUNIT;
         Doomstat.gameskill = skill;
         Doomstat.gameepisode = episode;
         Doomstat.gamemap = map;
         startskill = skill;
         startepisode = episode;
         startmap = map;
-        Doomstat.respawnmonsters = (skill == Doomstat.sk_nightmare);
+        Doomstat.respawnmonsters = skill == Doomstat.sk_nightmare || Doomstat.respawnparm;
 
         // g_game.c lines 1421–1422: every player slot is forced
         // into PST_REBORN so the first P_SpawnPlayer call after

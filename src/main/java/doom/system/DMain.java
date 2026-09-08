@@ -187,7 +187,7 @@ public final class DMain {
 
         // Boolean flags.
         Doomstat.nomonsters = MArgv.checkParm("-nomonsters") > 0;
-        Doomstat.respawnmonsters = MArgv.checkParm("-respawn") > 0;
+        Doomstat.respawnparm = MArgv.checkParm("-respawn") > 0;
         Doomstat.fastparm = MArgv.checkParm("-fast") > 0;
         devparm = MArgv.checkParm("-devparm") > 0;
         if (MArgv.checkParm("-altdeath") > 0) {

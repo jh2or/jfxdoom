@@ -27,6 +27,7 @@ class GGameDemoTest {
         Doomstat.singledemo = false;
         Doomstat.netgame = false;
         Doomstat.deathmatch = 0;
+        Doomstat.respawnparm = false;
         Doomstat.respawnmonsters = false;
         Doomstat.fastparm = false;
         Doomstat.nomonsters = false;
@@ -155,7 +156,7 @@ class GGameDemoTest {
         Doomstat.gameepisode = 2;
         Doomstat.gamemap = 5;
         Doomstat.deathmatch = 1;
-        Doomstat.respawnmonsters = true;
+        Doomstat.respawnparm = true;
         Doomstat.fastparm = false;
         Doomstat.nomonsters = true;
         GGame.consoleplayer = 0;
@@ -195,7 +196,7 @@ class GGameDemoTest {
         Doomstat.netgame = true;
         Doomstat.deathmatch = 1;
         Doomstat.fastparm = true;
-        Doomstat.respawnmonsters = true;
+        Doomstat.respawnparm = true;
         GGame.playeringame[1] = true;
         GGame.demoBuffer = new byte[] { (byte) GGame.DEMOMARKER };
         DMain.advancedemo = false;

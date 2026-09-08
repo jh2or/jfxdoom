@@ -144,6 +144,22 @@ invulnerability/light-amp approximate via ColorAdjust. Side-by-side
 runs both renderers against the same tic in two equal panes (HBox /
 VBox), each with its own composite surface.
 
+### Gameplay fidelity fixes (branch `fix/gameplay-fidelity`)
+
+New-game/demo initialization now resets both random streams and separates requested
+`respawnparm` from the effective Nightmare/respawn setting. Fast/Nightmare mode
+sets demon state durations and the three affected projectile speeds; subsequent
+normal games restore the original values. Java-specific deviation: durations are
+reapplied from their original baseline, avoiding the C's cumulative `-fast`
+halving and lossy odd-duration restoration across repeated launches.
+
+Player XY friction now honors forward/side input, returns all four walking frames
+to standing when stopped, and implements `CF_NOMOMENTUM`. Regression tests cover
+these transitions, repeated fast/normal launches, CLI/demo respawn flags, and
+210 tics of repeated real-WAD demo actor states after unrelated RNG activity.
+The demo regression explicitly skips if `reference-wads/DOOM.WAD` is unavailable;
+it checks repeatability, not equivalence to an original-engine reference.
+
 ## Open TODO items
 
 The C-side port is feature-complete; the remaining items are

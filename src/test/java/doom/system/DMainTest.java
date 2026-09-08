@@ -125,7 +125,7 @@ class DMainTest {
                 "-fast" });
 
         assertTrue(Doomstat.nomonsters);
-        assertTrue(Doomstat.respawnmonsters);
+        assertTrue(Doomstat.respawnparm);
         assertTrue(Doomstat.fastparm);
     }
 
