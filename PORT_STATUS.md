@@ -169,6 +169,10 @@ a deferred launcher callback. `DMainWipeTest` verifies equal wipe duration
 for single-tic and four-tic presentations.
 `BufferedSoundOutputTest` uses a fake device that rejects blocking writes to
 check partial capacity, burst preservation, ring wrap, overload, and shutdown.
+A JavaFX smoke test exposed an additional shell issue: F1–F12 were absent from
+key translation, making function-key shortcuts unreachable. Their Doom scan-code
+mapping is now covered explicitly, and the deferred-quit regression starts with
+the real mapped F10 shortcut and confirms the quit prompt before sending Y.
 The full test suite passes with a local Doom WAD. Interactive audio latency
 and JavaFX responsiveness still need a real display/audio device check.
 

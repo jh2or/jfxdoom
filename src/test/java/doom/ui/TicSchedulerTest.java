@@ -62,7 +62,12 @@ class TicSchedulerTest {
             IVideo.finishUpdateHook = () -> fail("quit must prevent presentation");
             IVideo.startTicHook = null;
             doom.system.DMain.eventhead = doom.system.DMain.eventtail = 0;
-            MMenu.mStartMessage("Quit?", key -> doom.system.ISystem.iQuit(), true);
+            MMenu.menuactive = false;
+            MMenu.messageToPrint = 0;
+            MMenu.saveStringEnter = 0;
+            assertTrue(MMenu.mResponder(new doom.system.DEvent(doom.system.DEvent.EV_KEYDOWN,
+                    JfxDoomApp.mapKey(javafx.scene.input.KeyCode.F10, ""))));
+            assertEquals(1, MMenu.messageToPrint, "F10 must reach the real quit confirmation");
             doom.system.DMain.dPostEvent(new doom.system.DEvent(doom.system.DEvent.EV_KEYDOWN, 'y'));
             TicScheduler scheduler = new TicScheduler();
             scheduler.pulse(0, () -> true, tics -> fail());
