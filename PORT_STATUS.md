@@ -15,6 +15,25 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
   - `Pending` — not yet started.
 - **Tier** — Trivial, Standard, Hard. Originally tied to a model-routing scheme (cheap / mid / heavy) that was never used in practice; see [`PORT_COMMENTS.md`](PORT_COMMENTS.md). Kept here as a rough difficulty estimate.
 
+## WAD lifecycle fix (2026-09-08)
+
+- Added production `WWad.wShutdown()`; replacement initialization releases the
+  previous mount, and failed initialization clears partial directories, caches,
+  reload metadata, and handles. Unregistered files and reload-on-demand reads
+  close in `finally`, including malformed headers and short reads.
+- The JavaFX launcher reads ENDOOM before WAD teardown; window exit and engine
+  boot failures also release WAD handles. This is a Java launcher lifecycle
+  extension: the original executable had only one mount per process.
+- Cache owners now retain their mount's array so old zone reclamation cannot
+  clear a new mount's entries. Failed cache reads discard their partial buffer.
+- Verification: six synthetic-WAD lifecycle regressions (no external WAD needed),
+  including 20 replacement mounts, actual Linux descriptor inspection, failure
+  recovery, cache ownership, and ENDOOM bytes surviving idempotent teardown.
+  Full suite: `bash ./gradlew test --rerun-tasks --max-workers=2` passes with the
+  supplied DOOM.WAD. Interactive ENDOOM/launcher transitions still need a GUI
+  smoke test: quit to launcher, dismiss ENDOOM, relaunch repeatedly, then close
+  the window; no WAD descriptor should remain while at the launcher.
+
 ## 1 — Fixed point & math foundation
 
 | C file       | Java class                | Tier     | Status   | LOC (C/Java) | Notes                                                    |
@@ -31,7 +50,7 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
 | C file    | Java class       | Tier | Status   | LOC (C/Java) | Notes                                                                      |
 | --------- | ---------------- | ---- | -------- | ------------ | -------------------------------------------------------------------------- |
 | z_zone.c  | `doom.wad.ZZone` | Hard | Verified | 468 / ~      | Tracker-model (JVM-backed); purge/tag semantics preserved. See deviation 3. |
-| w_wad.c   | `doom.wad.WWad`  | Hard | Verified | 578 / ~      | `RandomAccessFile` handles kept open; `W_Profile` skipped (dev-only dump).  |
+| w_wad.c   | `doom.wad.WWad`  | Hard | Verified | 578 / ~      | `RandomAccessFile` handles owned by the mounted WAD set and closed on replacement/launcher exit; `W_Profile` skipped (dev-only dump).  |
 | v_video.c | `doom.ui.VVideo` | Hard | Verified | 494 / ~      | 5 `byte[320*200]` framebuffers; gamma table inlined. See deviation 6.       |
 
 ## 3 — Renderer (software)

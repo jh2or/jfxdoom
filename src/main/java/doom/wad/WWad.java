@@ -6,7 +6,7 @@
 //     `public static` fields (CLAUDE.md §2).
 //   * C opens WAD files once and seeks on the same handle for every ReadLump.
 //     We mirror that with a list of RandomAccessFile handles kept open for the
-//     lifetime of the process — `handle` on lumpinfo_t is an index into that list.
+//     lifetime of the mounted WAD set — `handle` on lumpinfo_t is an index into that list.
 //   * The W_Profile debug routine is skipped (CLAUDE.md §2: "faithful first" —
 //     but W_Profile is a dev-only heap dump never reached in release builds,
 //     and its struct-pointer arithmetic is meaningless in the Java model).
@@ -95,75 +95,85 @@ public final class WWad {
             return;
         }
 
-        System.out.println(" adding " + filename);
-        int startlump = numlumps;
+        boolean retained = false;
+        try {
+            System.out.println(" adding " + filename);
+            int startlump = numlumps;
 
-        List<FileLump> fileinfo;
+            List<FileLump> fileinfo;
 
-        if (!filename.toLowerCase().endsWith(".wad")) {
-            // single lump file
-            FileLump single = new FileLump();
-            single.filepos = 0;
-            single.size = (int) raf.length();
-            single.name = extractFileBase(filename);
-            fileinfo = List.of(single);
-            numlumps++;
-        } else {
-            // WAD file — read header.
-            byte[] headerBytes = new byte[12];
-            raf.readFully(headerBytes);
-            WadInfo header = parseHeader(headerBytes);
-            if (!"IWAD".equals(header.identification) && !"PWAD".equals(header.identification)) {
-                throw ISystem.iError("Wad file %s doesn't have IWAD or PWAD id", filename);
+            if (!filename.toLowerCase().endsWith(".wad")) {
+                // single lump file
+                FileLump single = new FileLump();
+                single.filepos = 0;
+                single.size = (int) raf.length();
+                single.name = extractFileBase(filename);
+                fileinfo = List.of(single);
+            } else {
+                // WAD file — read header.
+                byte[] headerBytes = new byte[12];
+                raf.readFully(headerBytes);
+                WadInfo header = parseHeader(headerBytes);
+                if (!"IWAD".equals(header.identification) && !"PWAD".equals(header.identification)) {
+                    throw ISystem.iError("Wad file %s doesn't have IWAD or PWAD id", filename);
+                }
+                int length = header.numlumps * 16; // sizeof(filelump_t) = 4+4+8 = 16
+                byte[] dirBytes = new byte[length];
+                raf.seek(header.infotableofs);
+                raf.readFully(dirBytes);
+                fileinfo = parseDirectory(dirBytes, header.numlumps);
             }
-            int length = header.numlumps * 16; // sizeof(filelump_t) = 4+4+8 = 16
-            byte[] dirBytes = new byte[length];
-            raf.seek(header.infotableofs);
-            raf.readFully(dirBytes);
-            fileinfo = parseDirectory(dirBytes, header.numlumps);
-            numlumps += header.numlumps;
-        }
 
-        // Fill in lumpinfo — realloc equivalent.
-        LumpInfo[] newLumps = Arrays.copyOf(lumpinfo, numlumps);
+            // Fill in lumpinfo — realloc equivalent.
+            LumpInfo[] newLumps = Arrays.copyOf(lumpinfo, startlump + fileinfo.size());
 
-        // Register the handle. Reloadable WADs store -1 and open on demand in W_ReadLump.
-        int storehandle;
-        if (reloadname != null && filename.equals(reloadname)) {
-            storehandle = -1;
-            // reload WADs close the handle here; we still need one later via W_ReadLump.
-            raf.close();
-        } else {
-            storehandle = openHandles.size();
-            openHandles.add(raf);
-        }
+            // Register the handle. Reloadable WADs store -1 and open on demand in W_ReadLump.
+            int storehandle;
+            if (reloadname != null && filename.equals(reloadname)) {
+                storehandle = -1;
+                // The finally block closes reloadable WADs after directory parsing.
+            } else {
+                storehandle = openHandles.size();
+            }
 
-        for (int i = 0; i < fileinfo.size(); i++) {
-            FileLump fl = fileinfo.get(i);
-            LumpInfo li = new LumpInfo();
-            li.handle = storehandle;
-            li.position = fl.filepos;
-            li.size = fl.size;
-            li.name = fl.name;
-            newLumps[startlump + i] = li;
+            for (int i = 0; i < fileinfo.size(); i++) {
+                FileLump fl = fileinfo.get(i);
+                LumpInfo li = new LumpInfo();
+                li.handle = storehandle;
+                li.position = fl.filepos;
+                li.size = fl.size;
+                li.name = fl.name;
+                newLumps[startlump + i] = li;
+            }
+            if (storehandle != -1) {
+                openHandles.add(raf);
+                retained = true;
+            }
+            lumpinfo = newLumps;
+            numlumps = newLumps.length;
+        } finally {
+            if (!retained) raf.close();
         }
-        lumpinfo = newLumps;
     }
 
     // void W_InitMultipleFiles(char** filenames)
     public static void wInitMultipleFiles(String[] filenames) throws IOException {
-        numlumps = 0;
-        lumpinfo = new LumpInfo[0];
-
-        for (String filename : filenames) {
-            if (filename == null) break; // null-terminated list in C
-            wAddFile(filename);
+        wShutdown();
+        boolean initialized = false;
+        try {
+            for (String filename : filenames) {
+                if (filename == null) break; // null-terminated list in C
+                wAddFile(filename);
+            }
+            if (numlumps == 0) {
+                throw ISystem.iError("W_InitFiles: no files found");
+            }
+            // set up caching — null-initialised (matches C memset(lumpcache, 0, size)).
+            lumpcache = new byte[numlumps][];
+            initialized = true;
+        } finally {
+            if (!initialized) wShutdown();
         }
-        if (numlumps == 0) {
-            throw ISystem.iError("W_InitFiles: no files found");
-        }
-        // set up caching — null-initialised (matches C memset(lumpcache, 0, size)).
-        lumpcache = new byte[numlumps][];
     }
 
     // void W_InitFile(char* filename) — convenience around W_InitMultipleFiles.
@@ -226,19 +236,20 @@ public final class WWad {
         } else {
             raf = openHandles.get(l.handle);
         }
-        raf.seek(l.position);
-        int read = 0;
-        while (read < l.size) {
-            int n = raf.read(dest, read, l.size - read);
-            if (n == -1) break;
-            read += n;
-        }
-        if (read < l.size) {
-            throw ISystem.iError("W_ReadLump: only read %d of %d on lump %d",
-                    read, l.size, lump);
-        }
-        if (closeAfter) {
-            raf.close();
+        try {
+            raf.seek(l.position);
+            int read = 0;
+            while (read < l.size) {
+                int n = raf.read(dest, read, l.size - read);
+                if (n == -1) break;
+                read += n;
+            }
+            if (read < l.size) {
+                throw ISystem.iError("W_ReadLump: only read %d of %d on lump %d",
+                        read, l.size, lump);
+            }
+        } finally {
+            if (closeAfter) raf.close();
         }
     }
 
@@ -250,12 +261,18 @@ public final class WWad {
         if (lumpcache[lump] == null) {
             // read the lump in
             final int fLump = lump;
+            final byte[][] cache = lumpcache;
             ZZone.UserRef slot = new ZZone.UserRef() {
-                public byte[] get() { return lumpcache[fLump]; }
-                public void set(byte[] v) { lumpcache[fLump] = v; }
+                public byte[] get() { return cache[fLump]; }
+                public void set(byte[] v) { cache[fLump] = v; }
             };
             ZZone.zMalloc(wLumpLength(lump), tag, slot);
-            wReadLump(lump, lumpcache[lump]);
+            try {
+                wReadLump(lump, lumpcache[lump]);
+            } catch (IOException | RuntimeException ex) {
+                ZZone.zFree(lumpcache[lump]);
+                throw ex;
+            }
         } else {
             ZZone.zChangeTag(lumpcache[lump], tag);
         }
@@ -307,8 +324,8 @@ public final class WWad {
         return new String(raw, 0, end, StandardCharsets.US_ASCII).toUpperCase();
     }
 
-    // Test-only: reset globals so each test starts from a clean state.
-    public static void resetForTests() throws IOException {
+    // Java launcher lifecycle: release files after ENDOOM has been read.
+    public static void wShutdown() {
         for (RandomAccessFile raf : openHandles) {
             try { raf.close(); } catch (IOException ignored) { /* */ }
         }
@@ -318,5 +335,10 @@ public final class WWad {
         numlumps = 0;
         reloadname = null;
         reloadlump = 0;
+    }
+
+    // Test-only compatibility helper; production uses the same lifecycle.
+    public static void resetForTests() throws IOException {
+        wShutdown();
     }
 }

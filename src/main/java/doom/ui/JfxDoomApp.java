@@ -537,7 +537,9 @@ public final class JfxDoomApp extends Application {
             // Load PLAYPAL and set the initial palette so the
             // colormap bytes resolve to actual ARGB.
             loadInitialPalette();
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
+            WWad.wShutdown();
+            DMain.dResetWadFiles();
             throw new RuntimeException(ex);
         }
 
@@ -590,6 +592,8 @@ public final class JfxDoomApp extends Application {
             }
         } catch (Throwable t) {
             endoom = null;
+        } finally {
+            WWad.wShutdown();
         }
         if (endoom != null && endoom.length >= Endoom.SCREEN_BYTES) {
             showEndoom(stage, endoom);
@@ -795,6 +799,8 @@ public final class JfxDoomApp extends Application {
             ISystem.iQuit();
         } catch (Throwable t) {
             // best-effort shutdown
+        } finally {
+            WWad.wShutdown();
         }
     }
 
