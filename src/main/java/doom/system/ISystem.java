@@ -114,6 +114,10 @@ public final class ISystem {
     // starts unwinding).
     private static boolean quitting;
 
+    public static boolean isQuitting() {
+        return quitting;
+    }
+
     public static void iQuit() {
         if (quitting) return;
         quitting = true;

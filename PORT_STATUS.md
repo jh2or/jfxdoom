@@ -152,7 +152,11 @@ simulation commands are never skipped or reordered, so sustained overload
 slows game time instead of trapping input behind unlimited catch-up work.
 `DMain.dDoomLoop` remains the one-tic/one-frame headless entry point, while
 `dRunTic` supports the shell's batched presentation. A quit during a batch
-cancels its remaining tics and rendering.
+cancels its remaining tics and rendering, even while the launcher callback
+is still queued on JavaFX. The engine checks quit state immediately after
+event processing so no further gameplay ticker runs after a quit event.
+Wipes advance by the number of simulated tics in each batch, preserving their
+duration when several tics share one presentation.
 
 SFX writes use only frame-aligned `SourceDataLine.available()` capacity.
 A bounded eight-tic PCM queue preserves short bursts; sustained device
@@ -160,7 +164,9 @@ backpressure drops the oldest queued audio rather than blocking simulation.
 Shutdown stops/flushes/closes the device without waiting for a drain.
 
 Validation: `TicSchedulerTest` covers command order, one presentation per
-batch, a 60-second stall, fractional pulses, and quitting mid-batch.
+batch, a 60-second stall, fractional pulses, and a real menu quit event with
+a deferred launcher callback. `DMainWipeTest` verifies equal wipe duration
+for single-tic and four-tic presentations.
 `BufferedSoundOutputTest` uses a fake device that rejects blocking writes to
 check partial capacity, burst preservation, ring wrap, overload, and shutdown.
 The full test suite passes with a local Doom WAD. Interactive audio latency

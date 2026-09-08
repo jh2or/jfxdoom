@@ -2,6 +2,7 @@ package doom.ui;
 
 import doom.system.Doomdef;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
 
 /** Bounded wall-clock adapter; never skips or reorders simulation commands. */
 final class TicScheduler {
@@ -11,7 +12,7 @@ final class TicScheduler {
     private long lastNs;
     private long pendingNs;
 
-    void pulse(long now, BooleanSupplier tick, Runnable display) {
+    void pulse(long now, BooleanSupplier tick, IntConsumer display) {
         if (!started) {
             started = true;
             lastNs = now;
@@ -24,15 +25,15 @@ final class TicScheduler {
         // game tic still consumes exactly one command (including demo input).
         pendingNs = Math.min(MAX_CATCH_UP_TICS * TIC_NS,
                 pendingNs + Math.min(elapsed, MAX_CATCH_UP_TICS * TIC_NS));
-        boolean advanced = false;
+        int advanced = 0;
         while (pendingNs >= TIC_NS) {
             pendingNs -= TIC_NS;
             if (!tick.getAsBoolean()) {
                 pendingNs = 0;
                 return; // Quit/relaunch during a tic: don't paint the old scene.
             }
-            advanced = true;
+            advanced++;
         }
-        if (advanced) display.run();
+        if (advanced > 0) display.accept(advanced);
     }
 }

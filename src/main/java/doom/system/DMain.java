@@ -384,12 +384,14 @@ public final class DMain {
 
     /** Advance one simulation tic and its audio without rendering. */
     public static void dRunTic() {
+        if (ISystem.isQuitting()) return;
         IVideo.iStartFrame();
         IVideo.iStartTic();
 
         // Drain queued input events (JavaFX shell posts them via
         // dPostEvent on each Scene key press / release).
         dProcessEvents();
+        if (ISystem.isQuitting()) return;
 
         // Title-screen demo loop: drain the advance latch before
         // the per-tic dispatch so a page-time-out flips to the
@@ -405,6 +407,7 @@ public final class DMain {
         // uses the JavaFX AnimationTimer's 35 Hz schedule to keep
         // the engine tick-locked.
         GGame.gTicker();
+        if (ISystem.isQuitting()) return;
 
         ISound.iUpdateSound();
         ISound.iSubmitSound();
@@ -443,6 +446,12 @@ public final class DMain {
     // intermission / finale drawers, status-bar redraw, view-size
     // change response.
     public static void dDisplay() {
+        dDisplay(1);
+    }
+
+    /** Present once, advancing visual transitions by the simulated tic count. */
+    public static void dDisplay(int elapsedTics) {
+        if (ISystem.isQuitting()) return;
         boolean sizeChanged = RMain.setsizeneeded;
         if (sizeChanged) {
             RMain.rExecuteSetViewSize();
@@ -575,14 +584,14 @@ public final class DMain {
             wipeActive = true;
         }
 
-        // While the wipe is running, advance it one tic per frame.
+        // While the wipe is running, advance it by the batched simulation tics.
         // The C blocks D_Display in a tight inner loop; the Java
         // port slices the wipe across multiple dDoomLoop calls so
         // the AnimationTimer cadence stays 35 Hz.
         if (wipeActive) {
             int done = doom.ui.FWipe.wipeScreenWipe(
                     doom.ui.FWipe.WIPE_MELT, 0, 0,
-                    Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT, 1);
+                    Doomdef.SCREENWIDTH, Doomdef.SCREENHEIGHT, elapsedTics);
             if (done != 0) {
                 wipeActive = false;
             }

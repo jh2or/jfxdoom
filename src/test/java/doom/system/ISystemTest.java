@@ -102,6 +102,7 @@ class ISystemTest {
             ISystem.iQuit();
         } finally {
             ISystem.quitHook = prev;
+            ISystem.iResetForRelaunch();
         }
     }
 }

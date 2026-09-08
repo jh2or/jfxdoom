@@ -125,4 +125,26 @@ class DMainWipeTest {
         DMain.dDisplay();
         assertTrue(DMain.wipeActive);
     }
+    @Test
+    void batchedDisplayAdvancesWipeBySimulationTics() {
+        int singleFrames = framesToCompleteWipe(1);
+        int batchedFrames = framesToCompleteWipe(4);
+        assertEquals((singleFrames + 3) / 4, batchedFrames,
+                "Batching four tics must not stretch the wipe over four times as much game time");
+    }
+
+    private int framesToCompleteWipe(int tics) {
+        doom.play.MRandom.mClearRandom();
+        Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
+        Doomstat.wipegamestate = -1;
+        DMain.wipeActive = false;
+        int frames = 0;
+        do {
+            DMain.dDisplay(tics);
+            frames++;
+        } while (DMain.wipeActive && frames < 400);
+        assertFalse(DMain.wipeActive);
+        return frames;
+    }
+
 }

@@ -549,7 +549,7 @@ public final class JfxDoomApp extends Application {
             public void handle(long now) {
                 scheduler.pulse(now, () -> {
                     DMain.dRunTic();
-                    return animationTimer == this;
+                    return animationTimer == this && !ISystem.isQuitting();
                 }, DMain::dDisplay);
             }
         };
