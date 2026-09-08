@@ -52,7 +52,8 @@ public final class Doomstat {
 
     // doomstat.h — true under -respawn or -nightmare. P_NightmareRespawn
     // and P_MobjThinker gate on this for the monster-respawn loop.
-    public static boolean respawnmonsters;
+    public static boolean respawnparm; // -respawn / demo header request
+    public static boolean respawnmonsters; // derived from skill and respawnparm
 
     // doomstat.h — true when running multiplayer (-net), false for
     // single player. P_SpawnMapThing's "skip cooperative spots in

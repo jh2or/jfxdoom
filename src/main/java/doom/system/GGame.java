@@ -406,9 +406,9 @@ public final class GGame {
     /**
      * G_DoSaveGame — actually writes the save file. Run from
      * gTicker's ga_savegame transition. Java port uses
-     * `PSaveg.save()` + a length-prefixed file format: first byte
+     * `SaveGame.save()` + a length-prefixed file format: first byte
      * is the description length, then the description, then the
-     * PSaveg byte stream.
+     * versioned SaveGame envelope.
      */
     public static void gDoSaveGame() {
         // Always-clear gameaction first so an unexpected throw
@@ -417,11 +417,11 @@ public final class GGame {
         // on the same failing branch.
         gameaction = ga_nothing;
         try {
-            byte[] body = doom.play.PSaveg.save();
+            byte[] body = SaveGame.save();
             byte[] desc = saveDescription == null
                     ? new byte[0]
                     : saveDescription.getBytes("UTF-8");
-            byte[] out = new byte[1 + desc.length + body.length];
+            byte[] out = new byte[1 + Math.min(255, desc.length) + body.length];
             out[0] = (byte) Math.min(255, desc.length);
             System.arraycopy(desc, 0, out, 1, out[0] & 0xff);
             System.arraycopy(body, 0, out, 1 + (out[0] & 0xff), body.length);
@@ -435,7 +435,7 @@ public final class GGame {
     /**
      * G_DoLoadGame — actually reads the save file. Run from gTicker's
      * ga_loadgame transition. Strips the description prefix, then
-     * hands the body to PSaveg.load().
+     * hands the versioned body to SaveGame.load().
      */
     public static void gDoLoadGame() {
         // Same defensive-reset as gDoSaveGame — clear gameaction
@@ -445,10 +445,12 @@ public final class GGame {
         try {
             byte[] all = java.nio.file.Files.readAllBytes(
                     java.nio.file.Paths.get(saveName));
+            if (all.length == 0) throw new java.io.IOException("Empty save file");
             int descLen = all[0] & 0xff;
+            if (descLen > all.length - 1) throw new java.io.IOException("Truncated description");
             byte[] body = new byte[all.length - 1 - descLen];
             System.arraycopy(all, 1 + descLen, body, 0, body.length);
-            doom.play.PSaveg.load(body);
+            SaveGame.load(body);
             players[consoleplayer].message = "game loaded.";
         } catch (java.io.IOException | RuntimeException e) {
             players[consoleplayer].message = "load failed: " + e.getMessage();
