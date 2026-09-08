@@ -16,11 +16,14 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class E1M1SaveProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void saveGameDoesNotLoopOrThrow(@TempDir Path tmp) throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         DMain.dDoomMain(new String[] {
                 "-iwad", WAD_PATH.toString(),

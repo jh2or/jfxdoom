@@ -27,26 +27,27 @@ import org.junit.jupiter.api.Test;
  *
  * Enabled with -Dfx3.probe=1 (forwarded by the Gradle test task).
  * Requires a JavaFX pipeline with SCENE3D support (D3D on Windows);
- * prints a notice and returns cleanly if unsupported.
+ * reports a JUnit skip if unsupported.
  */
 class Fx3ScreenshotProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void dumpFx3E1M1() throws Exception {
-        if (!"1".equals(System.getProperty("fx3.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("fx3.probe")),
+                "Diagnostic disabled; enable with -Dfx3.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         CountDownLatch done = new CountDownLatch(1);
         Throwable[] fail = new Throwable[1];
 
         Platform.startup(() -> {
             try {
-                if (!Platform.isSupported(
-                        javafx.application.ConditionalFeature.SCENE3D)) {
-                    System.err.println("fx3.probe: SCENE3D unsupported — skipping");
-                    return;
-                }
+                org.junit.jupiter.api.Assumptions.assumeTrue(Platform.isSupported(
+                        javafx.application.ConditionalFeature.SCENE3D),
+                        "JavaFX SCENE3D unavailable");
                 DMain.dDoomMain(new String[] {
                         "-iwad", WAD_PATH.toString(),
                         "-warp", "1", "1" });
@@ -163,6 +164,7 @@ class Fx3ScreenshotProbe {
             throw new AssertionError("fx3.probe: timed out");
         }
         Platform.exit();
+        if (fail[0] instanceof org.opentest4j.TestAbortedException aborted) throw aborted;
         if (fail[0] != null) throw new AssertionError(fail[0]);
     }
 

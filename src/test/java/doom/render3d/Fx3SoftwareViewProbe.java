@@ -25,11 +25,14 @@ import org.junit.jupiter.api.Test;
  */
 class Fx3SoftwareViewProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void dumpSoftwareE1M1() throws Exception {
-        if (!"1".equals(System.getProperty("fx3.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("fx3.probe")),
+                "Diagnostic disabled; enable with -Dfx3.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         DMain.dDoomMain(new String[] {
                 "-iwad", WAD_PATH.toString(),

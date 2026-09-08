@@ -19,11 +19,14 @@ import org.junit.jupiter.api.Test;
  */
 class E1M1MenuStartProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void menuPickStartsLevelWithHealthAndWeapon() throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         // Boot with no -warp — engine sits on the title-screen
         // demo loop.

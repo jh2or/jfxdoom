@@ -17,11 +17,14 @@ import org.junit.jupiter.api.Test;
  */
 class E1M1RenderProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void dumpRendererState() throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         DMain.dDoomMain(new String[] {
                 "-iwad", WAD_PATH.toString(),
@@ -85,7 +88,7 @@ class E1M1RenderProbe {
             try {
                 palette = doom.wad.WWad.wCacheLumpName("PLAYPAL",
                         doom.wad.ZZone.PU_CACHE);
-            } catch (IOException e) { return; }
+            } catch (IOException e) { throw new AssertionError("Probe image input failed", e); }
             java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
                     w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
             for (int c = 0; c < w; c++) {
@@ -98,7 +101,7 @@ class E1M1RenderProbe {
                         int b = palette[idx * 3 + 2] & 0xff;
                         img.setRGB(c, y, 0xff000000 | (r << 16) | (g << 8) | b);
                     }
-                } catch (IOException e) { }
+                } catch (IOException e) { throw new AssertionError("Probe texture read failed", e); }
             }
             java.nio.file.Path outDir = java.nio.file.Path.of("build/probe");
             java.nio.file.Files.createDirectories(outDir);

@@ -13,10 +13,8 @@
 //   * `maptexture_t` is never materialised as a Java class: we parse it
 //     directly out of the TEXTURE1/2 lump bytes, which is already the
 //     shape the C has to deal with anyway (pointer into a byte blob).
-//   * `R_PrecacheLevel` depends on playsim globals (sectors, sides, sprites,
-//     demoplayback, thinkercap) that haven't been ported yet. It is stubbed
-//     with an explicit "not yet wired" error; the real body will land as
-//     part of the playsim integration pass.
+//   * `R_PrecacheLevel` remains an unimplemented optional optimization;
+//     setup uses lazy caching instead. Its playsim dependencies now exist.
 package doom.render;
 
 import doom.fixed.Fixed;
@@ -478,8 +476,8 @@ public final class RData {
     // void R_PrecacheLevel(void)
     // Precaches all graphics referenced by the current level's sectors,
     // sidedefs and active sprite thinkers. Depends on playsim globals
-    // (sectors, sides, sprites, thinkercap, demoplayback, skytexture) that
-    // have not been ported yet — see PORT_STATUS.md deviation 7.
+    // (sectors, sides, sprites, thinkercap, demoplayback, skytexture).
+    // The eager-cache pass itself is still absent — see deviation 7.
     public static void rPrecacheLevel() {
         throw new UnsupportedOperationException(
                 "R_PrecacheLevel: awaits p_setup/p_tick/r_sky port");

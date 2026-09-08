@@ -1,18 +1,7 @@
-// Port of linuxdoom-1.10/p_user.c — full.
-//
-// Per-tic player update: cheat flags → mobj.flags, ticcmd → movement
-// thrust + view bobbing, weapon-change debounce, use-line dispatch,
-// and the power-up tic-counter sweep. P_PlayerThink is the entry
-// point P_Ticker (in p_tick.c, deferred) calls every tic for each
-// active player; P_DeathThink takes over once playerstate flips to
-// PST_DEAD.
-//
-// Stubs satisfied here: P_MovePsprites (PPspr stub), P_UseLines
-// (PMap, ported), P_SetMobjState (PMobj, ported),
-// P_PlayerInSpecialSector (PSpec stub — full body needs P_DamageMobj
-// from p_inter). The cheat-debounce, gun-cycle, and damage flash
-// behaviours all land verbatim — only the body of the dependent
-// stubs differs from the C, never the call sites.
+// Port of linuxdoom-1.10/p_user.c — per-tic player update.
+// Applies commands to thrust/view bobbing, weapon changes, use-lines and powers.
+// PTick calls pPlayerThink for active players; pDeathThink handles dead players.
+// Weapon, collision and sector-effect call targets are implemented modules.
 package doom.play;
 
 import doom.fixed.Fixed;

@@ -11,9 +11,8 @@
 // String` constants on this class per deviation 10 (string consumers
 // each own the strings they reference).
 //
-// Stubs the C calls but Java has stubbed: PPspr.pDropWeapon (waits
-// on full p_pspr port for psprites[] state machine), AmMap.amStop
-// (full automap deferred), ISystem.iTactile (no-op in linuxdoom too).
+// Weapon drop and automap stop call implemented modules; tactile feedback
+// remains a no-op, matching linuxdoom.
 package doom.play;
 
 import doom.fixed.Fixed;

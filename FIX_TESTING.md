@@ -1,0 +1,155 @@
+# Review fixes: branch status and testing
+
+The five review branches based on `eb87860` are now merged into
+`feat/rest-of-todo`, using one separate two-parent merge commit per branch.
+Nothing has been merged into `main`. The pre-existing TODO edit is incorporated
+in `PORT_STATUS.md`, retaining its findings and marking the completed work.
+The source branches and their worktrees remain available for independent review.
+
+| Branch | Local worktree | What changed |
+| --- | --- | --- |
+| `fix/save-load` | `/tmp/jfxdoom-save-load` | Versioned map/skill/time/flags/RNG metadata, map fingerprint, checksum and structural/index validation before restoration; reconstruct the saved level; reset mover tables and title/demo/HUD state. |
+| `fix/gameplay-fidelity` | `/tmp/jfxdoom-gameplay-fidelity` | Reset both RNG streams; separate requested respawn from Nightmare's effective setting; apply/restore fast monster timings and projectile speeds; complete friction, standing animation and no-momentum cheat behavior. |
+| `fix/wad-lifecycle` | `/tmp/jfxdoom-wad-lifecycle` | Production mount teardown, replacement/failure handle cleanup, ENDOOM capture before release, independent cache owners and removal of failed partial reads. |
+| `fix/frame-scheduling` | `/tmp/jfxdoom-frame-scheduling` | At most four simulation tics per UI pulse, one presentation per batch, proportional wipe advancement, prompt quit guards, function-key mapping, non-blocking frame-aligned audio with a bounded backlog. |
+| `test/integration-coverage` | `/tmp/jfxdoom-integration-coverage` | Visible diagnostic skips, independently authored image regression, independent real-WAD title oracle, corrected completion claims and this guide. |
+
+These `/tmp` worktrees are convenience checkouts; the committed local branches
+remain available even if temporary directories are removed. Use `git worktree
+list` to find current locations. A branch already checked out in a worktree
+cannot also be checked out in the original working directory.
+
+## Verification recorded on 2026-09-08
+
+| Checkout | Tests | Passed | Skipped | Failures/errors |
+| --- | ---: | ---: | ---: | ---: |
+| `fix/save-load` | 984 | 984 | 0 | 0 |
+| `fix/gameplay-fidelity` | 986 | 986 | 0 | 0 |
+| `fix/wad-lifecycle` | 985 | 985 | 0 | 0 |
+| `fix/frame-scheduling` | 989 | 989 | 0 | 0 |
+| `test/integration-coverage` | 981 | 971 | 10 | 0 |
+| Combined patches in detached validation checkout | 1009 | 999 | 10 | 0 |
+| Integrated `feat/rest-of-todo` | 1009 | 999 | 10 | 0 |
+
+The ten skips are disabled optional diagnostics. The first four branches retain
+baseline diagnostic reporting; the coverage branch makes those skips explicit.
+A real JavaFX event loop on a private Xvfb display also passed software gameplay
+tick advancement, Escape menu open/close, F10/Y quit, scene replacement, WAD
+resource cleanup and verification that no more tics run after quit. The smoke
+used JavaFX's software pipeline; it does not verify GPU visuals or audio quality.
+
+## Automated checks
+
+Run this from the `feat/rest-of-todo` checkout to test all integrated fixes,
+or from a source-branch worktree to test that branch independently:
+
+```sh
+bash ./gradlew test --rerun-tasks --max-workers=2
+```
+
+The wrapper is invoked with `bash` because its tracked executable bit is absent.
+Use Java 21 or newer and supply your own original Doom WAD. The prepared
+worktrees use an ignored symlink to the existing local WAD; it is not committed.
+For another checkout, place your WAD in `reference-wads/DOOM.WAD` to enable all
+new real-WAD tests. The coverage branch also supports `-Ddoom.wad=/absolute/path`
+for its title test and diagnostics; older tests retain their own WAD discovery.
+Read the skipped-test count: missing assets do not establish gameplay coverage.
+Reports are written under `build/reports/tests/test/`.
+
+All focused commands below work in `feat/rest-of-todo`; they also work in
+the corresponding source-branch worktree:
+
+```sh
+# fix/save-load
+bash ./gradlew test --tests doom.system.SaveGameTest --rerun-tasks
+
+# fix/gameplay-fidelity
+bash ./gradlew test --tests doom.system.GGameFidelityTest --tests doom.system.GGameDemoDeterminismTest --tests doom.play.PMobjTest --rerun-tasks
+
+# fix/wad-lifecycle
+bash ./gradlew test --tests doom.wad.WWadLifecycleTest --rerun-tasks
+
+# fix/frame-scheduling
+bash ./gradlew test --tests doom.ui.TicSchedulerTest --tests doom.ui.JfxDoomAppKeyTest --tests doom.system.DMainWipeTest --tests doom.sound.BufferedSoundOutputTest --rerun-tasks
+
+# test/integration-coverage
+bash ./gradlew test --tests doom.ui.VVideoReferenceImageTest --tests doom.system.TitlePageReferenceTest --rerun-tasks
+```
+
+The scheduling tests simulate a 60-second clock stall, deferred launcher quit,
+and a full/stalled audio device; they do not need real audio hardware. WAD
+lifecycle tests also inspect actual descriptors on Linux. Save tests compare
+restored serialized state, exercise different maps and title state, and check
+that corrupt data leaves the active state unchanged. The demo test compares
+actor state through 210 consecutive commands across repeated playback after
+unrelated RNG activity; this establishes repeatability, not original-engine
+bit equivalence.
+
+The coverage branch's ten optional diagnostics now visibly skip unless enabled.
+For a screenshot dump, run separately:
+
+```sh
+bash ./gradlew test --tests doom.system.E1M1ScreenshotProbe -De1m1.probe=1 --rerun-tasks
+```
+
+Fixture provenance and GPU diagnostic requirements are in
+[the renderer reference guide](src/test/resources/render-refs/README.md).
+
+## Manual smoke tests
+
+In the `feat/rest-of-todo` checkout (or a relevant source worktree), start with:
+
+```sh
+bash ./gradlew run --args='-iwad reference-wads/DOOM.WAD -warp 1 1'
+```
+
+1. **Save/load branch:** change inventory, open a door, save into a spare slot,
+   advance to E1M2 (for example with `idclev12`), then load. Check E1M1, position,
+   health/ammo and level time. Repeat loading a save made while a door/lift is
+   moving. End the game to the title screen and load again. Truncate a *copy*
+   in another spare slot; loading it should report failure and leave gameplay
+   intact. Automated tests cover corruption without touching personal saves.
+2. **Gameplay branch:** add `-respawn`, kill a monster and wait for it to return.
+   Compare normal play with `-fast` and `-skill 5`; demons and selected monster
+   projectiles should be faster. Start normal games afterward to check normal
+   speeds return. Move and release the direction keys; check stopping behavior.
+   Repeat title/demo playback after gameplay to look for desynchronization.
+3. **WAD branch:** launch, quit to ENDOOM, dismiss to the launcher, and relaunch
+   repeatedly. ENDOOM should still appear. While at the launcher there should
+   be no WAD handles in `lsof -p <java-pid>`; close the window as well.
+4. **Scheduling branch:** use the Launchpad to choose 4× render resolution and
+   side-by-side display, then move, fire, open menus and quit. Check input
+   responsiveness and sound during load. A debugger pause/resume of the Java
+   process should produce bounded catch-up instead of a long frozen burst.
+   Wipes should retain their timing. The automated fake-device test verifies
+   non-blocking output; listening on real hardware remains necessary to judge
+   latency and artifacts.
+
+## Surprises and compatibility limits
+
+- Legacy Java saves lack map identity/time and cannot be restored reliably.
+  The new format rejects them explicitly; it also does not read vanilla saves.
+  Make fresh saves with the updated engine and use the same WAD set to restore them.
+  Preflight protects against malformed save bytes; independently broken WADs
+  or unrelated failures during map construction are not transactional.
+- Repeated loads retained old ceiling/platform registrations; old cache owners
+  could clear a newly mounted WAD's cache; failed reads could cache partial
+  bytes. These were additional bugs found while implementing the requested fixes.
+- Animation durations and projectile speeds were immutable although vanilla
+  changes them for fast mode. The fix uses original duration baselines instead
+  of repeatedly halving/doubling values, avoiding cumulative and odd-value drift.
+- The real JavaFX smoke check exposed missing F1–F12 key mapping. Function
+  keys now reach their engine handlers; F10 → Y is covered by a regression.
+- Quit-to-launcher is asynchronous. Guarding timer identity alone was insufficient;
+  explicit quitting checks now prevent another tick or render after shutdown.
+- Sustained rendering overload slows game time relative to wall time; simulation
+  commands are not skipped. Sustained audio backpressure may discard the oldest
+  queued PCM and can still introduce device-buffer latency. This is a bounded
+  policy, not a claim of zero latency or unlimited lossless buffering.
+- The existing E1M1 screenshot lacks exact WAD, engine, tic and view provenance.
+  New automatic image checks establish patch/title correctness, not full-world
+  vanilla pixel equivalence. GPU visual fidelity and subjective sound quality
+  still require manual checks; virtual-display input/quit checks are smoke tests.
+- Other pre-existing scope gaps remain: multiplayer, mouse/joystick input,
+  optional graphics precaching, and the object-removal sound-stop call. This review's
+  fixes do not constitute a complete vanilla-compatibility certification.

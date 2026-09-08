@@ -244,9 +244,7 @@ class RPlaneTest {
                 break;
             }
         }
-        if (wad == null) {
-            return;     // no WAD — skip silently
-        }
+        org.junit.jupiter.api.Assumptions.assumeTrue(wad != null, "No WAD in reference-wads/");
 
         doom.wad.ZZone.zInit();
         doom.wad.WWad.resetForTests();
