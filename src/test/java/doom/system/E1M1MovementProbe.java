@@ -24,11 +24,14 @@ import org.junit.jupiter.api.Test;
  */
 class E1M1MovementProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void walkForwardAndCapture() throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         DMain.dDoomMain(new String[] {
                 "-iwad", WAD_PATH.toString(),
@@ -83,7 +86,7 @@ class E1M1MovementProbe {
         byte[] palette;
         try {
             palette = WWad.wCacheLumpName("PLAYPAL", ZZone.PU_CACHE);
-        } catch (IOException e) { return; }
+        } catch (IOException e) { throw new AssertionError("Probe image input failed", e); }
         int w = Doomdef.SCREENWIDTH;
         int h = Doomdef.SCREENHEIGHT;
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);

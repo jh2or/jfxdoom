@@ -24,11 +24,14 @@ import org.junit.jupiter.api.Test;
  */
 class E1M1ScreenshotProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void dumpE1M1Frames() throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         // Drive the boot end-to-end the way the JavaFX shell does.
         DMain.dDoomMain(new String[] {
@@ -52,7 +55,7 @@ class E1M1ScreenshotProbe {
         try {
             palette = WWad.wCacheLumpName("PLAYPAL", ZZone.PU_CACHE);
         } catch (IOException e) {
-            return;
+            throw new AssertionError("Probe palette read failed", e);
         }
         int w = Doomdef.SCREENWIDTH;
         int h = Doomdef.SCREENHEIGHT;

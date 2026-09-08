@@ -19,11 +19,14 @@ import org.junit.jupiter.api.Test;
  */
 class E1M1SpawnProbe {
 
-    private static final Path WAD_PATH = Path.of("reference-wads/DOOM.WAD");
+    private static final Path WAD_PATH = doom.testing.TestWads.find();
 
     @Test
     void dumpSpawnState() throws IOException {
-        if (!"1".equals(System.getProperty("e1m1.probe"))) return;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "1".equals(System.getProperty("e1m1.probe")),
+                "Diagnostic disabled; enable with -De1m1.probe=1");
+        doom.testing.TestWads.require(WAD_PATH);
 
         DMain.dDoomMain(new String[] {
                 "-iwad", WAD_PATH.toString(),
@@ -32,10 +35,7 @@ class E1M1SpawnProbe {
 
         Player p = GGame.players[0];
         Mobj mo = (p != null) ? p.mo : null;
-        if (mo == null) {
-            System.err.println("E1M1SpawnProbe: no player mobj");
-            return;
-        }
+        org.junit.jupiter.api.Assertions.assertNotNull(mo, "E1M1 must spawn a player mobj");
         // Doom map coords are stored as 16.16 fixed; print the
         // integer part for readability.
         int xi = mo.x >> 16;

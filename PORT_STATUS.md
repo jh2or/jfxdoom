@@ -15,6 +15,27 @@ Update this file in the same commit as the module it describes (CLAUDE.md §14).
   - `Pending` — not yet started.
 - **Tier** — Trivial, Standard, Hard. Originally tied to a model-routing scheme (cheap / mid / heavy) that was never used in practice; see [`PORT_COMMENTS.md`](PORT_COMMENTS.md). Kept here as a rough difficulty estimate.
 
+## Integration coverage fix (2026-09-08)
+
+- Disabled diagnostics now use JUnit assumptions: the default suite visibly
+  skips ten optional probes. Missing WAD data also reports a skip instead of
+  silently passing the RPlane smoke test. Enabled image diagnostics fail on
+  missing palette/texture input, and the spawn probe asserts its player exists.
+- Added automatic `VVideoReferenceImageTest`: every framebuffer pixel must match
+  an independently authored patch-composition PNG, covering origin offsets,
+  transparent/multiple posts, flips, overlaps and screen edges without a WAD.
+- Added automatic `TitlePageReferenceTest`: direct local-WAD decoding provides
+  an independent TITLEPIC raster/palette oracle for initial and cached page
+  drawing. `-Ddoom.wad=/absolute/path/DOOM.WAD` selects data for this test/probes.
+- Reference provenance, limitations and test commands are documented in
+  [render-refs/README.md](src/test/resources/render-refs/README.md). The existing
+  E1M1 screenshot has insufficient capture metadata to claim vanilla gameplay
+  pixel equivalence; that stronger validation remains unproven.
+- Verification: full suite 981 tests, 971 passed, 10 visibly skipped, zero
+  failures/errors. Explicit missing-WAD title test skips; explicitly enabled
+  E1M1 screenshot probe passes. Full command:
+  `bash ./gradlew test --rerun-tasks --max-workers=2`.
+
 ## 1 — Fixed point & math foundation
 
 | C file       | Java class                | Tier     | Status   | LOC (C/Java) | Notes                                                    |
