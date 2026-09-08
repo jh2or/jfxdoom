@@ -1,32 +1,7 @@
-// Port of linuxdoom-1.10/d_main.c — partial.
-//
-// Top-level orchestration: argument parsing, IWAD identification,
-// subsystem boot (V_Init / Z_Init / W_InitFile / R_Init / P_Init /
-// I_Init / S_Init), initial level load (G_InitNew → P_SetupLevel),
-// and the per-tic D_DoomLoop frame driver.
-//
-// Deferred (waits on the modules they reach into):
-//   - D_Display (full): needs ST_Drawer / HU_Drawer / WI_Drawer /
-//     F_Drawer / AM_Drawer / FWipe screen-wipe machinery
-//   - D_PostEvent / D_ProcessEvents: needs M_Responder / G_Responder
-//     event chain (m_menu / g_game)
-//   - D_StartTitle / D_AdvanceDemo / D_PageDrawer: title-screen
-//     demo loop
-//   - G_BuildTiccmd / G_Ticker / G_InitNew: g_game.c, big port
-//   - The -file / -warp / -skill / -timer / -respawn / -fast /
-//     -nomonsters / -altdeath / -deathmatch parsers (M_CheckParm-
-//     based) work but the parameters they set are ignored until
-//     g_game ports.
-//
-// What this commit provides:
-//   - dDoomMain(String[] args) — parses -iwad and -warp, boots all
-//     ported subsystems, loads the requested level via
-//     PSetup.pSetupLevelGeometry + PSetup.pLoadThings.
-//   - dDoomLoop() — runs the per-frame skeleton: I_StartFrame →
-//     I_StartTic → D_ProcessEvents (no-op) → PTick.pTicker →
-//     D_Display (just calls RMain.rRenderPlayerView + IVideo) →
-//     I_UpdateSound. Single-tic / TryRunTics arbitration is
-//     simplified (synchronous: one tic per frame).
+// Port of linuxdoom-1.10/d_main.c — single-player boot and frame orchestration.
+// Parses WAD/game options, initializes subsystems, dispatches input, drives
+// title/demo and gameplay ticks, and presents software/3D views with UI/wipes.
+// Network tic exchange is not implemented; JavaFX supplies wall-clock cadence.
 package doom.system;
 
 import doom.play.PSpec;

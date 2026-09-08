@@ -6,13 +6,9 @@
 // typed Java array; sizes come from the lump length divided by the
 // on-disk record size.
 //
-// Deferred:
-//   - P_SetupLevel: the orchestrator. Needs S_Start, full G_PlayerReborn,
-//     G_DeathMatchSpawnPlayer, R_PrecacheLevel, all unported. The
-//     geometry-only chunk is factored into pSetupLevelGeometry() so
-//     tests + future orchestrator can call it.
-//   - P_Init: calls R_InitSprites, unported. P_InitSwitchList +
-//     P_InitPicAnims are wired here for the orchestrator path.
+// pSetupLevel orchestrates geometry, THINGS and sector-special loading.
+// GGame starts per-level sound afterward. Eager graphics precaching and
+// deathmatch spawning remain omitted. pSetupLevelGeometry is the geometry-only test entry point.
 //
 // On-disk records use SHORT() (16-bit little-endian) for everything;
 // we read with ByteBuffer(LITTLE_ENDIAN) per CLAUDE.md §3.
@@ -541,11 +537,10 @@ public final class PSetup {
     // items / player), runs sector-special spawn (PSpec.pSpawnSpecials),
     // resets per-level counters.
     //
-    // Deferred parts (waits on their named module):
-    //   - S_Start  (sound channel reset — SSound is a stub)
+    // Remaining omitted setup calls:
     //   - R_PrecacheLevel (sprite / flat / texture precache)
     //   - G_DeathMatchSpawnPlayer iteration (deferred until full
-    //     g_game ports — single-player skips it cleanly)
+    //     multiplayer support; single-player skips it)
     //
     // `playermask` is the bit-set of seats to populate (deathmatch
     // multiplayer); single-player passes 0 and the function just
@@ -591,7 +586,7 @@ public final class PSetup {
         // Sector specials (lights, scrolls, door-close-30, etc.).
         PSpec.pSpawnSpecials();
 
-        // S_Start / R_PrecacheLevel — deferred.
+        // GGame calls S_Start after setup; R_PrecacheLevel remains omitted.
 
         // Update gamestate.
         doom.system.Doomstat.gamemap = map;
@@ -603,8 +598,7 @@ public final class PSetup {
     // pSetupLevelGeometry: the geometry-only chunk of P_SetupLevel.
     // Loads the eight geometry lumps + REJECT for the given map base
     // lump and runs P_GroupLines. Does NOT load THINGS, run
-    // R_PrecacheLevel, or touch player/deathmatch state — those land
-    // with the full P_SetupLevel orchestrator.
+    // R_PrecacheLevel, or touch player/deathmatch state.
     public static void pSetupLevelGeometry(int lumpnum) throws IOException {
         // Order mirrors p_setup.c lines 649–660.
         pLoadBlockMap(lumpnum + ML_BLOCKMAP);

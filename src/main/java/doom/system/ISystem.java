@@ -1,5 +1,5 @@
 // Port of linuxdoom-1.10/i_system.c — full (sans the abort + exit
-// branches, replaced with throw / no-op for the embedded engine).
+// branches, replaced with exceptions and an overridable quit hook).
 //
 // The C process-exit / I_ZoneBase / I_AllocLow paths don't make
 // sense in Java: the JVM owns its heap, and the engine doesn't
@@ -8,8 +8,8 @@
 // or skips the allocation entirely; ZZone (already ported) is the
 // only remaining allocation tracker.
 //
-// I_Init / I_Quit dispatch into ISound / IVideo / DNet (each a
-// stub class for now); when those ports land they take over.
+// I_Init / I_Quit dispatch into audio/video adapters and the single-player
+// network no-op. The shell overrides the quit hook to return to its launcher.
 package doom.system;
 
 import doom.play.Ticcmd;
@@ -72,7 +72,7 @@ public final class ISystem {
         return new byte[0];
     }
 
-    // i_system.c — I_GetTime. Returns time in 1/70th-second tics
+    // i_system.c — I_GetTime. Returns time in 1/35th-second tics
     // since the first call.
     public static int iGetTime() {
         long now = System.nanoTime();
@@ -89,7 +89,7 @@ public final class ISystem {
     // i_system.c — I_Init. Boots the audio + video subsystems.
     // The C calls I_InitSound; I_InitGraphics is intentionally
     // commented out (deferred to D_DoomMain). The Java port mirrors
-    // the dispatch; the audio call lands in ISound's stub, video
+    // the dispatch; the audio call initializes ISound, video
     // initialization happens later in D_DoomMain.
     public static void iInit() {
         doom.sound.ISound.iInitSound();
@@ -133,7 +133,7 @@ public final class ISystem {
         quitting = false;
     }
 
-    // i_system.c — I_WaitVBL. Sleeps for `count * 1/70 s` so the
+    // i_system.c — I_WaitVBL. Sleeps for `count * 1/35 s` so the
     // game loop can throttle to TICRATE.
     public static void iWaitVBL(int count) {
         try {

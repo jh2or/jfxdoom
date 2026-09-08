@@ -1,6 +1,6 @@
 # jfxdoom
 
-A faithful Java/JavaFX port of `linuxdoom-1.10`. Loads original
+A Java/JavaFX port of `linuxdoom-1.10` aiming for faithful gameplay. Loads original
 Doom WAD files and runs the engine at 35 Hz in a JavaFX window.
 Additionally, render resolution and display scaling has been added.
 
@@ -125,9 +125,10 @@ shaders or fog, so the biggest visible difference is the missing
 distance-based light diminishing (sectors are lit flat at their
 light level; the software renderer darkens surfaces with
 distance). Texel filtering is bilinear-ish, and the spectre fuzz
-/ invulnerability effects are approximated. The playsim is
-shared and unmodified, so demos and gameplay are bit-identical
-regardless of renderer.
+/ invulnerability effects are approximated. Both renderers use the same playsim; the 3D renderer does not implement
+a separate simulation. This architecture alone does not establish bit-exact
+compatibility with the original engine. Known fidelity fixes and their
+regression coverage are tracked in `PORT_STATUS.md`.
 
 The **side-by-side / stacked** modes run both renderers against
 the same tic in two equal panes — handy for comparing them; the
@@ -223,7 +224,7 @@ jfxdoom/
 │   ├── play/         playsim, AI, physics
 │   ├── sound/        ISound (javax.sound.sampled) + MUS→MIDI
 │   └── ui/           JavaFX shell + Launchpad + menu / status bar / HUD / wipe / finale
-├── src/test/java/doom/         JUnit 5 suite (≈973 tests)
+├── src/test/java/doom/         JUnit 5 suite (JUnit 5 tests)
 ├── reference-wads/             your WAD goes here (gitignored)
 ├── build.gradle.kts            Gradle build script
 ├── settings.gradle.kts         Gradle project settings
@@ -286,9 +287,20 @@ the host — the workspace bind mount makes them visible inside.
 ./gradlew test
 ```
 
-≈973 JUnit 5 tests covering math, WAD I/O, rendering primitives,
-playsim, sound, menu, intermission, finale, and the screen-wipe
-state machine.
+The JUnit 5 suite covers math, WAD I/O, rendering primitives, playsim,
+sound, menus, intermission, finale, and screen wipes. Disabled diagnostic
+probes now report as skipped. WAD-dependent checks need a local WAD;
+passing a suite with those checks skipped does not validate real gameplay.
+
+Automatic image checks include an independently authored patch fixture and
+a real-WAD title-page comparison against an independent raw-WAD decoder.
+They do not prove vanilla world-rendering equivalence. Fixture provenance,
+settings and diagnostic commands are documented in
+[`render-refs/README.md`](src/test/resources/render-refs/README.md).
+
+The review fixes live on separate local branches and have not been merged
+into `main` or `feat/rest-of-todo`. See [`FIX_TESTING.md`](FIX_TESTING.md)
+for branch-specific regression commands and manual testing steps.
 
 ## License
 

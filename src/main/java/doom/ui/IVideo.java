@@ -1,9 +1,6 @@
-// Port of linuxdoom-1.10/i_video.c — partial stub.
-//
-// i_video.c is the DOS/X11 video backend; its full body (palette upload,
-// keyboard polling, framebuffer blit) maps onto the JavaFX shell and is
-// deferred per CLAUDE.md §11. The few functions other ported modules
-// call directly land here as they are needed.
+// Port of linuxdoom-1.10/i_video.c — JavaFX platform adapter.
+// JfxDoomApp owns the window and registers palette/frame/tic hooks here.
+// Framebuffer capture is also used by the software screen-wipe path.
 package doom.ui;
 
 import static doom.system.Doomdef.SCREENHEIGHT;
@@ -18,14 +15,10 @@ public final class IVideo {
     }
 
     // i_video.c — I_InitGraphics.
-    // Opens the X11 / SDL window in the C; the Java port defers to
-    // the JavaFX shell (JfxDoomApp), which constructs the
-    // PixelBuffer<IntBuffer> + Canvas independently. This stub is
-    // the dispatch point D_DoomMain calls; the JavaFX shell
-    // overrides the implementation by registering a back-end
-    // hook (or by replacing this class outright).
+    // JfxDoomApp creates the JavaFX window before engine boot; no separate
+    // native window initialization is needed at this dispatch point.
     public static void iInitGraphics() {
-        // intentionally empty until the JavaFX shell port wires up
+        // Window lifetime is owned by the shell.
     }
 
     // i_video.c — I_ShutdownGraphics.
