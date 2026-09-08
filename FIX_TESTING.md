@@ -12,13 +12,31 @@ any branch. Documentation sections may need reconciliation during a later merge.
 | `fix/save-load` | `/tmp/jfxdoom-save-load` | Versioned map/skill/time/flags/RNG metadata, map fingerprint, checksum and structural/index validation before restoration; reconstruct the saved level; reset mover tables and title/demo/HUD state. |
 | `fix/gameplay-fidelity` | `/tmp/jfxdoom-gameplay-fidelity` | Reset both RNG streams; separate requested respawn from Nightmare's effective setting; apply/restore fast monster timings and projectile speeds; complete friction, standing animation and no-momentum cheat behavior. |
 | `fix/wad-lifecycle` | `/tmp/jfxdoom-wad-lifecycle` | Production mount teardown, replacement/failure handle cleanup, ENDOOM capture before release, independent cache owners and removal of failed partial reads. |
-| `fix/frame-scheduling` | `/tmp/jfxdoom-frame-scheduling` | At most four simulation tics per UI pulse, one presentation per batch, proportional wipe advancement, prompt quit guards, non-blocking frame-aligned audio with a bounded backlog. |
+| `fix/frame-scheduling` | `/tmp/jfxdoom-frame-scheduling` | At most four simulation tics per UI pulse, one presentation per batch, proportional wipe advancement, prompt quit guards, function-key mapping, non-blocking frame-aligned audio with a bounded backlog. |
 | `test/integration-coverage` | `/tmp/jfxdoom-integration-coverage` | Visible diagnostic skips, independently authored image regression, independent real-WAD title oracle, corrected completion claims and this guide. |
 
 These `/tmp` worktrees are convenience checkouts; the committed local branches
 remain available even if temporary directories are removed. Use `git worktree
 list` to find current locations. A branch already checked out in a worktree
 cannot also be checked out in the original working directory.
+
+## Verification recorded on 2026-09-08
+
+| Checkout | Tests | Passed | Skipped | Failures/errors |
+| --- | ---: | ---: | ---: | ---: |
+| `fix/save-load` | 984 | 984 | 0 | 0 |
+| `fix/gameplay-fidelity` | 986 | 986 | 0 | 0 |
+| `fix/wad-lifecycle` | 985 | 985 | 0 | 0 |
+| `fix/frame-scheduling` | 989 | 989 | 0 | 0 |
+| `test/integration-coverage` | 981 | 971 | 10 | 0 |
+| Combined patches in detached validation checkout | 1009 | 999 | 10 | 0 |
+
+The ten skips are disabled optional diagnostics. The first four branches retain
+baseline diagnostic reporting; the coverage branch makes those skips explicit.
+A real JavaFX event loop on a private Xvfb display also passed software gameplay
+tick advancement, Escape menu open/close, F10/Y quit, scene replacement, WAD
+resource cleanup and verification that no more tics run after quit. The smoke
+used JavaFX's software pipeline; it does not verify GPU visuals or audio quality.
 
 ## Automated checks
 
@@ -50,7 +68,7 @@ bash ./gradlew test --tests doom.system.GGameFidelityTest --tests doom.system.GG
 bash ./gradlew test --tests doom.wad.WWadLifecycleTest --rerun-tasks
 
 # fix/frame-scheduling
-bash ./gradlew test --tests doom.ui.TicSchedulerTest --tests doom.system.DMainWipeTest --tests doom.sound.BufferedSoundOutputTest --rerun-tasks
+bash ./gradlew test --tests doom.ui.TicSchedulerTest --tests doom.ui.JfxDoomAppKeyTest --tests doom.system.DMainWipeTest --tests doom.sound.BufferedSoundOutputTest --rerun-tasks
 
 # test/integration-coverage
 bash ./gradlew test --tests doom.ui.VVideoReferenceImageTest --tests doom.system.TitlePageReferenceTest --rerun-tasks
@@ -118,6 +136,8 @@ bash ./gradlew run --args='-iwad reference-wads/DOOM.WAD -warp 1 1'
 - Animation durations and projectile speeds were immutable although vanilla
   changes them for fast mode. The fix uses original duration baselines instead
   of repeatedly halving/doubling values, avoiding cumulative and odd-value drift.
+- The real JavaFX smoke check exposed missing F1–F12 key mapping. Function
+  keys now reach their engine handlers; F10 → Y is covered by a regression.
 - Quit-to-launcher is asynchronous. Guarding timer identity alone was insufficient;
   explicit quitting checks now prevent another tick or render after shutdown.
 - Sustained rendering overload slows game time relative to wall time; simulation
@@ -127,7 +147,7 @@ bash ./gradlew run --args='-iwad reference-wads/DOOM.WAD -warp 1 1'
 - The existing E1M1 screenshot lacks exact WAD, engine, tic and view provenance.
   New automatic image checks establish patch/title correctness, not full-world
   vanilla pixel equivalence. GPU visual fidelity and subjective sound quality
-  still require manual checks; a virtual-display software boot is only a smoke test.
+  still require manual checks; virtual-display input/quit checks are smoke tests.
 - Other pre-existing scope gaps remain: multiplayer, mouse/joystick input,
   optional graphics precaching, and the object-removal sound-stop call. This review's
   fixes do not constitute a complete vanilla-compatibility certification.
