@@ -95,6 +95,55 @@ class PMobjTest {
         return sec;
     }
 
+    private Mobj movingPlayer(int state) {
+        openWorld(0, 128 * Fixed.FRACUNIT);
+        Mobj mo = PMobj.pSpawnMobj(0, 0, PMobj.ONFLOORZ, Info.MT_PLAYER);
+        mo.player = new Player();
+        mo.player.mo = mo;
+        PMobj.pSetMobjState(mo, state);
+        mo.momx = PMobj.STOPSPEED / 2;
+        return mo;
+    }
+
+    @Test
+    void lowSpeedWithForwardOrSideInputKeepsMomentumAndWalking() {
+        for (boolean sideways : new boolean[] {false, true}) {
+            resetWorld();
+            Mobj mo = movingPlayer(Info.S_PLAY_RUN1);
+            mo.player.cmd.forwardmove = sideways ? 0 : 1;
+            mo.player.cmd.sidemove = sideways ? 1 : 0;
+            PMobj.pXYMovement(mo);
+            assertEquals(Fixed.mul(PMobj.STOPSPEED / 2, PMobj.FRICTION), mo.momx);
+            assertSame(Info.states[Info.S_PLAY_RUN1], mo.state);
+        }
+    }
+
+    @Test
+    void releasingInputStopsAllFourWalkingFramesButPreservesAttack() {
+        for (int state = Info.S_PLAY_RUN1; state < Info.S_PLAY_RUN1 + 4; state++) {
+            resetWorld();
+            Mobj mo = movingPlayer(state);
+            PMobj.pXYMovement(mo);
+            assertEquals(0, mo.momx);
+            assertSame(Info.states[Info.S_PLAY], mo.state);
+        }
+        resetWorld();
+        Mobj mo = movingPlayer(Info.S_PLAY_ATK1);
+        PMobj.pXYMovement(mo);
+        assertSame(Info.states[Info.S_PLAY_ATK1], mo.state);
+    }
+
+    @Test
+    void noMomentumCheatStopsEvenAirbornePlayerAfterMovement() {
+        Mobj mo = movingPlayer(Info.S_PLAY_RUN1);
+        mo.z = Fixed.FRACUNIT;
+        mo.player.cheats = Player.CF_NOMOMENTUM;
+        mo.player.cmd.forwardmove = 1;
+        PMobj.pXYMovement(mo);
+        assertEquals(PMobj.STOPSPEED / 2, mo.x);
+        assertEquals(0, mo.momx);
+    }
+
     // --- P_SpawnMobj ---
 
     @Test

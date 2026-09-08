@@ -1,6 +1,6 @@
 // Port of linuxdoom-1.10/info.h mobjinfo_t (lines 1305–1331).
 // One row of the global mobjinfo[] table — per-monster/projectile/
-// item static parameters that don't change during play. The 23-field
+// item parameters. Projectile speed changes for fast/Nightmare games. The 23-field
 // layout matches the C struct order exactly (preserved for any
 // pointer-arithmetic / index callers that might land later).
 package doom.play;
@@ -22,7 +22,7 @@ public final class MobjInfo {
     public final int deathstate;
     public final int xdeathstate;   // gibbed-death state
     public final int deathsound;
-    public final int speed;         // movement speed (chase) — fixed_t for missiles
+    public int speed;         // movement speed (chase) — fixed_t for missiles
     public final int radius;        // fixed_t
     public final int height;        // fixed_t
     public final int mass;

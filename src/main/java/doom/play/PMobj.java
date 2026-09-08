@@ -174,8 +174,11 @@ public final class PMobj {
         } while (xmove != 0 || ymove != 0);
 
         // slow down
-        // CF_NOMOMENTUM is a player cheat — Player.cheats not yet
-        // populated, so the cheat short-circuit lands when p_user does.
+        if (player != null && (player.cheats & Player.CF_NOMOMENTUM) != 0) {
+            // debug option for no sliding at all
+            mo.momx = mo.momy = 0;
+            return;
+        }
 
         if ((mo.flags & (Mobj.MF_MISSILE | Mobj.MF_SKULLFLY)) != 0) {
             return; // no friction for missiles ever
@@ -201,13 +204,16 @@ public final class PMobj {
         if (mo.momx > -STOPSPEED && mo.momx < STOPSPEED
                 && mo.momy > -STOPSPEED && mo.momy < STOPSPEED
                 && (player == null
-                    || (/* player.cmd.forwardmove == 0 && player.cmd.sidemove == 0 */
-                        true /* TODO(p_user): inspect ticcmd when ported */))) {
+                    || (player.cmd.forwardmove == 0 && player.cmd.sidemove == 0))) {
             // if in a walking frame, stop moving
-            // The states[] arithmetic here (state - states - S_PLAY_RUN1 < 4)
-            // needs Mobj.state's index — defer the player-walk-stop
-            // sub-branch until p_user lands its full ticcmd handling.
-            // The bare momx/momy zeroing below still fires.
+            if (player != null) {
+                for (int i = Info.S_PLAY_RUN1; i < Info.S_PLAY_RUN1 + 4; i++) {
+                    if (player.mo.state == Info.states[i]) {
+                        pSetMobjState(player.mo, Info.S_PLAY);
+                        break;
+                    }
+                }
+            }
             mo.momx = 0;
             mo.momy = 0;
         } else {

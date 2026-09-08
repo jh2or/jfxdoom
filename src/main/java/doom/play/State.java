@@ -18,7 +18,7 @@ public final class State {
 
     public final int sprite;       // spritenum_t (Info.SPR_*)
     public final int frame;        // bits + FF_FULLBRIGHT optional flag
-    public final int tics;         // dwell time before nextstate
+    public int tics;         // dwell time before nextstate
     public final Consumer<Mobj> action;
     public final BiConsumer<Player, Pspdef> actionPsp;
     public final int nextstate;    // statenum_t (Info.S_*)
