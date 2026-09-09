@@ -7,6 +7,18 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## ASCII diagonal brightness artifact (2026-09-09)
+
+- Reproduced with a uniform 4× glyph texture (1280×800), without game geometry
+  or depth data, scaled to 1920×1200 through JavaFX's OpenGL pipeline.
+  Nearest-neighbor sampling produced triangular regions averaging roughly
+  85 and 103 brightness; fractional-scale filtering reduced them to 128/128.
+- ASCII blits now enable filtering only at fractional physical scales, accounting
+  for the window render scale. Integer scaling and other renderer modes retain
+  nearest-neighbor behavior. Fractional glyph edges are slightly softer.
+- Added an opt-in actual-raster regression (`-Dascii.scaling.probe=1`) checking
+  triangle brightness, overall intensity, integer scaling and non-ASCII behavior.
+
 ## Optional depth-based ASCII color fading (2026-09-09)
 
 - Added default-off Launchpad checkbox, `-ascii -ascii-depth` CLI selection and

@@ -98,14 +98,18 @@ public final class JfxDoomApp extends Application {
     // One blit target: canvas + ARGB buffer + PixelBuffer-backed
     // image. Software mode uses one, pure 3D one, side-by-side two
     // (one per pane, composited differently).
-    private static final class BlitSurface {
+    static final class BlitSurface {
         final Canvas canvas = new Canvas();
         final GraphicsContext gc = canvas.getGraphicsContext2D();
         final int[] argb;
         final PixelBuffer<IntBuffer> pixelBuffer;
         final WritableImage image;
+        private final boolean asciiFiltering;
 
-        BlitSurface(int w, int h) {
+        BlitSurface(int w, int h) { this(w, h, false); }
+
+        BlitSurface(int w, int h, boolean asciiFiltering) {
+            this.asciiFiltering = asciiFiltering;
             gc.setImageSmoothing(false); // pixel-perfect upscale
             argb = new int[w * h];
             pixelBuffer = new PixelBuffer<>(w, h, IntBuffer.wrap(argb),
@@ -116,11 +120,25 @@ public final class JfxDoomApp extends Application {
         // clearFirst: the fx3 composite writes transparent holes,
         // which don't overwrite last frame's pixels on their own.
         void blit(boolean clearFirst) {
+            if (asciiFiltering) {
+                var window = canvas.getScene() == null ? null : canvas.getScene().getWindow();
+                double sx = window == null ? 1 : window.getRenderScaleX();
+                double sy = window == null ? 1 : window.getRenderScaleY();
+                // Point sampling at fractional scales can choose different glyph
+                // pixels on the two triangles of a GPU quad. Filter those scales;
+                // retain crisp nearest-neighbor output at integer physical scales.
+                gc.setImageSmoothing(fractionalScale(canvas.getWidth() * sx / image.getWidth())
+                        || fractionalScale(canvas.getHeight() * sy / image.getHeight()));
+            }
             pixelBuffer.updateBuffer(b -> null);
             if (clearFirst) {
                 gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
             }
             gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
+        }
+
+        private static boolean fractionalScale(double scale) {
+            return Math.abs(scale - Math.rint(scale)) > 1e-6;
         }
     }
 
@@ -242,7 +260,8 @@ public final class JfxDoomApp extends Application {
         // software + side-by-side modes, the fx3 cutout composite in
         // fx3 + side-by-side modes.
         final BlitSurface swSurface =
-                (mode != Launchpad.RendererMode.FX3D) ? new BlitSurface(w, h) : null;
+                (mode != Launchpad.RendererMode.FX3D)
+                        ? new BlitSurface(w, h, mode == Launchpad.RendererMode.ASCII) : null;
         final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
         final AsciiRenderer ascii = mode == Launchpad.RendererMode.ASCII
                 ? new AsciiRenderer(w, h) : null;

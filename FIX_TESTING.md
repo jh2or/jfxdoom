@@ -228,3 +228,25 @@ Native motion and fullscreen performance remain manual playtests.
 Validation for the color-fading replacement: all 11 focused ASCII tests passed.
 A live JavaFX 3× run passed depth capture, F12 off/on and key-repeat checks; the
 captured scene was visually inspected for fixed glyph geometry and fading.
+
+## Diagonal light/dark split at internal 4×
+
+The issue reproduced without Doom geometry or depth fading: a uniform glyph
+texture scaled 1280×800 → 1920×1200 with nearest-neighbor sampling developed a
+diagonal brightness split. The OpenGL reproducer measured triangle means of
+85.28 and 103.08 before the fix, versus 128.02 and 127.55 after. ASCII now uses
+filtered sampling at fractional physical display scales; integer scaling stays
+sharp and the other renderer modes keep their previous behavior.
+
+The actual JavaFX raster regression needs a display. On Linux with Xvfb/Mesa:
+
+```sh
+xvfb-run -a ./gradlew test --tests doom.ui.AsciiScalingTest --tests doom.ui.AsciiRendererTest -Dascii.scaling.probe=1 -Dprism.forceGPU=true
+```
+
+Run without the forceGPU flag on normal desktop hardware. The scaling test is
+skipped by default on headless test runs. All 12 selected tests passed with the
+OpenGL pipeline. Native retest: use internal 4× at the affected window/fullscreen
+size and toggle F12; neither mode should have triangular shading. Compare 2×/3×,
+resize the window, and check any HiDPI monitor configuration. Fractional scaling
+slightly softens glyph edges to remove unstable nearest-neighbor sampling.

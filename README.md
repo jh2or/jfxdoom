@@ -101,6 +101,10 @@ Render Resolution** controls the text density:
 Try **2× or 3×** for more detail. Display resolution controls the on-screen size;
 higher internal settings add symbols instead of enlarging the existing glyphs.
 A reduced viewport has fewer symbols, and hiding the status bar adds rows.
+At fractional physical display scales, ASCII uses filtered image scaling to
+avoid a diagonal light/dark split in repeated glyphs. Integer display scales
+retain sharp nearest-neighbor scaling. This presentation choice is independent
+of the depth-fading toggle.
 The weapon is part of the ASCII world; HUD, menus, title screens, automap and
 intermissions keep their original graphics. This is a graphical effect, not a
 terminal interface or a screen-reader text representation. It retains the
