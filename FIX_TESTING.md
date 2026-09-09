@@ -256,8 +256,9 @@ slightly softens glyph edges to remove unstable nearest-neighbor sampling.
 ## Distinct ASCII sprite symbols
 
 Launch ASCII mode and walk toward monsters or pickups, then fire while turning.
-Sprites (including the held weapon and flashes) use `0123456789iltx!?*%`;
-geometry uses uppercase letters and other punctuation. Check that sprites remain
+Sprites (including the held weapon and flashes) use `一二三十上下土士王干工口日中山井`;
+geometry uses Latin letters and punctuation, excluding identical bitmap forms.
+The Chinese characters are stylized to fit the existing 3×5 ink area. Check that sprites remain
 recognizable against walls and that their old locations leave no sprite symbols
 behind. Check partially occluded monsters and thin projectiles: a mixed 4×6 cell
 uses the visible sprite's color and alphabet. Toggle F12: only depth fading should

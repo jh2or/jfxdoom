@@ -72,10 +72,10 @@ class AsciiRendererTest {
         }
     }
 
-    @Test void contrastingCellsPreserveLettersDigitsAndDirectionalStrokes() {
+    @Test void contrastingCellsPreserveLatinHanAndDirectionalStrokes() {
         int[][] shapes = {
                 {2, 5, 7, 5, 5}, // A
-                {6, 1, 7, 4, 7}, // 2
+                {2, 2, 7, 2, 7}, // 土
                 {1, 1, 2, 4, 4}, // slash
                 {4, 4, 2, 1, 1}  // backslash: same brightness, different direction
         };
@@ -219,6 +219,7 @@ class AsciiRendererTest {
     @Test void spriteAndGeometryAlphabetsAndRenderedToneShapesAreDisjoint() {
         for (char c : AsciiRenderer.SPRITE_CHARACTERS.toCharArray()) {
             assertFalse(AsciiRenderer.GEOMETRY_CHARACTERS.indexOf(c) >= 0);
+            assertEquals(Character.UnicodeScript.HAN, Character.UnicodeScript.of(c));
         }
         AsciiRenderer renderer = new AsciiRenderer(4, 6);
         byte[] source = new byte[24];

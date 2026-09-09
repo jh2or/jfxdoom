@@ -7,6 +7,20 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## Chinese ASCII sprite glyphs (2026-09-09)
+
+- Replaced the sprite alphabet with 16 simple Han characters:
+  `一二三十上下土士王干工口日中山井`, drawn as embedded stylized 3×5 bitmaps.
+  Symbol density, sprite capture, color handling and F12 behavior are unchanged.
+- Geometry retains the original Latin/punctuation font except exact bitmap
+  lookalikes: tiny forms such as 一/minus and 工/I would otherwise defeat the
+  visual distinction despite different Unicode characters.
+- Sprite tones are ordered by ink coverage; stroke selection remains precomputed.
+  No external font dependency or per-cell font rasterization was introduced.
+- Regression coverage checks Han-only sprite characters, disjoint rendered tone
+  shapes and exact strokes for 土, alongside existing color/depth behavior.
+  Full suite passed: 1,026 tests, zero failures/errors, 11 skipped.
+
 ## Separate ASCII sprite alphabet (2026-09-09)
 
 - Split the 64-glyph font into disjoint sprite (`0123456789iltx!?*%`) and
