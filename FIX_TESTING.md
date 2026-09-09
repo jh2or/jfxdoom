@@ -224,3 +224,15 @@ skipped). A live 3× JavaFX run verified depth capture, near/weapon and far/sky
 values, F12 off/on and held-key repeat suppression. Its adaptive scene was
 captured and inspected. Native motion and fullscreen performance remain manual
 playtests; no claim of eliminated transition flicker is made.
+
+Ten-layer follow-up: adaptive density now has ten integer cell scales, from
+4×6 to 40×60 pixels. Nominal distance boundaries are 192, 320, 480, 672, 896,
+1152, 1472, 1856 and 2304 map units, with a 1/6 coarsening margin for hysteresis.
+The regression checks every pixel of a glyph at each of the ten sizes, restores
+uniform output, and checks that mixed-depth tiles cover a partial viewport
+without holes, border writes or loss of an interior foreground pixel. Walk down
+a long corridor and toggle F12 to compare; the coarsest sizes appear on very
+distant geometry and sky. Foreground protection can retain smaller cells near
+boundaries even when neighboring surfaces are far away.
+All ten focused ASCII tests passed. The live JavaFX 3× smoke run also passed
+depth capture, F12 off/on, held-key repeat suppression and ongoing game ticks.

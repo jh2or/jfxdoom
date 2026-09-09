@@ -108,14 +108,15 @@ software renderer's CPU cost and adds a small CPU conversion pass.
 
 **Optional depth-dependent density:** enable the checkbox below the renderer
 selector, or add `-ascii-depth` alongside `-ascii`. Press **F12** in ASCII mode
-to toggle it during play (off by default). Nearby geometry uses 4×6-pixel cells,
-medium-distance geometry 8×12, and distant geometry/sky 16×24. Internal render
+to toggle it during play (off by default). The effect has **10 resolution levels**, using cell sizes
+4×6, 8×12, 12×18, 16×24, 20×30, 24×36, 28×42, 32×48, 36×54, and 40×60 pixels
+from nearest to farthest. Internal render
 resolution still sets overall density. Weapon pixels stay at the finest setting;
 HUD and menus remain unchanged.
 
 This uses forward depth captured alongside the software framebuffer, not image
-brightness or blur. Coarse blocks split wherever a finer foreground cell is
-needed. Distance bands have a small hysteresis margin to reduce rapid toggling;
+brightness or blur. Larger cells are placed only where every covered cell allows that
+detail level, preserving finer foreground cells. Distance bands have a small hysteresis margin to reduce rapid toggling;
 discrete density boundaries can still be visible while moving. Depth capture
 adds a render-sized integer buffer and an extra CPU pass while enabled.
 

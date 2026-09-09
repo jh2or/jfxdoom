@@ -115,24 +115,31 @@ class AsciiRendererTest {
         assertTrue(patterns.size() >= 30, "At least 30 distinct glyph shapes across the tone ramp");
     }
 
-    @Test void depthDensityGroupsDistantCellsAndToggleRestoresUniformOutput() {
-        int w = 48, h = 24;
+    @Test void allTenDepthLayersProduceDistinctGlyphSizesAndToggleRestoresUniformOutput() {
+        int w = 40, h = 60;
         byte[] source = new byte[w * h];
         int[] palette = new int[256];
         palette[0] = 0xffffffff;
         int[] depth = new int[w * h];
-        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-            depth[y * w + x] = x < 16 ? 64 : x < 32 ? 400 : 1500;
-        }
+        int[] distances = {64, 260, 420, 640, 880, 1200, 1500, 1900, 2400, 3000};
         AsciiRenderer renderer = new AsciiRenderer(w, h);
         renderer.render(source, palette, 0, 0, w, h);
         int[] uniform = renderer.pixels.clone();
-        renderer.setAdaptive(true);
-        renderer.render(source, palette, 0, 0, w, h, depth);
-        int columns = 0;
-        for (int x = 0; x < w; x++) if (renderer.pixels[x] == 0xffffffff
-                && (x == 0 || renderer.pixels[x - 1] == 0xff000000)) columns++;
-        assertEquals(7, columns, "Four near, two medium, one far glyph");
+        for (int layer = 0; layer < distances.length; layer++) {
+            renderer.setAdaptive(true);
+            Arrays.fill(depth, distances[layer]);
+            renderer.render(source, palette, 0, 0, w, h, depth);
+            int scale = layer + 1;
+            // A white cell selects @. Check every pixel of the first complete
+            // glyph, so all ten levels must actually draw at different sizes.
+            int[] rows = {7, 5, 7, 4, 7, 0};
+            for (int y = 0; y < 6 * scale; y++) for (int x = 0; x < 4 * scale; x++) {
+                int gx = x / scale, gy = y / scale;
+                boolean on = gx < 3 && (rows[gy] & (4 >> gx)) != 0;
+                assertEquals(on ? 0xffffffff : 0xff000000, renderer.pixels[y * w + x],
+                        "Glyph pixels at depth layer " + scale);
+            }
+        }
         renderer.setAdaptive(false);
         renderer.render(source, palette, 0, 0, w, h, depth);
         assertArrayEquals(uniform, renderer.pixels);
@@ -162,6 +169,33 @@ class AsciiRendererTest {
         Arrays.fill(depth, 205);
         renderer.render(source, palette, 0, 0, 16, 24, depth);
         assertArrayEquals(medium, renderer.pixels);
+    }
+
+    @Test void mixedDepthTilingCoversPartialViewportWithoutOverwritingForegroundOrBorder() {
+        int w = 97, h = 91, vx = 3, vy = 5, vw = 91, vh = 83;
+        AsciiRenderer renderer = new AsciiRenderer(w, h);
+        renderer.setAdaptive(true);
+        Arrays.fill(renderer.pixels, 0x12345678);
+        byte[] source = new byte[w * h];
+        int[] depth = new int[source.length], palette = new int[256];
+        Arrays.fill(depth, 3000);
+        depth[20 * w + 30] = 0; // Near detail in the interior of a large candidate.
+        palette[0] = 0xffffffff;
+        renderer.render(source, palette, vx, vy, vw, vh, depth);
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            if (x < vx || x >= vx + vw || y < vy || y >= vy + vh) {
+                assertEquals(0x12345678, renderer.pixels[y * w + x]);
+            } else {
+                assertEquals(255, renderer.pixels[y * w + x] >>> 24, "No holes in tile coverage");
+            }
+        }
+        int cellX = vx + ((30 - vx) / 4) * 4;
+        int cellY = vy + ((20 - vy) / 6) * 6;
+        int[] rows = {7, 5, 7, 4, 7, 0};
+        for (int y = 0; y < 6; y++) for (int x = 0; x < 4; x++) {
+            boolean on = x < 3 && (rows[y] & (4 >> x)) != 0;
+            assertEquals(on ? 0xffffffff : 0xff000000, renderer.pixels[(cellY + y) * w + cellX + x]);
+        }
     }
 
     @Test void asciiModeUsesOnlyTheSoftwarePath() {

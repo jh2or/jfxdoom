@@ -17,10 +17,11 @@ those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
   drawing. Sky is far; weapon posts override depth to zero. No color writes or
   playsim data were changed. Depth is derived from projection/texture scale for
   columns and the existing plane-distance calculation for spans.
-- ASCII subdivides aligned 16×24 blocks into 8×12 or 4×6 cells using nearest
-  visible depth. Nominal thresholds are 192 and 768 map units; coarsening waits
-  until 224/896 to reduce threshold chatter. Near pixels prevent larger cells
-  from swallowing foreground detail. Partial viewport cells are clipped.
+- Ten depth levels use integer glyph scales 1–10 (4×6 through 40×60 pixels).
+  Nominal boundaries are 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
+  map units; coarsening requires an extra 1/6 margin at each boundary.
+  Anchored, non-overlapping tiling checks the nearest depth of every covered
+  base cell, preserving foreground detail and clipping partial viewport cells.
 - Demo validation compares both actor state and color-frame checksums with
   capture on/off. Tests cover scale/detail independence, sky/weapon override,
   partial cells, density bands, hysteresis and uniform-mode restoration.

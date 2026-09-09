@@ -102,11 +102,14 @@ final class AsciiRenderer {
         }
         return lookup;
     }
+    // Nine boundaries define ten cell scales, 1x through 10x (not powers of two).
+    private static final int[] DEPTH_BOUNDARIES = {192, 320, 480, 672, 896, 1152, 1472, 1856, 2304};
     final int[] pixels;
     private final int width;
     private final int[] samples = new int[15];
     private final int[] sampleCounts = new int[15];
     private final byte[] levels;
+    private final boolean[] covered;
     private final int columns;
     private int lastVx = -1, lastVy, lastVw, lastVh;
     private boolean adaptive;
@@ -122,6 +125,7 @@ final class AsciiRenderer {
         pixels = new int[width * height];
         columns = (width + 3) / 4;
         levels = new byte[columns * ((height + 5) / 6)];
+        covered = new boolean[levels.length];
     }
 
     // Fixed render-pixel cells in uniform mode; depth mode groups distant cells.
@@ -151,31 +155,46 @@ final class AsciiRenderer {
             }
             int index = ((y - vy) / 6) * columns + (x - vx) / 4;
             int previous = levels[index];
-            // Refine immediately; require extra distance before becoming coarser.
-            levels[index] = (byte) (nearest < (previous == 0 ? 224 : 192) ? 0
-                    : nearest < (previous < 2 ? 896 : 768) ? 1 : 2);
+            // Refine at the nominal boundary; coarsen after an extra 1/6 margin.
+            int level = 0;
+            while (level < DEPTH_BOUNDARIES.length) {
+                int boundary = DEPTH_BOUNDARIES[level];
+                if (previous <= level) boundary += boundary / 6;
+                if (nearest < boundary) break;
+                level++;
+            }
+            levels[index] = (byte) level;
         }
-        for (int y = vy; y < bottom; y += 24) for (int x = vx; x < right; x += 16) {
-            drawRegion(source, palette, x, y, right, bottom, vx, vy, 4);
+        // Greedy, anchored tiling supports every integer scale, unlike binary
+        // subdivision. A tile is allowed only when all its cells are distant
+        // enough and unclaimed; otherwise try a smaller glyph.
+        java.util.Arrays.fill(covered, false);
+        int gridW = (vw + 3) / 4, gridH = (vh + 5) / 6;
+        for (int by = 0; by < gridH; by++) for (int bx = 0; bx < gridW; bx++) {
+            int index = by * columns + bx;
+            if (covered[index]) continue;
+            int scale = levels[index] + 1;
+            while (scale > 1 && !fitsTile(bx, by, scale, gridW, gridH)) scale--;
+            for (int yy = by; yy < Math.min(by + scale, gridH); yy++) {
+                java.util.Arrays.fill(covered, yy * columns + bx,
+                        yy * columns + Math.min(bx + scale, gridW), true);
+            }
+            int x = vx + bx * 4, y = vy + by * 6;
+            drawCell(source, palette, x, y, Math.min(x + 4 * scale, right),
+                    Math.min(y + 6 * scale, bottom), scale);
         }
     }
 
-    private void drawRegion(byte[] source, int[] palette, int x, int y,
-                            int right, int bottom, int vx, int vy, int scale) {
-        int xEnd = Math.min(x + 4 * scale, right), yEnd = Math.min(y + 6 * scale, bottom);
-        int required = scale == 4 ? 2 : scale == 2 ? 1 : 0;
-        boolean split = false;
-        for (int yy = y; yy < yEnd; yy += 6) for (int xx = x; xx < xEnd; xx += 4) {
-            if (levels[((yy - vy) / 6) * columns + (xx - vx) / 4] < required) split = true;
-        }
-        if (split && scale > 1) {
-            int half = scale / 2;
-            for (int yy = y; yy < yEnd; yy += 6 * half) for (int xx = x; xx < xEnd; xx += 4 * half) {
-                drawRegion(source, palette, xx, yy, xEnd, yEnd, vx, vy, half);
+    private boolean fitsTile(int bx, int by, int scale, int gridW, int gridH) {
+        // Anchor each size to the viewport grid to limit movement-induced drift.
+        if (bx % scale != 0 || by % scale != 0) return false;
+        for (int y = by; y < Math.min(by + scale, gridH); y++) {
+            for (int x = bx; x < Math.min(bx + scale, gridW); x++) {
+                int i = y * columns + x;
+                if (covered[i] || levels[i] < scale - 1) return false;
             }
-        } else {
-            drawCell(source, palette, x, y, xEnd, yEnd, scale);
         }
+        return true;
     }
 
     private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int scale) {
