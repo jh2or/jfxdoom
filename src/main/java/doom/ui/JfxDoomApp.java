@@ -177,6 +177,7 @@ public final class JfxDoomApp extends Application {
             Launchpad.RendererMode mode = Launchpad.RendererMode.SOFTWARE;
             for (String a : launchArgs) {
                 if ("-fx3d".equals(a)) mode = Launchpad.RendererMode.FX3D;
+                else if ("-ascii-sprites".equals(a)) mode = Launchpad.RendererMode.ASCII_SPRITES;
                 else if ("-ascii".equals(a)) mode = Launchpad.RendererMode.ASCII;
                 else if ("-sbs".equals(a))  mode = Launchpad.RendererMode.SBS_H;
                 else if ("-sbsv".equals(a)) mode = Launchpad.RendererMode.SBS_V;
@@ -261,10 +262,10 @@ public final class JfxDoomApp extends Application {
         // fx3 + side-by-side modes.
         final BlitSurface swSurface =
                 (mode != Launchpad.RendererMode.FX3D)
-                        ? new BlitSurface(w, h, mode == Launchpad.RendererMode.ASCII) : null;
+                        ? new BlitSurface(w, h, mode.usesAscii()) : null;
         final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
-        final AsciiRenderer ascii = mode == Launchpad.RendererMode.ASCII
-                ? new AsciiRenderer(w, h) : null;
+        final AsciiRenderer ascii = mode.usesAscii()
+                ? new AsciiRenderer(w, h, mode == Launchpad.RendererMode.ASCII_SPRITES) : null;
         lastAsciiDepth = java.util.Arrays.asList(args).contains("-ascii-depth");
         asciiDepthKeyHeld = false;
         doom.render.RenderDepth.disable();

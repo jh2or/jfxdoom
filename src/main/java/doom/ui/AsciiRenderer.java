@@ -120,6 +120,7 @@ final class AsciiRenderer {
     private static final int[] DEPTH_BOUNDARIES = {192, 320, 480, 672, 896, 1152, 1472, 1856, 2304};
     final int[] pixels;
     private final int width;
+    private final boolean spritesOnly;
     private final int[] samples = new int[15];
     private final int[] sampleCounts = new int[15];
     private final byte[] levels;
@@ -134,6 +135,11 @@ final class AsciiRenderer {
     }
 
     AsciiRenderer(int width, int height) {
+        this(width, height, false);
+    }
+
+    AsciiRenderer(int width, int height, boolean spritesOnly) {
+        this.spritesOnly = spritesOnly;
         this.width = width;
         pixels = new int[width * height];
         columns = (width + 3) / 4;
@@ -193,6 +199,13 @@ final class AsciiRenderer {
             for (int y = cy; y < yEnd; y++) for (int x = cx; x < xEnd; x++) {
                 if (spriteMask[y * width + x]) spriteCount++;
             }
+        }
+        if (spritesOnly && spriteCount == 0) {
+            for (int y = cy; y < yEnd; y++) for (int x = cx; x < xEnd; x++) {
+                int index = y * width + x;
+                pixels[index] = 0xff000000 | palette[source[index] & 255];
+            }
+            return;
         }
         int table = spriteCount > 0 ? 1 : 0;
         int red = 0, green = 0, blue = 0;
@@ -261,7 +274,11 @@ final class AsciiRenderer {
             for (int x = cx; x < xEnd; x++) {
                 int gx = (x - cx);
                 boolean on = gy < 5 && gx < 3 && (glyph[gy] & (4 >> gx)) != 0;
-                pixels[y * width + x] = on ? ink : 0xff000000;
+                int index = y * width + x;
+                // Keep all visible geometry, including gaps inside sprite posts.
+                pixels[index] = spritesOnly && !spriteMask[index]
+                        ? 0xff000000 | palette[source[index] & 255]
+                        : on ? ink : 0xff000000;
             }
         }
     }

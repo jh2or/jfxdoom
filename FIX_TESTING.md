@@ -270,3 +270,20 @@ software frame checksums and gameplay in demo playback. The full suite passed
 (1,026 tests, 11 skipped, zero failures/errors). A live JavaFX 3× smoke run detected
 15,726 visible sprite pixels and passed F12 off/on and key-repeat checks while
 sprite capture stayed enabled. Native motion/readability still needs playtesting.
+
+## Mixed software level and ASCII sprites
+
+Choose **Mixed (software level, ASCII sprites)** or run:
+
+```sh
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -ascii-sprites"
+```
+
+Walk around monsters/pickups and fire. Walls, floors and ceilings should look like
+normal software rendering, with ASCII only inside visible sprite silhouettes.
+Check occlusion at doorways, transparent gaps, HUD/menus and moving sprite edges.
+Black spaces between sprite strokes are expected; no hidden background is drawn.
+Toggle F12: only sprite intensity should change. Repeat at your normal fullscreen
+and internal-resolution settings, then relaunch full ASCII and normal Software
+modes to compare. Automated composition tests assert unchanged geometry pixels,
+correct sprite clipping and depth fading, including partial viewports.

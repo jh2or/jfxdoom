@@ -72,6 +72,7 @@ public final class Launchpad {
         SOFTWARE("Software (faithful)"),
         FX3D("JavaFX 3D (experimental)"),
         ASCII("ASCII (colored text)"),
+        ASCII_SPRITES("Mixed (software level, ASCII sprites)"),
         SBS_H("Side-by-side (software | 3D)"),
         SBS_V("Stacked (software / 3D)");
 
@@ -79,6 +80,7 @@ public final class Launchpad {
 
         RendererMode(String label) { this.label = label; }
 
+        public boolean usesAscii() { return this == ASCII || this == ASCII_SPRITES; }
         public boolean usesFx3() { return this == FX3D || sideBySide(); }
         public boolean sideBySide() { return this == SBS_H || this == SBS_V; }
 
@@ -249,7 +251,7 @@ public final class Launchpad {
         primary.add(rendererRow,            1, r++, 2, 1);
 
         asciiDepth.disableProperty().bind(Bindings.createBooleanBinding(
-                () -> rendererBox.getValue() != RendererMode.ASCII, rendererBox.valueProperty()));
+                () -> !rendererBox.getValue().usesAscii(), rendererBox.valueProperty()));
         primary.add(asciiDepth, 1, r++, 2, 1);
 
         // ---- expert section ----
@@ -391,7 +393,7 @@ public final class Launchpad {
             a.add("-file");
             a.addAll(pwadList.getItems());
         }
-        if (rendererBox.getValue() == RendererMode.ASCII && asciiDepth.isSelected()) a.add("-ascii-depth");
+        if (rendererBox.getValue().usesAscii() && asciiDepth.isSelected()) a.add("-ascii-depth");
         // Expert mode off → emit WAD/presentation args so the engine
         // boots the same way doom.exe does (title loop, no skill
         // / warp / mode override).

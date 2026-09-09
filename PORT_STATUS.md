@@ -7,6 +7,21 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## Mixed software/ASCII sprite mode (2026-09-09)
+
+- Reverted the Chinese glyph experiment; the previous sprite alphabet is restored.
+- Added Launchpad mixed mode and `-ascii-sprites`: visible geometry retains its
+  software framebuffer colors while sprite pixels receive ASCII rendering.
+- Clip glyphs to the visible sprite mask, preserving occlusion and transparent
+  gaps. Non-ink sprite pixels are black because the framebuffer does not retain
+  hidden background geometry. Geometry-only cells skip glyph selection.
+- Depth capture/F12 and fractional display filtering work in both ASCII modes.
+  In mixed mode only sprite ink receives depth fading; UI composition is unchanged.
+- Regression checks partial viewports, transparent sprite gaps, exact geometry
+  colors with fading on/off, sprite ink and spaces, and null-mask fallback.
+- Full suite passed: 1,027 tests, zero failures/errors, 11 skipped. Live JavaFX
+  mixed-mode smoke passed at 3× with sprite capture, F12 off/on and key repeat.
+
 ## Separate ASCII sprite alphabet (2026-09-09)
 
 - Split the 64-glyph font into disjoint sprite (`0123456789iltx!?*%`) and

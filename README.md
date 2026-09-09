@@ -115,6 +115,14 @@ intermissions keep their original graphics. This is a graphical effect, not a
 terminal interface or a screen-reader text representation. It retains the
 software renderer's CPU cost and adds a small CPU conversion pass.
 
+**Mixed mode:** select **Mixed (software level, ASCII sprites)** in the Launchpad,
+or launch with `-ascii-sprites` instead of `-ascii`. Walls, floors, ceilings and
+other visible geometry retain their software-rendered pixels; monsters, pickups,
+weapons and effects use the separate ASCII sprite alphabet. Glyphs are clipped to
+visible sprite pixels, preserving geometry in transparent gaps and around edges.
+Spaces within sprite silhouettes are black; hidden scenery is not reconstructed.
+The depth-fading option and F12 work here too, affecting only ASCII sprite pixels.
+
 **Optional depth-based color fading:** enable **Depth-based ASCII color fading**
 in the Launchpad, or add `-ascii-depth` alongside `-ascii`. Press **F12** in
 ASCII mode to toggle it during play (off by default). Symbol size, count and
@@ -139,6 +147,7 @@ exposes the same set):
 
 ```
 -ascii              colored ASCII world (software post-processing)
+-ascii-sprites      software level with ASCII sprites
 -ascii-depth        enable depth-based ASCII color fading (F12 toggles)
 -iwad <path>        primary WAD
 -file <path>...     additional PWADs

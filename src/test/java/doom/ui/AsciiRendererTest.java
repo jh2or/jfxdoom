@@ -262,8 +262,49 @@ class AsciiRendererTest {
         assertArrayEquals(geometry, renderer.pixels, "Cleared mask restores geometry selection");
     }
 
+    @Test void mixedModePreservesGeometryAndClipsAsciiToVisibleSprites() {
+        int w = 13, h = 15;
+        byte[] source = new byte[w * h];
+        boolean[] mask = new boolean[source.length];
+        int[] palette = new int[256], depth = new int[source.length];
+        palette[0] = 0xff2468ac;
+        palette[1] = 0xffff4020;
+        for (int y = 3; y < 11; y++) for (int x = 3; x < 9; x++) {
+            int i = y * w + x;
+            mask[i] = x != 5; // A transparent gap through a sprite.
+            if (mask[i]) source[i] = 1;
+        }
+        AsciiRenderer mixed = new AsciiRenderer(w, h, true);
+        AsciiRenderer ascii = new AsciiRenderer(w, h);
+        for (boolean fading : new boolean[] {false, true}) {
+            mixed.setAdaptive(fading);
+            ascii.setAdaptive(fading);
+            Arrays.fill(depth, 3000);
+            Arrays.fill(mixed.pixels, 0x12345678);
+            mixed.render(source, palette, 1, 2, 11, 11, depth, mask);
+            ascii.render(source, palette, 1, 2, 11, 11, depth, mask);
+            boolean sawInk = false, sawSpace = false;
+            for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                if (x < 1 || x >= 12 || y < 2 || y >= 13) {
+                    assertEquals(0x12345678, mixed.pixels[i]);
+                } else if (mask[i]) {
+                    assertEquals(ascii.pixels[i], mixed.pixels[i]);
+                    sawInk |= mixed.pixels[i] != 0xff000000;
+                    sawSpace |= mixed.pixels[i] == 0xff000000;
+                } else assertEquals(palette[source[i]], mixed.pixels[i]);
+            }
+            assertTrue(sawInk && sawSpace);
+        }
+        mixed.render(source, palette, 0, 0, w, h, depth, null);
+        for (int i = 0; i < source.length; i++) assertEquals(palette[source[i]], mixed.pixels[i]);
+    }
+
     @Test void asciiModeUsesOnlyTheSoftwarePath() {
         assertFalse(Launchpad.RendererMode.ASCII.usesFx3());
+        assertTrue(Launchpad.RendererMode.ASCII_SPRITES.usesAscii());
+        assertFalse(Launchpad.RendererMode.ASCII_SPRITES.usesFx3());
+        assertFalse(Launchpad.RendererMode.ASCII_SPRITES.sideBySide());
         assertFalse(Launchpad.RendererMode.ASCII.sideBySide());
         assertTrue(Launchpad.RendererMode.FX3D.usesFx3());
         assertTrue(Launchpad.RendererMode.SBS_H.usesFx3());
