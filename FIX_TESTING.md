@@ -167,7 +167,10 @@ should consist of colored glyphs on black. Check HUD text, menus and automap
 remain normal graphics. Test windowed/fullscreen, internal scales 1–4, reduced
 view size (+/−), level transitions, quit and relaunch into the other renderers.
 ASCII is a software post-process; it still incurs the original software render
-cost. The glyph grid deliberately stays at 80 columns for a full-width view.
+cost. Internal scales 1× / 2× / 3× / 4× now produce 80 / 160 / 240 / 320
+columns across a full-width view. Compare 1× and 3× at the same display size:
+the latter should resolve finer details with smaller symbols. The density
+regression counts actual rendered glyph rows and columns at each setting.
 
 Branch layout: `feat/rest-of-todo` was restored to `3a9d4e7`; the two subsequent
 presentation fixes are preserved on `fix/fullscreen-presentation`. ASCII work
@@ -181,3 +184,7 @@ smoke check passed live ticks, menu open/close, quit scene, WAD cleanup and time
 shutdown. Native fullscreen performance remains a manual check. The baseline's
 known oversized quit-message warning can still occur; its fix is on the separate
 presentation branch, as requested.
+
+Density follow-up: all five ASCII tests passed. A live JavaFX run at internal
+3× passed and its captured 240-column world was visually inspected at a
+1280×800 display size. HUD composition remains unchanged.

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AsciiRendererTest {
     @Test void whiteCellDrawsAnAtSignAndBlackCellStaysBlack() {
-        AsciiRenderer renderer = new AsciiRenderer(8, 6, 1);
+        AsciiRenderer renderer = new AsciiRenderer(8, 6);
         byte[] source = new byte[48];
         int[] palette = new int[256];
         palette[0] = 0xff000000;
@@ -22,10 +22,10 @@ class AsciiRendererTest {
         assertArrayEquals(original, source, "Presentation must not modify the engine framebuffer");
     }
 
-    @Test void scaledGlyphsRetainColorAndClipToPartialViewportCells() {
+    @Test void glyphsRetainColorAndClipToPartialViewportCells() {
         for (int scale = 1; scale <= 4; scale++) {
             int w = 13 * scale, h = 15 * scale;
-            AsciiRenderer renderer = new AsciiRenderer(w, h, scale);
+            AsciiRenderer renderer = new AsciiRenderer(w, h);
             byte[] source = new byte[w * h];
             int[] palette = new int[256];
             palette[0] = 0xffff0000;
@@ -45,6 +45,27 @@ class AsciiRendererTest {
             palette[0] = 0xff000000;
             renderer.render(source, palette, scale, scale, 9 * scale, 11 * scale);
             assertEquals(0xff000000, renderer.pixels[2 * scale * w + 2 * scale], "No stale glyph pixels");
+        }
+    }
+
+    @Test void internalResolutionIncreasesSymbolCountInsteadOfEnlargingGlyphs() {
+        int[] palette = new int[256];
+        palette[0] = 0xffffffff;
+        for (int scale = 1; scale <= 4; scale++) {
+            int width = 320 * scale, height = 168 * scale;
+            AsciiRenderer renderer = new AsciiRenderer(width, height);
+            renderer.render(new byte[width * height], palette, 0, 0, width, height);
+            int columns = 0, rows = 0;
+            for (int x = 0; x < width; x++) {
+                if (renderer.pixels[x] == 0xffffffff
+                        && (x == 0 || renderer.pixels[x - 1] == 0xff000000)) columns++;
+            }
+            for (int y = 0; y < height; y++) {
+                if (renderer.pixels[y * width] == 0xffffffff
+                        && (y == 0 || renderer.pixels[(y - 1) * width] == 0xff000000)) rows++;
+            }
+            assertEquals(80 * scale, columns, "Higher resolution adds text columns");
+            assertEquals(28 * scale, rows, "Higher resolution adds text rows");
         }
     }
 

@@ -85,9 +85,19 @@ To play in ASCII mode:
 
 Or select **ASCII (colored text)** in the Launchpad. It uses the software
 framebuffer directly, averages color and brightness per cell, and draws bitmap
-ASCII glyphs on black. The full-width view has 80 text columns; glyph size scales
-with internal render resolution and window/fullscreen display scaling. Increasing
-internal resolution improves source sampling, not the number of text columns.
+ASCII glyphs on black. Each symbol occupies 4×6 render pixels, so **Internal
+Render Resolution** controls the text density:
+
+| Internal resolution | Text columns | Rows with the status bar visible |
+| --- | ---: | ---: |
+| 1× (320×200) | 80 | 28 |
+| 2× (640×400) | 160 | 56 |
+| 3× (960×600) | 240 | 84 |
+| 4× (1280×800) | 320 | 112 |
+
+Try **2× or 3×** for more detail. Display resolution controls the on-screen size;
+higher internal settings add symbols instead of enlarging the existing glyphs.
+A reduced viewport has fewer symbols, and hiding the status bar adds rows.
 The weapon is part of the ASCII world; HUD, menus, title screens, automap and
 intermissions keep their original graphics. This is a graphical effect, not a
 terminal interface or a screen-reader text representation. It retains the

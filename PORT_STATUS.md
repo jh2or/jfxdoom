@@ -13,8 +13,9 @@ those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
   converts the palette-indexed software world and weapon into colored bitmap
   glyphs before UI composition. No JavaFX snapshot, GPU readback, platform font,
   or engine-state changes are involved. Buffers are reused across frames.
-- Logical 4×6 cells yield 80 columns across a full-width view; internal scaling
-  keeps the same text grid. Partial cells clip to the current viewport.
+- Fixed 4×6 render-pixel cells yield 80 / 160 / 240 / 320 columns at internal
+  scales 1× / 2× / 3× / 4×. Higher settings add symbols rather than enlarging
+  glyphs. Partial cells clip to the current viewport.
 - HUD/menu overlays, automap and non-level screens retain their original art.
   Existing software, FX3 and comparison modes retain their behavior.
 - This branch is based on `3a9d4e7`. The later interpolation and artifact fixes

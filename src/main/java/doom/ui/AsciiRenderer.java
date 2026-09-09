@@ -10,21 +10,20 @@ final class AsciiRenderer {
             {5, 2, 7, 2, 5}, {5, 7, 5, 7, 5}, {7, 5, 7, 4, 7}
     };
     final int[] pixels;
-    private final int width, scale;
+    private final int width;
 
-    AsciiRenderer(int width, int height, int scale) {
+    AsciiRenderer(int width, int height) {
         this.width = width;
-        this.scale = scale;
         pixels = new int[width * height];
     }
 
-    // Keep glyph size constant in logical Doom pixels across render scales.
+    // Fixed render-pixel cells: increasing internal resolution adds symbols.
     // Only the world viewport is converted; the shell composites UI afterward.
     void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh) {
         int right = vx + vw;
         int bottom = vy + vh;
-        int cellW = 4 * scale;
-        int cellH = 6 * scale;
+        int cellW = 4;
+        int cellH = 6;
         for (int cy = vy; cy < bottom; cy += cellH) {
             int yEnd = Math.min(cy + cellH, bottom);
             for (int cx = vx; cx < right; cx += cellW) {
@@ -55,9 +54,9 @@ final class AsciiRenderer {
                 }
                 int ink = 0xff000000 | (red << 16) | (green << 8) | blue;
                 for (int y = cy; y < yEnd; y++) {
-                    int gy = (y - cy) / scale;
+                    int gy = y - cy;
                     for (int x = cx; x < xEnd; x++) {
-                        int gx = (x - cx) / scale;
+                        int gx = x - cx;
                         boolean on = gy < 5 && gx < 3 && (glyph[gy] & (4 >> gx)) != 0;
                         pixels[y * width + x] = on ? ink : 0xff000000;
                     }

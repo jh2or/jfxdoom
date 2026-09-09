@@ -238,7 +238,7 @@ public final class JfxDoomApp extends Application {
                 (mode != Launchpad.RendererMode.FX3D) ? new BlitSurface(w, h) : null;
         final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
         final AsciiRenderer ascii = mode == Launchpad.RendererMode.ASCII
-                ? new AsciiRenderer(w, h, renderMul) : null;
+                ? new AsciiRenderer(w, h) : null;
 
         // Engine state needs a fresh start on re-launch: clear
         // the quitting guard and drop the previous WAD list so
