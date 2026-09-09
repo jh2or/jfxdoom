@@ -199,40 +199,32 @@ strokes. Native motion testing remains useful for judging small-glyph readabilit
 All seven focused ASCII tests passed for this change. The live JavaFX 3× run
 passed, and its captured scene was visually checked for the expanded glyph mix.
 
-## Optional depth-dependent ASCII density
+## Optional depth-based ASCII color fading
 
-Select ASCII and check **Depth-dependent ASCII density**, or launch with
+Select ASCII and check **Depth-based ASCII color fading**, or launch with
 `./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -ascii -ascii-depth"`.
-F12 toggles between adaptive and uniform density in ASCII mode. The default is
-uniform. Test at 2× or 3× internal resolution: approach and retreat from walls,
-look along corridors, fire in front of distant geometry, and approach thin
-foreground objects. Near cells and weapon pixels should retain fine glyphs;
-distant surfaces/sky use larger glyphs. Hold F12 to verify one toggle per press.
-Test reduced view size, F5 low detail, automap, menus, level changes and relaunch.
+F12 toggles depth fading, which is off by default. The toggle now controls color
+intensity instead of glyph size. Test at 2× or 3× internal resolution: approach
+and retreat from walls, look along corridors, fire in front of distant geometry,
+and approach thin foreground objects. Symbols must retain the same size and
+shape while their color fades with depth. Near cells and the weapon stay fully
+visible; distant cells/sky retain at least 25% of normal glyph intensity. HUD,
+menus and automap remain unchanged. Hold F12 to verify one toggle per press.
 
-`AsciiRendererTest` covers depth bands, one-pixel foreground protection,
-threshold hysteresis, clipped partial cells, and restoring identical uniform
-output. `RenderDepthTest` checks resolution/detail scaling and visible depth
-writes with weapon/sky overrides. The real-WAD demo regression compares actor
-traces and software color-frame checksums with depth capture disabled/enabled.
-Depth capture is presentation-only; it uses existing render projection scales,
-including their near/far clamping. Discrete cell-size changes are intentional;
-small threshold margins reduce chatter but do not guarantee flicker-free motion.
+There are ten intensity layers: 100%, 91.7%, 83.3%, 75%, 66.7%, 58.3%, 50%,
+41.7%, 33.3%, 25%, with RGB channels rounded to the nearest integer. Nominal
+depth boundaries remain 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
+map units. A 1/6 margin before dimming reduces threshold chatter. Colors fade
+toward black; they are not quantized to fewer bits or composited over old frames.
 
-Validation: full suite passed (1,020 tests; 1,010 passed, 10 optional diagnostics
-skipped). A live 3× JavaFX run verified depth capture, near/weapon and far/sky
-values, F12 off/on and held-key repeat suppression. Its adaptive scene was
-captured and inspected. Native motion and fullscreen performance remain manual
-playtests; no claim of eliminated transition flicker is made.
+`AsciiRendererTest` compares every glyph pixel across all ten layers, checks
+exact quarter-intensity RGB for the far layer, full near color, unchanged glyph
+geometry, one-pixel foreground protection, threshold hysteresis, partial-cell
+clipping and exact image restoration when disabled. `RenderDepthTest` covers
+resolution/detail scaling and weapon/sky overrides; the demo regression compares
+actor traces and software-frame checksums with depth capture enabled/disabled.
+Native motion and fullscreen performance remain manual playtests.
 
-Ten-layer follow-up: adaptive density now has ten integer cell scales, from
-4×6 to 40×60 pixels. Nominal distance boundaries are 192, 320, 480, 672, 896,
-1152, 1472, 1856 and 2304 map units, with a 1/6 coarsening margin for hysteresis.
-The regression checks every pixel of a glyph at each of the ten sizes, restores
-uniform output, and checks that mixed-depth tiles cover a partial viewport
-without holes, border writes or loss of an interior foreground pixel. Walk down
-a long corridor and toggle F12 to compare; the coarsest sizes appear on very
-distant geometry and sky. Foreground protection can retain smaller cells near
-boundaries even when neighboring surfaces are far away.
-All ten focused ASCII tests passed. The live JavaFX 3× smoke run also passed
-depth capture, F12 off/on, held-key repeat suppression and ongoing game ticks.
+Validation for the color-fading replacement: all 11 focused ASCII tests passed.
+A live JavaFX 3× run passed depth capture, F12 off/on and key-repeat checks; the
+captured scene was visually inspected for fixed glyph geometry and fading.

@@ -7,7 +7,7 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
-## Optional depth-dependent ASCII density (2026-09-09)
+## Optional depth-based ASCII color fading (2026-09-09)
 
 - Added default-off Launchpad checkbox, `-ascii -ascii-depth` CLI selection and
   an ASCII-only F12 toggle with repeat suppression. Disabling frees depth data;
@@ -17,14 +17,16 @@ those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
   drawing. Sky is far; weapon posts override depth to zero. No color writes or
   playsim data were changed. Depth is derived from projection/texture scale for
   columns and the existing plane-distance calculation for spans.
-- Ten depth levels use integer glyph scales 1–10 (4×6 through 40×60 pixels).
-  Nominal boundaries are 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
-  map units; coarsening requires an extra 1/6 margin at each boundary.
-  Anchored, non-overlapping tiling checks the nearest depth of every covered
-  base cell, preserving foreground detail and clipping partial viewport cells.
-- Demo validation compares both actor state and color-frame checksums with
-  capture on/off. Tests cover scale/detail independence, sky/weapon override,
-  partial cells, density bands, hysteresis and uniform-mode restoration.
+- Replaced depth-dependent cell sizing with ten color-intensity layers: 100%
+  down to 25% in equal steps. Glyph geometry and selection remain identical to
+  standard ASCII rendering; fading scales RGB after normal color processing.
+  Foreground/weapon cells use their nearest visible depth and remain fully lit.
+- Nominal boundaries remain 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
+  map units, with a 1/6 margin before dimming to reduce threshold flicker.
+- Demo validation compares actor state and software-frame checksums with depth
+  capture on/off. ASCII tests cover all ten intensity layers, the 25% RGB floor,
+  unchanged glyph geometry, foreground cells, partial viewports, hysteresis and
+  restoration of the original image when disabled.
 
 ## ASCII renderer (2026-09-09)
 

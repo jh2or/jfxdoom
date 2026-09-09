@@ -106,26 +106,30 @@ intermissions keep their original graphics. This is a graphical effect, not a
 terminal interface or a screen-reader text representation. It retains the
 software renderer's CPU cost and adds a small CPU conversion pass.
 
-**Optional depth-dependent density:** enable the checkbox below the renderer
-selector, or add `-ascii-depth` alongside `-ascii`. Press **F12** in ASCII mode
-to toggle it during play (off by default). The effect has **10 resolution levels**, using cell sizes
-4×6, 8×12, 12×18, 16×24, 20×30, 24×36, 28×42, 32×48, 36×54, and 40×60 pixels
-from nearest to farthest. Internal render
-resolution still sets overall density. Weapon pixels stay at the finest setting;
-HUD and menus remain unchanged.
+**Optional depth-based color fading:** enable **Depth-based ASCII color fading**
+in the Launchpad, or add `-ascii-depth` alongside `-ascii`. Press **F12** in
+ASCII mode to toggle it during play (off by default). Symbol size, count and
+shape stay unchanged; internal resolution still controls the text density.
 
-This uses forward depth captured alongside the software framebuffer, not image
-brightness or blur. Larger cells are placed only where every covered cell allows that
-detail level, preserving finer foreground cells. Distance bands have a small hysteresis margin to reduce rapid toggling;
-discrete density boundaries can still be visible while moving. Depth capture
-adds a render-sized integer buffer and an extra CPU pass while enabled.
+The **10 depth layers** retain 100%, 91.7%, 83.3%, 75%, 66.7%, 58.3%, 50%,
+41.7%, 33.3% and 25% of the normal glyph color intensity, from nearest to
+farthest. All RGB channels fade together toward the black background, preserving
+color rather than reducing color bit depth. The nearest visible depth in each
+cell wins, so weapon and foreground cells stay fully visible. HUD and menus
+remain unchanged.
+
+The effect uses captured forward depth, with a small threshold margin to reduce
+brightness flicker while moving. It replaces the previous variable-symbol-size
+effect. Depth capture adds a render-sized integer buffer and CPU work while
+enabled. Colors remain opaque in the output buffer; the fade is equivalent to
+transparency over black without exposing previous frames.
 
 Command-line flags supported (mirroring the C — the Launchpad
 exposes the same set):
 
 ```
 -ascii              colored ASCII world (software post-processing)
--ascii-depth        enable optional depth density in ASCII mode (F12 toggles)
+-ascii-depth        enable depth-based ASCII color fading (F12 toggles)
 -iwad <path>        primary WAD
 -file <path>...     additional PWADs
 -warp E M           Doom 1: start at episode E map M

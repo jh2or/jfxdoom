@@ -116,7 +116,7 @@ public final class Launchpad {
     private final ComboBox<RendererMode> rendererBox =
             new ComboBox<>(FXCollections.observableArrayList(RendererMode.values()));
 
-    private final CheckBox asciiDepth = new CheckBox("Depth-dependent ASCII density (F12 toggles in game)");
+    private final CheckBox asciiDepth = new CheckBox("Depth-based ASCII color fading (F12 toggles in game)");
     public Launchpad prefillAsciiDepth(boolean value) { asciiDepth.setSelected(value); return this; }
 
     private final CheckBox expertMode = new CheckBox("Expert mode");

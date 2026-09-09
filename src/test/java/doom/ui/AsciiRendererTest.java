@@ -40,8 +40,8 @@ class AsciiRendererTest {
                 if (x < scale || x >= 10 * scale || y < scale || y >= 12 * scale) {
                     assertEquals(0x12345678, pixel, "Never overwrite the HUD/border");
                 } else {
-                    assertTrue(pixel == 0xff000000 || pixel == 0xffff0000);
-                    if (pixel == 0xffff0000) inkCount++;
+                    assertEquals(0xff000000, pixel & 0xff00ffff);
+                    if ((pixel & 0x00ff0000) != 0) inkCount++;
                 }
             }
             assertTrue(inkCount > 0);
@@ -115,13 +115,14 @@ class AsciiRendererTest {
         assertTrue(patterns.size() >= 30, "At least 30 distinct glyph shapes across the tone ramp");
     }
 
-    @Test void allTenDepthLayersProduceDistinctGlyphSizesAndToggleRestoresUniformOutput() {
+    @Test void allTenDepthLayersFadeColorWithoutChangingGlyphsAndToggleRestoresOriginal() {
         int w = 40, h = 60;
         byte[] source = new byte[w * h];
         int[] palette = new int[256];
         palette[0] = 0xffffffff;
         int[] depth = new int[w * h];
         int[] distances = {64, 260, 420, 640, 880, 1200, 1500, 1900, 2400, 3000};
+        int[] intensities = {255, 234, 213, 191, 170, 149, 128, 106, 85, 64};
         AsciiRenderer renderer = new AsciiRenderer(w, h);
         renderer.render(source, palette, 0, 0, w, h);
         int[] uniform = renderer.pixels.clone();
@@ -129,15 +130,11 @@ class AsciiRendererTest {
             renderer.setAdaptive(true);
             Arrays.fill(depth, distances[layer]);
             renderer.render(source, palette, 0, 0, w, h, depth);
-            int scale = layer + 1;
-            // A white cell selects @. Check every pixel of the first complete
-            // glyph, so all ten levels must actually draw at different sizes.
-            int[] rows = {7, 5, 7, 4, 7, 0};
-            for (int y = 0; y < 6 * scale; y++) for (int x = 0; x < 4 * scale; x++) {
-                int gx = x / scale, gy = y / scale;
-                boolean on = gx < 3 && (rows[gy] & (4 >> gx)) != 0;
-                assertEquals(on ? 0xffffffff : 0xff000000, renderer.pixels[y * w + x],
-                        "Glyph pixels at depth layer " + scale);
+            int value = intensities[layer];
+            int faded = 0xff000000 | value << 16 | value << 8 | value;
+            for (int i = 0; i < uniform.length; i++) {
+                assertEquals(uniform[i] == 0xff000000 ? 0xff000000 : faded, renderer.pixels[i],
+                        "Same glyph pixels, different intensity at layer " + (layer + 1));
             }
         }
         renderer.setAdaptive(false);
@@ -145,23 +142,42 @@ class AsciiRendererTest {
         assertArrayEquals(uniform, renderer.pixels);
     }
 
-    @Test void foregroundPixelForcesFineCellAndThresholdMarginPreventsChatter() {
+    @Test void farLayerRetainsQuarterOfEachColorChannelAndNearLayerIsUnchanged() {
+        AsciiRenderer renderer = new AsciiRenderer(4, 6);
+        byte[] source = new byte[24];
+        int[] palette = new int[256], depth = new int[24];
+        palette[0] = 0xffc06030;
+        renderer.render(source, palette, 0, 0, 4, 6);
+        int[] original = renderer.pixels.clone();
+        assertTrue(Arrays.stream(original).anyMatch(p -> p == 0xffc06030));
+        renderer.setAdaptive(true);
+        renderer.render(source, palette, 0, 0, 4, 6, depth);
+        assertArrayEquals(original, renderer.pixels);
+        Arrays.fill(depth, Integer.MAX_VALUE);
+        renderer.render(source, palette, 0, 0, 4, 6, depth);
+        for (int i = 0; i < original.length; i++) {
+            assertEquals(original[i] == 0xff000000 ? 0xff000000 : 0xff30180c, renderer.pixels[i]);
+        }
+    }
+
+    @Test void foregroundPixelKeepsFullColorAndThresholdMarginPreventsChatter() {
         AsciiRenderer renderer = new AsciiRenderer(16, 24);
         byte[] source = new byte[16 * 24];
         int[] depth = new int[source.length], palette = new int[256];
         palette[0] = 0xffffffff;
         renderer.setAdaptive(true);
         Arrays.fill(depth, 1500);
-        depth[0] = 0; // One visible near/weapon pixel must prevent a coarse block.
+        depth[0] = 0; // One visible near/weapon pixel keeps this cell fully visible.
         renderer.render(source, palette, 0, 0, 16, 24, depth);
-        assertEquals(0xff000000, renderer.pixels[3], "Fine-cell gutter, not an enlarged foreground glyph");
+        assertEquals(0xffffffff, renderer.pixels[0], "Foreground stays fully visible");
+        assertEquals(0xff000000, renderer.pixels[3], "Glyph gutter remains unchanged");
         renderer.setAdaptive(true);
         Arrays.fill(depth, 180);
         renderer.render(source, palette, 0, 0, 16, 24, depth);
         int[] near = renderer.pixels.clone();
         Arrays.fill(depth, 205);
         renderer.render(source, palette, 0, 0, 16, 24, depth);
-        assertArrayEquals(near, renderer.pixels, "Small movements across the boundary must retain density");
+        assertArrayEquals(near, renderer.pixels, "Small movements across the boundary must retain intensity");
         Arrays.fill(depth, 250);
         renderer.render(source, palette, 0, 0, 16, 24, depth);
         assertFalse(Arrays.equals(near, renderer.pixels));
@@ -171,7 +187,7 @@ class AsciiRendererTest {
         assertArrayEquals(medium, renderer.pixels);
     }
 
-    @Test void mixedDepthTilingCoversPartialViewportWithoutOverwritingForegroundOrBorder() {
+    @Test void mixedDepthFadingCoversPartialViewportWithoutDimmingForegroundOrOverwritingBorder() {
         int w = 97, h = 91, vx = 3, vy = 5, vw = 91, vh = 83;
         AsciiRenderer renderer = new AsciiRenderer(w, h);
         renderer.setAdaptive(true);
@@ -179,14 +195,14 @@ class AsciiRendererTest {
         byte[] source = new byte[w * h];
         int[] depth = new int[source.length], palette = new int[256];
         Arrays.fill(depth, 3000);
-        depth[20 * w + 30] = 0; // Near detail in the interior of a large candidate.
+        depth[20 * w + 30] = 0; // Foreground cell among distant cells.
         palette[0] = 0xffffffff;
         renderer.render(source, palette, vx, vy, vw, vh, depth);
         for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
             if (x < vx || x >= vx + vw || y < vy || y >= vy + vh) {
                 assertEquals(0x12345678, renderer.pixels[y * w + x]);
             } else {
-                assertEquals(255, renderer.pixels[y * w + x] >>> 24, "No holes in tile coverage");
+                assertEquals(255, renderer.pixels[y * w + x] >>> 24, "Every viewport pixel remains opaque");
             }
         }
         int cellX = vx + ((30 - vx) / 4) * 4;

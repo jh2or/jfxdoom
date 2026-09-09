@@ -102,14 +102,13 @@ final class AsciiRenderer {
         }
         return lookup;
     }
-    // Nine boundaries define ten cell scales, 1x through 10x (not powers of two).
+    // Nine boundaries define ten color-intensity layers, from 100% down to 25%.
     private static final int[] DEPTH_BOUNDARIES = {192, 320, 480, 672, 896, 1152, 1472, 1856, 2304};
     final int[] pixels;
     private final int width;
     private final int[] samples = new int[15];
     private final int[] sampleCounts = new int[15];
     private final byte[] levels;
-    private final boolean[] covered;
     private final int columns;
     private int lastVx = -1, lastVy, lastVw, lastVh;
     private boolean adaptive;
@@ -125,10 +124,9 @@ final class AsciiRenderer {
         pixels = new int[width * height];
         columns = (width + 3) / 4;
         levels = new byte[columns * ((height + 5) / 6)];
-        covered = new boolean[levels.length];
     }
 
-    // Fixed render-pixel cells in uniform mode; depth mode groups distant cells.
+    // Glyph geometry stays fixed; optional depth layers attenuate only the ink color.
     void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh) {
         render(source, palette, vx, vy, vw, vh, null);
     }
@@ -137,7 +135,7 @@ final class AsciiRenderer {
         int right = vx + vw, bottom = vy + vh;
         if (!adaptive || depth == null) {
             for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
-                drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), 1);
+                drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), 0);
             }
             return;
         }
@@ -155,7 +153,7 @@ final class AsciiRenderer {
             }
             int index = ((y - vy) / 6) * columns + (x - vx) / 4;
             int previous = levels[index];
-            // Refine at the nominal boundary; coarsen after an extra 1/6 margin.
+            // Brighten at the nominal boundary; dim after an extra 1/6 margin.
             int level = 0;
             while (level < DEPTH_BOUNDARIES.length) {
                 int boundary = DEPTH_BOUNDARIES[level];
@@ -165,39 +163,13 @@ final class AsciiRenderer {
             }
             levels[index] = (byte) level;
         }
-        // Greedy, anchored tiling supports every integer scale, unlike binary
-        // subdivision. A tile is allowed only when all its cells are distant
-        // enough and unclaimed; otherwise try a smaller glyph.
-        java.util.Arrays.fill(covered, false);
-        int gridW = (vw + 3) / 4, gridH = (vh + 5) / 6;
-        for (int by = 0; by < gridH; by++) for (int bx = 0; bx < gridW; bx++) {
-            int index = by * columns + bx;
-            if (covered[index]) continue;
-            int scale = levels[index] + 1;
-            while (scale > 1 && !fitsTile(bx, by, scale, gridW, gridH)) scale--;
-            for (int yy = by; yy < Math.min(by + scale, gridH); yy++) {
-                java.util.Arrays.fill(covered, yy * columns + bx,
-                        yy * columns + Math.min(bx + scale, gridW), true);
-            }
-            int x = vx + bx * 4, y = vy + by * 6;
-            drawCell(source, palette, x, y, Math.min(x + 4 * scale, right),
-                    Math.min(y + 6 * scale, bottom), scale);
+        for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
+            int index = ((y - vy) / 6) * columns + (x - vx) / 4;
+            drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), levels[index]);
         }
     }
 
-    private boolean fitsTile(int bx, int by, int scale, int gridW, int gridH) {
-        // Anchor each size to the viewport grid to limit movement-induced drift.
-        if (bx % scale != 0 || by % scale != 0) return false;
-        for (int y = by; y < Math.min(by + scale, gridH); y++) {
-            for (int x = bx; x < Math.min(bx + scale, gridW); x++) {
-                int i = y * columns + x;
-                if (covered[i] || levels[i] < scale - 1) return false;
-            }
-        }
-        return true;
-    }
-
-    private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int scale) {
+    private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int level) {
         int red = 0, green = 0, blue = 0;
         int darkest = 255, lightest = 0;
         java.util.Arrays.fill(samples, 0);
@@ -208,10 +180,10 @@ final class AsciiRenderer {
                 red += (rgb >>> 16) & 255;
                 green += (rgb >>> 8) & 255;
                 blue += rgb & 255;
-                if ((x - cx) / scale < 3 && (y - cy) / scale < 5) {
+                if ((x - cx) < 3 && (y - cy) < 5) {
                     int value = (77 * ((rgb >>> 16) & 255)
                             + 150 * ((rgb >>> 8) & 255) + 29 * (rgb & 255)) >>> 8;
-                    int sample = ((y - cy) / scale) * 3 + (x - cx) / scale;
+                    int sample = ((y - cy)) * 3 + (x - cx);
                     samples[sample] += value;
                     sampleCounts[sample]++;
                 }
@@ -231,7 +203,7 @@ final class AsciiRenderer {
         // density so shadowed Doom rooms do not become nearly black twice.
         int density = (int) Math.sqrt(luminance * 255);
         int glyphIndex;
-        if (lightest - darkest >= 48 && xEnd - cx >= 3 * scale && yEnd - cy >= 5 * scale) {
+        if (lightest - darkest >= 48 && xEnd - cx >= 3 && yEnd - cy >= 5) {
             int threshold = (darkest + lightest) / 2;
             int pattern = 0;
             for (int sample : samples) pattern = (pattern << 1) | (sample > threshold ? 1 : 0);
@@ -246,11 +218,18 @@ final class AsciiRenderer {
             green = green * 192 / peak;
             blue = blue * 192 / peak;
         }
+        // Ten equal steps: 12/12, 11/12, ... 3/12. Apply after normal glyph
+        // selection/color lifting so depth never changes the symbol or its hue.
+        // Opaque RGB attenuation is equivalent to fading over our black backdrop
+        // without revealing stale Canvas contents through transparent pixels.
+        red = (red * (12 - level) + 6) / 12;
+        green = (green * (12 - level) + 6) / 12;
+        blue = (blue * (12 - level) + 6) / 12;
         int ink = 0xff000000 | (red << 16) | (green << 8) | blue;
         for (int y = cy; y < yEnd; y++) {
-            int gy = (y - cy) / scale;
+            int gy = (y - cy);
             for (int x = cx; x < xEnd; x++) {
-                int gx = (x - cx) / scale;
+                int gx = (x - cx);
                 boolean on = gy < 5 && gx < 3 && (glyph[gy] & (4 >> gx)) != 0;
                 pixels[y * width + x] = on ? ink : 0xff000000;
             }

@@ -365,7 +365,7 @@ public final class JfxDoomApp extends Application {
                     ascii.setAdaptive(lastAsciiDepth);
                     if (lastAsciiDepth) doom.render.RenderDepth.enabled = true;
                     else doom.render.RenderDepth.disable();
-                    stage.setTitle("jfxdoom — ASCII depth density " + (lastAsciiDepth ? "on" : "off"));
+                    stage.setTitle("jfxdoom — ASCII depth fading " + (lastAsciiDepth ? "on" : "off"));
                 }
                 asciiDepthKeyHeld = true;
                 e.consume();
