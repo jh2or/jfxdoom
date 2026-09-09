@@ -39,6 +39,26 @@ class WWadLifecycleTest {
         return (List<RandomAccessFile>) field.get(null);
     }
 
+    @Test void memoryLumpsPreserveFileCacheAndSurviveEvictionUntilShutdown() throws Exception {
+        WWad.wInitFile(wad("base.wad", 4).toString());
+        byte[] existing = WWad.wCacheLumpNum(0, ZZone.PU_CACHE);
+        byte[] source = {1, 2, 3, 4};
+        WWad.wAddMemoryLumps(new String[] {"RUNTIME"}, new byte[][] {source});
+        source[0] = 99;
+        assertSame(existing, WWad.wCacheLumpNum(0, ZZone.PU_CACHE));
+        ZZone.zFree(existing);
+        assertNull(WWad.lumpcache[0], "Eviction must clear a cache that grew after allocation");
+        assertArrayEquals(new byte[] {0x78, 0x56, 0x34, 0x12},
+                WWad.wCacheLumpNum(0, ZZone.PU_CACHE));
+        assertEquals(1, WWad.wGetNumForName("RUNTIME"));
+        byte[] first = WWad.wCacheLumpNum(1, ZZone.PU_CACHE);
+        assertArrayEquals(new byte[] {1, 2, 3, 4}, first);
+        ZZone.zFree(first);
+        assertArrayEquals(new byte[] {1, 2, 3, 4}, WWad.wCacheLumpNum(1, ZZone.PU_CACHE));
+        WWad.wShutdown();
+        assertEquals(-1, WWad.wCheckNumForName("RUNTIME"));
+    }
+
     @Test void repeatedMountClosesPreviousHandlesAndKeepsOnlyCurrentDirectory() throws Exception {
         Path first = wad("first.wad", 4);
         Path second = wad("second.wad", 4);

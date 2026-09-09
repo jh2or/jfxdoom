@@ -100,10 +100,43 @@ exposes the same set):
 Port-specific flags (no C counterpart):
 
 ```
+-dynamic            generate and enter an experimental arena using the loaded WAD assets
 -fx3d               use the experimental JavaFX scene-graph renderer
 -sbs                side-by-side mode (software pane left, 3D pane right)
 -sbsv               stacked mode (software pane top, 3D pane bottom)
 ```
+
+## Dynamic levels (experimental)
+
+Start directly in a generated arena:
+
+```sh
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -dynamic"
+```
+
+Use your Doom, shareware Doom, or Doom II IWAD as usual; `-file` can
+supply compatible asset replacements. The engine creates the map in memory;
+no map is copied from the WAD, and no WAD file is written or modified.
+Textures and flats are selected from the loaded assets. Sprites, weapons,
+monster behavior, and sounds use the usual Doom systems and WAD resources.
+
+The first prototype is a **1536 × 1536 room** with a player start, six
+monsters (former humans, shotgun guys, and imps), a shotgun straight ahead,
+two shell boxes, and two medkits behind the player. It is a fixed, repeatable
+layout generated at startup, with no exit or randomized rooms yet. Start a
+new game from the menu to reset the arena; death/restart also reconstructs it.
+
+`-skill 1..5`, `-nomonsters`, `-fast`, and `-respawn` still apply. Add `-fx3d`
+or `-sbs` to use the experimental renderer. Dynamic mode takes precedence
+over `-warp` / `-episode` and stays active for user games until you quit.
+The initial arena targets single-player play.
+
+Save/load works within dynamic mode: restart with the same WADs and `-dynamic`
+to load an arena save. Stock-map and arena saves are rejected across modes.
+Explicit `-record`, `-playdemo`, and `-timedemo` cannot be combined with
+`-dynamic`, since vanilla demo headers do not identify generated maps.
+The title screen's built-in demos continue to use their original WAD maps.
+Omit `-dynamic` on the next launch to return to normal WAD levels.
 
 ## The experimental JavaFX 3D renderer
 

@@ -154,6 +154,11 @@ public final class DMain {
         startepisode = 1;
         startmap = 1;
         autostart = false;
+        Doomstat.dynamicLevels = MArgv.checkParm("-dynamic") > 0;
+        if (Doomstat.dynamicLevels && (MArgv.checkParm("-record") > 0
+                || MArgv.checkParm("-playdemo") > 0 || MArgv.checkParm("-timedemo") > 0)) {
+            throw ISystem.iError("-dynamic cannot be combined with demo recording/playback");
+        }
 
         // Load persisted user defaults (volumes, gamma, screen
         // size, etc.) from default.cfg. Honoured before the
@@ -259,6 +264,13 @@ public final class DMain {
         // RSky.rInitSkyMap.
         RData.rInitData();
         RMain.rInit();
+
+        if (Doomstat.dynamicLevels) {
+            doom.play.DynamicLevel.mount();
+            startepisode = startmap = 1;
+            autostart = true;
+            System.out.println("Dynamic levels: generated arena (1536 x 1536)");
+        }
 
         // P_Init: switch / animation tables + sprite-defs (from
         // info.c sprnames).

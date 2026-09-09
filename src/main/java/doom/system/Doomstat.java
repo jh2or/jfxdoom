@@ -19,6 +19,9 @@ public final class Doomstat {
     // C runtime init order (zero-init == shareware == enum value 0).
     public static GameMode gamemode = GameMode.shareware;
 
+    // Port extension: use the generated arena for user games in this session.
+    public static boolean dynamicLevels;
+
     // doomstat.h — true while replaying a demo (set by G_DoPlayDemo).
     public static boolean demoplayback;
     // doomstat.h — true while a recorded demo is playing in a

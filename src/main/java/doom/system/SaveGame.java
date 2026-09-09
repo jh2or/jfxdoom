@@ -103,7 +103,8 @@ public final class SaveGame {
     }
 
     private static int mapLump(int episode, int map) throws IOException {
-        String name = Doomstat.gamemode == Doomstat.GameMode.commercial
+        String name = Doomstat.dynamicLevels ? DynamicLevel.MAP_NAME
+                : Doomstat.gamemode == Doomstat.GameMode.commercial
                 ? String.format("MAP%02d", map) : "E" + episode + "M" + map;
         int lump = WWad.wCheckNumForName(name);
         if (lump < 0) throw new IOException("Saved map is unavailable: " + name);

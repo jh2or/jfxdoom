@@ -45,6 +45,7 @@ public final class WWad {
         public int handle;  // index into openHandles; -1 for reloadable
         public int position;
         public int size;
+        private byte[] memoryData; // Port extension: generated lumps owned by this mount.
     }
 
     // Globals (w_wad.c line 61–64).
@@ -186,6 +187,26 @@ public final class WWad {
         return numlumps;
     }
 
+    /** Append runtime-generated data without changing any WAD on disk. */
+    public static void wAddMemoryLumps(String[] names, byte[][] data) {
+        if (names.length != data.length) throw new IllegalArgumentException("Lump count mismatch");
+        LumpInfo[] added = new LumpInfo[names.length];
+        for (int i = 0; i < names.length; i++) {
+            if (!names[i].matches("[A-Z0-9_]{1,8}"))
+                throw new IllegalArgumentException("Invalid lump name: " + names[i]);
+            LumpInfo lump = new LumpInfo();
+            lump.name = names[i];
+            lump.handle = -2;
+            lump.memoryData = data[i].clone();
+            lump.size = data[i].length;
+            added[i] = lump;
+        }
+        lumpinfo = Arrays.copyOf(lumpinfo, numlumps + added.length);
+        System.arraycopy(added, 0, lumpinfo, numlumps, added.length);
+        numlumps = lumpinfo.length;
+        lumpcache = Arrays.copyOf(lumpcache, numlumps);
+    }
+
     // int W_CheckNumForName(char* name) — -1 if not found.
     //
     // The C scans backwards so later PWAD lumps override earlier ones, and uses
@@ -224,6 +245,10 @@ public final class WWad {
             throw ISystem.iError("W_ReadLump: %d >= numlumps", lump);
         }
         LumpInfo l = lumpinfo[lump];
+        if (l.memoryData != null) {
+            System.arraycopy(l.memoryData, 0, dest, 0, l.size);
+            return;
+        }
         RandomAccessFile raf;
         boolean closeAfter = false;
         if (l.handle == -1) {
@@ -262,9 +287,16 @@ public final class WWad {
             // read the lump in
             final int fLump = lump;
             final byte[][] cache = lumpcache;
+            final LumpInfo owner = lumpinfo[lump];
             ZZone.UserRef slot = new ZZone.UserRef() {
                 public byte[] get() { return cache[fLump]; }
-                public void set(byte[] v) { cache[fLump] = v; }
+                public void set(byte[] v) {
+                    cache[fLump] = v;
+                    // Appending memory lumps grows the cache array within a mount.
+                    // An old mount's eviction must still never clear a new mount.
+                    if (fLump < numlumps && lumpinfo[fLump] == owner)
+                        lumpcache[fLump] = v;
+                }
             };
             ZZone.zMalloc(wLumpLength(lump), tag, slot);
             try {

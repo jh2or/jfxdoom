@@ -566,7 +566,9 @@ public final class PSetup {
 
         // Pick the lumpnum based on (episode, map) per game mode.
         int lumpnum;
-        if (doom.system.Doomstat.gamemode == doom.system.Doomstat.GameMode.commercial) {
+        if (Doomstat.dynamicLevels && !Doomstat.demoplayback) {
+            lumpnum = WWad.wGetNumForName(DynamicLevel.MAP_NAME);
+        } else if (doom.system.Doomstat.gamemode == doom.system.Doomstat.GameMode.commercial) {
             String name;
             if (map < 10) {
                 name = "MAP0" + map;
