@@ -100,7 +100,8 @@ exposes the same set):
 Port-specific flags (no C counterpart):
 
 ```
--dynamic            generate and enter an experimental arena using the loaded WAD assets
+-dynamic            generate and enter a complete experimental level using the loaded WAD assets
+-seed <integer>     reproducible signed 64-bit seed (requires -dynamic)
 -fx3d               use the experimental JavaFX scene-graph renderer
 -sbs                side-by-side mode (software pane left, 3D pane right)
 -sbsv               stacked mode (software pane top, 3D pane bottom)
@@ -108,35 +109,62 @@ Port-specific flags (no C counterpart):
 
 ## Dynamic levels (experimental)
 
-Start directly in a generated arena:
+Generate a complete nine-room level before play starts:
 
 ```sh
-./gradlew run --args="-iwad reference-wads/DOOM.WAD -dynamic"
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -dynamic -seed 42"
 ```
 
-Use your Doom, shareware Doom, or Doom II IWAD as usual; `-file` can
-supply compatible asset replacements. The engine creates the map in memory;
-no map is copied from the WAD, and no WAD file is written or modified.
-Textures and flats are selected from the loaded assets. Sprites, weapons,
-monster behavior, and sounds use the usual Doom systems and WAD resources.
+The generator and map compiler use only Java and run offline. No additional
+libraries, executables, AI services, or downloads are needed for generation.
+Use your Doom, shareware Doom, or Doom II IWAD as usual; `-file` can supply
+compatible asset replacements. The map is built in memory and no WAD is modified.
 
-The first prototype is a **1536 × 1536 room** with a player start, six
-monsters (former humans, shotgun guys, and imps), a shotgun straight ahead,
-two shell boxes, and two medkits behind the player. It is a fixed, repeatable
-layout generated at startup, with no exit or randomized rooms yet. Start a
-new game from the menu to reset the arena; death/restart also reconstructs it.
+Each level has a safe starting room with a shotgun, a connected network of
+rooms and corridors with one or two loops, a **blue key**, a **blue locked door**,
+an optional branch with blue armor, and a final room with an **exit switch**.
+Pick up the key, use **Space** at the blue door, and find the switch on the
+far east wall of the final room. The exit leads to the usual intermission and
+then returns to the title loop. This milestone generates one level per session;
+starting a new game or restarting after death reconstructs the same layout.
 
-`-skill 1..5`, `-nomonsters`, `-fast`, and `-respawn` still apply. Add `-fx3d`
-or `-sbs` to use the experimental renderer. Dynamic mode takes precedence
-over `-warp` / `-episode` and stays active for user games until you quit.
-The initial arena targets single-player play.
+Seeds vary room sizes, connections, the key location, floor/ceiling heights,
+lighting, material selections, and monster placements. Former humans, shotgun
+guys, and imps populate the rooms; ammunition and medkits support progression.
+`-skill 1..5` gives 16 / 16 / 24 / 32 / 32 initial monsters, respectively.
+`-nomonsters`, `-fast`, and `-respawn` still apply. Add `-fx3d` or `-sbs` to
+use the experimental renderer. Dynamic mode overrides `-warp` / `-episode` at
+startup and currently supports single-player games only.
 
-Save/load works within dynamic mode: restart with the same WADs and `-dynamic`
-to load an arena save. Stock-map and arena saves are rejected across modes.
+### Reproducing a level
+
+`-seed` accepts a decimal integer from `-9223372036854775808` through
+`9223372036854775807`. If omitted, a seed is chosen locally and printed to
+the console, with a brief in-game message. Record that value to replay or
+share the layout. For example, add `-nomonsters` to inspect seed 42 peacefully.
+
+**The same seed, generator version, and loaded WAD assets reproduce the same
+map bytes.** Skill and gameplay flags control which encounters spawn and how
+they behave. Generation uses its own fixed PRNG and does not consume Doom's
+random table. Generator changes may change layouts; the current algorithm is
+version 1. This guarantees map reproducibility, not identical player outcomes.
+
+Dynamic saves include the seed and generator version. Launch with the same WADs
+and `-dynamic`; loading the save rebuilds its original layout even if you started
+with a different seed. Saves with incompatible generator versions or map data
+are rejected before changing the active game. Stock and dynamic saves remain
+separate. Saves from the earlier unseeded arena prototype are incompatible.
+
 Explicit `-record`, `-playdemo`, and `-timedemo` cannot be combined with
-`-dynamic`, since vanilla demo headers do not identify generated maps.
-The title screen's built-in demos continue to use their original WAD maps.
-Omit `-dynamic` on the next launch to return to normal WAD levels.
+`-dynamic`, since vanilla demo headers do not identify generated maps. The
+built-in title demos retain their original WAD maps. Omit `-dynamic` on the next
+launch to return to normal WAD levels.
+
+The initial builder deliberately limits geometry to a bounded 128-unit grid.
+It creates rectangular rooms, straight corridors, small walkable floor steps,
+and a single keyed door; complex stairs, caves, prefabs, and campaigns are
+future work. Both geometry validation and playtesting matter: connectivity
+checks cannot guarantee that every seed is equally enjoyable.
 
 ## The experimental JavaFX 3D renderer
 

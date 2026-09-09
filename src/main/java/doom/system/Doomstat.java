@@ -21,6 +21,7 @@ public final class Doomstat {
 
     // Port extension: use the generated arena for user games in this session.
     public static boolean dynamicLevels;
+    public static long dynamicSeed;
 
     // doomstat.h — true while replaying a demo (set by G_DoPlayDemo).
     public static boolean demoplayback;

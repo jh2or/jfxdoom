@@ -207,6 +207,24 @@ public final class WWad {
         lumpcache = Arrays.copyOf(lumpcache, numlumps);
     }
 
+    /** Replace a generated map after save preflight, without growing the directory. */
+    public static void wReplaceMemoryLumps(int first, byte[][] data) {
+        if (first < 0 || first + data.length > numlumps)
+            throw new IllegalArgumentException("Memory lump range outside directory");
+        byte[][] owned = new byte[data.length][];
+        for (int i = 0; i < data.length; i++) {
+            if (lumpinfo[first + i].memoryData == null)
+                throw new IllegalArgumentException("Cannot replace a file-backed lump");
+            owned[i] = data[i].clone();
+        }
+        for (int i = 0; i < data.length; i++) {
+            int lump = first + i;
+            if (lumpcache[lump] != null) ZZone.zFree(lumpcache[lump]);
+            lumpinfo[lump].memoryData = owned[i];
+            lumpinfo[lump].size = owned[i].length;
+        }
+    }
+
     // int W_CheckNumForName(char* name) — -1 if not found.
     //
     // The C scans backwards so later PWAD lumps override earlier ones, and uses

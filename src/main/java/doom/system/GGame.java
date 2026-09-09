@@ -833,6 +833,9 @@ public final class GGame {
         Doomstat.gamestate  = Doomstat.GS_LEVEL;
         Doomstat.usergame   = true;
         Doomstat.viewactive = true;
+        if (Doomstat.dynamicLevels && !Doomstat.demoplayback)
+            players[consoleplayer].message = "Dynamic v" + doom.play.DynamicLevel.VERSION
+                    + " seed " + Doomstat.dynamicSeed;
 
         // S_Start — kill any leftover SFX channels and queue the
         // per-map music.
@@ -994,6 +997,13 @@ public final class GGame {
                     gDoNewGame();
                     break;
                 case ga_worlddone:
+                    // The first dynamic milestone is one complete map per seed.
+                    if (Doomstat.dynamicLevels && !Doomstat.demoplayback) {
+                        Doomstat.gamestate = Doomstat.GS_DEMOSCREEN;
+                        Doomstat.usergame = Doomstat.viewactive = false;
+                        DMain.dStartTitle();
+                        return;
+                    }
                     // g_game.c lines 1147–1185: G_WorldDone advances
                     // gamemap/episode using the same routing wminfo
                     // computed (secretexit → secret level; secret

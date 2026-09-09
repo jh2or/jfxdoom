@@ -135,6 +135,23 @@ public final class DMain {
         numwadfiles = 0;
     }
 
+    private static long parseDynamicSeed() {
+        int seed = MArgv.checkParm("-seed");
+        if (!Doomstat.dynamicLevels) {
+            if (seed > 0) throw ISystem.iError("-seed requires -dynamic");
+            return 0;
+        }
+        if (MArgv.checkParm("-deathmatch") > 0 || MArgv.checkParm("-altdeath") > 0)
+            throw ISystem.iError("-dynamic currently supports single-player games only");
+        if (seed == 0) return java.util.concurrent.ThreadLocalRandom.current().nextLong();
+        if (seed + 1 >= MArgv.myargc) throw ISystem.iError("-seed requires a signed 64-bit integer");
+        try {
+            return Long.parseLong(MArgv.myargv[seed + 1]);
+        } catch (NumberFormatException e) {
+            throw ISystem.iError("Invalid -seed: %s (expected a signed 64-bit integer)", MArgv.myargv[seed + 1]);
+        }
+    }
+
     //
     // D_DoomMain
     //
@@ -155,6 +172,7 @@ public final class DMain {
         startmap = 1;
         autostart = false;
         Doomstat.dynamicLevels = MArgv.checkParm("-dynamic") > 0;
+        Doomstat.dynamicSeed = parseDynamicSeed();
         if (Doomstat.dynamicLevels && (MArgv.checkParm("-record") > 0
                 || MArgv.checkParm("-playdemo") > 0 || MArgv.checkParm("-timedemo") > 0)) {
             throw ISystem.iError("-dynamic cannot be combined with demo recording/playback");
@@ -269,7 +287,8 @@ public final class DMain {
             doom.play.DynamicLevel.mount();
             startepisode = startmap = 1;
             autostart = true;
-            System.out.println("Dynamic levels: generated arena (1536 x 1536)");
+            System.out.printf("Dynamic level v%d: seed %d (9 rooms)%n",
+                    doom.play.DynamicLevel.VERSION, Doomstat.dynamicSeed);
         }
 
         // P_Init: switch / animation tables + sprite-defs (from

@@ -59,6 +59,26 @@ class WWadLifecycleTest {
         assertEquals(-1, WWad.wCheckNumForName("RUNTIME"));
     }
 
+    @Test void replacingGeneratedLumpsInvalidatesCacheAndKeepsFileLumpsUntouched() throws Exception {
+        WWad.wInitFile(wad("base.wad", 4).toString());
+        byte[] file = WWad.wCacheLumpNum(0, ZZone.PU_CACHE);
+        WWad.wAddMemoryLumps(new String[] {"RUNTIME"}, new byte[][] {{1, 2, 3, 4}});
+        byte[] old = WWad.wCacheLumpNum(1, ZZone.PU_CACHE);
+        byte[] replacement = {5, 6, 7, 8, 9, 10, 11, 12};
+        WWad.wReplaceMemoryLumps(1, new byte[][] {replacement});
+        replacement[0] = 99;
+        assertEquals(2, WWad.numlumps);
+        assertEquals(8, WWad.wLumpLength(1));
+        assertNull(WWad.lumpcache[1]);
+        assertNotSame(old, WWad.wCacheLumpNum(1, ZZone.PU_CACHE));
+        assertEquals(5, WWad.lumpcache[1][0]);
+        assertSame(file, WWad.wCacheLumpNum(0, ZZone.PU_CACHE));
+        assertThrows(IllegalArgumentException.class,
+                () -> WWad.wReplaceMemoryLumps(0, new byte[][] {{0}, {0}}));
+        assertSame(file, WWad.wCacheLumpNum(0, ZZone.PU_CACHE));
+        assertEquals(5, WWad.wCacheLumpNum(1, ZZone.PU_CACHE)[0]);
+    }
+
     @Test void repeatedMountClosesPreviousHandlesAndKeepsOnlyCurrentDirectory() throws Exception {
         Path first = wad("first.wad", 4);
         Path second = wad("second.wad", 4);
