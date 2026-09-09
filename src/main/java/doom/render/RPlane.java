@@ -181,6 +181,7 @@ public final class RPlane {
             RDraw.dsColormapOfs = planezlight[index];
         }
 
+        RenderDepth.spanDepth = distance >>> Fixed.FRACBITS;
         RDraw.dsY = y;
         RDraw.dsX1 = x1;
         RDraw.dsX2 = x2;
@@ -389,6 +390,7 @@ public final class RPlane {
 
             // sky flat
             if (pl.picnum == RSky.skyflatnum) {
+                RenderDepth.sky = true;
                 RDraw.dcIscale = RMain.pspriteiscale >> RMain.detailshift;
 
                 // Sky is allways drawn full bright,
@@ -422,6 +424,7 @@ public final class RPlane {
                         }
                     }
                 }
+                RenderDepth.sky = false;
                 continue;
             }
 

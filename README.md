@@ -106,11 +106,25 @@ intermissions keep their original graphics. This is a graphical effect, not a
 terminal interface or a screen-reader text representation. It retains the
 software renderer's CPU cost and adds a small CPU conversion pass.
 
+**Optional depth-dependent density:** enable the checkbox below the renderer
+selector, or add `-ascii-depth` alongside `-ascii`. Press **F12** in ASCII mode
+to toggle it during play (off by default). Nearby geometry uses 4×6-pixel cells,
+medium-distance geometry 8×12, and distant geometry/sky 16×24. Internal render
+resolution still sets overall density. Weapon pixels stay at the finest setting;
+HUD and menus remain unchanged.
+
+This uses forward depth captured alongside the software framebuffer, not image
+brightness or blur. Coarse blocks split wherever a finer foreground cell is
+needed. Distance bands have a small hysteresis margin to reduce rapid toggling;
+discrete density boundaries can still be visible while moving. Depth capture
+adds a render-sized integer buffer and an extra CPU pass while enabled.
+
 Command-line flags supported (mirroring the C — the Launchpad
 exposes the same set):
 
 ```
 -ascii              colored ASCII world (software post-processing)
+-ascii-depth        enable optional depth density in ASCII mode (F12 toggles)
 -iwad <path>        primary WAD
 -file <path>...     additional PWADs
 -warp E M           Doom 1: start at episode E map M

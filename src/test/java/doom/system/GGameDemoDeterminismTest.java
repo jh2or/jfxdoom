@@ -18,9 +18,9 @@ class GGameDemoDeterminismTest {
             DMain.dDoomMain(new String[] {"-iwad", wad.toString(), "-warp", "1", "1", "-respawn"});
             assertTrue(Doomstat.respawnparm);
             assertTrue(Doomstat.respawnmonsters);
-            List<String> first = playDemo();
+            List<String> first = playDemo(false);
             for (int i = 0; i < 137; i++) { MRandom.pRandom(); MRandom.mRandom(); }
-            List<String> second = playDemo();
+            List<String> second = playDemo(true);
             assertEquals(first, second);
             assertNotEquals(first.getFirst(), first.getLast(), "The playsim must actually advance");
             byte[] requested = WWad.wCacheLumpName("demo1", doom.wad.ZZone.PU_STATIC).clone();
@@ -35,6 +35,7 @@ class GGameDemoDeterminismTest {
             assertTrue(Doomstat.respawnparm);
             assertTrue(Doomstat.respawnmonsters, "A non-Nightmare demo must retain requested respawning");
         } finally {
+            doom.render.RenderDepth.disable();
             Doomstat.demoplayback = false;
             Doomstat.fastparm = false;
             Doomstat.respawnparm = false;
@@ -45,7 +46,9 @@ class GGameDemoDeterminismTest {
         }
     }
 
-    private List<String> playDemo() {
+    private List<String> playDemo(boolean depth) {
+        doom.render.RenderDepth.enabled = depth;
+        doom.render.RDraw.fuzzpos = 0;
         Doomstat.paused = false;
         doom.ui.MMenu.menuactive = false;
         GGame.demorecording = false;
@@ -57,6 +60,7 @@ class GGameDemoDeterminismTest {
         List<String> result = new ArrayList<>();
         for (int tic = 0; tic < 210; tic++) {
             GGame.gTicker();
+            doom.render.RMain.rRenderPlayerView(GGame.players[0]);
             assertEquals(tic + 1, PTick.gametic, "One game tic per demo command");
             assertTrue(Doomstat.demoplayback, "Built-in demo must cover the sampled interval");
             StringBuilder state = new StringBuilder().append(MRandom.prndindex).append(':');
@@ -67,6 +71,7 @@ class GGameDemoDeterminismTest {
                             .append(mo.health).append(',').append(mo.tics).append(',').append(mo.angle).append(';');
                 }
             }
+            state.append(":frame=").append(Arrays.hashCode(doom.ui.VVideo.viewBuffer));
             result.add(state.toString());
         }
         return result;

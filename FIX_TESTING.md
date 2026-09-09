@@ -198,3 +198,29 @@ symbol set. Flat regions use tone mapping; high-contrast cells match local
 strokes. Native motion testing remains useful for judging small-glyph readability.
 All seven focused ASCII tests passed for this change. The live JavaFX 3× run
 passed, and its captured scene was visually checked for the expanded glyph mix.
+
+## Optional depth-dependent ASCII density
+
+Select ASCII and check **Depth-dependent ASCII density**, or launch with
+`./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -ascii -ascii-depth"`.
+F12 toggles between adaptive and uniform density in ASCII mode. The default is
+uniform. Test at 2× or 3× internal resolution: approach and retreat from walls,
+look along corridors, fire in front of distant geometry, and approach thin
+foreground objects. Near cells and weapon pixels should retain fine glyphs;
+distant surfaces/sky use larger glyphs. Hold F12 to verify one toggle per press.
+Test reduced view size, F5 low detail, automap, menus, level changes and relaunch.
+
+`AsciiRendererTest` covers depth bands, one-pixel foreground protection,
+threshold hysteresis, clipped partial cells, and restoring identical uniform
+output. `RenderDepthTest` checks resolution/detail scaling and visible depth
+writes with weapon/sky overrides. The real-WAD demo regression compares actor
+traces and software color-frame checksums with depth capture disabled/enabled.
+Depth capture is presentation-only; it uses existing render projection scales,
+including their near/far clamping. Discrete cell-size changes are intentional;
+small threshold margins reduce chatter but do not guarantee flicker-free motion.
+
+Validation: full suite passed (1,020 tests; 1,010 passed, 10 optional diagnostics
+skipped). A live 3× JavaFX run verified depth capture, near/weapon and far/sky
+values, F12 off/on and held-key repeat suppression. Its adaptive scene was
+captured and inspected. Native motion and fullscreen performance remain manual
+playtests; no claim of eliminated transition flicker is made.

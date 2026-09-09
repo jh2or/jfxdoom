@@ -116,6 +116,9 @@ public final class Launchpad {
     private final ComboBox<RendererMode> rendererBox =
             new ComboBox<>(FXCollections.observableArrayList(RendererMode.values()));
 
+    private final CheckBox asciiDepth = new CheckBox("Depth-dependent ASCII density (F12 toggles in game)");
+    public Launchpad prefillAsciiDepth(boolean value) { asciiDepth.setSelected(value); return this; }
+
     private final CheckBox expertMode = new CheckBox("Expert mode");
 
     private final ComboBox<String> skillBox = new ComboBox<>(FXCollections.observableArrayList(
@@ -244,6 +247,10 @@ public final class Launchpad {
         rendererRow.setAlignment(Pos.CENTER_LEFT);
         primary.add(new Label("Renderer:"), 0, r);
         primary.add(rendererRow,            1, r++, 2, 1);
+
+        asciiDepth.disableProperty().bind(Bindings.createBooleanBinding(
+                () -> rendererBox.getValue() != RendererMode.ASCII, rendererBox.valueProperty()));
+        primary.add(asciiDepth, 1, r++, 2, 1);
 
         // ---- expert section ----
         skillBox.getSelectionModel().select(2);
@@ -384,7 +391,8 @@ public final class Launchpad {
             a.add("-file");
             a.addAll(pwadList.getItems());
         }
-        // Expert mode off → emit only the WAD args so the engine
+        if (rendererBox.getValue() == RendererMode.ASCII && asciiDepth.isSelected()) a.add("-ascii-depth");
+        // Expert mode off → emit WAD/presentation args so the engine
         // boots the same way doom.exe does (title loop, no skill
         // / warp / mode override).
         if (!expertMode.isSelected()) {

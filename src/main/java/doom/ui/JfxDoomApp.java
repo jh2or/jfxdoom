@@ -87,6 +87,8 @@ public final class JfxDoomApp extends Application {
     // Mutable session state.
     private AnimationTimer animationTimer;
     private boolean hasBootedGame;
+    private boolean lastAsciiDepth;
+    private boolean asciiDepthKeyHeld;
     private boolean shuttingDown;
     private String lastIwad;
     private Launchpad.DisplayMode lastDisplay = Launchpad.DisplayMode.SCALE_4X;
@@ -135,6 +137,9 @@ public final class JfxDoomApp extends Application {
     @Override
     public void start(Stage stage) {
         stage.setTitle("jfxdoom");
+        stage.focusedProperty().addListener((obs, wasFocused, focused) -> {
+            if (!focused) asciiDepthKeyHeld = false;
+        });
 
         // Route engine quit requests back to the launcher instead
         // of System.exit. shuttingDown is set by stop() so a real
@@ -167,8 +172,10 @@ public final class JfxDoomApp extends Application {
     }
 
     private void showLauncher(Stage stage) {
+        stage.setTitle("jfxdoom");
         Launchpad ui = new Launchpad()
-                .prefill(lastIwad, lastDisplay, lastRenderMul, lastRenderer);
+                .prefill(lastIwad, lastDisplay, lastRenderMul, lastRenderer)
+                .prefillAsciiDepth(lastAsciiDepth);
         Scene startupScene = ui.build(stage, (args, display, renderMul, renderer) -> {
             captureLastFromArgs(args);
             lastDisplay = display;
@@ -239,6 +246,13 @@ public final class JfxDoomApp extends Application {
         final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
         final AsciiRenderer ascii = mode == Launchpad.RendererMode.ASCII
                 ? new AsciiRenderer(w, h) : null;
+        lastAsciiDepth = java.util.Arrays.asList(args).contains("-ascii-depth");
+        asciiDepthKeyHeld = false;
+        doom.render.RenderDepth.disable();
+        if (ascii != null) {
+            ascii.setAdaptive(lastAsciiDepth);
+            doom.render.RenderDepth.enabled = lastAsciiDepth;
+        }
 
         // Engine state needs a fresh start on re-launch: clear
         // the quitting guard and drop the previous WAD list so
@@ -345,11 +359,28 @@ public final class JfxDoomApp extends Application {
         }
 
         scene.setOnKeyPressed(e -> {
+            if (ascii != null && e.getCode() == KeyCode.F12) {
+                if (!asciiDepthKeyHeld) {
+                    lastAsciiDepth = !ascii.adaptive();
+                    ascii.setAdaptive(lastAsciiDepth);
+                    if (lastAsciiDepth) doom.render.RenderDepth.enabled = true;
+                    else doom.render.RenderDepth.disable();
+                    stage.setTitle("jfxdoom — ASCII depth density " + (lastAsciiDepth ? "on" : "off"));
+                }
+                asciiDepthKeyHeld = true;
+                e.consume();
+                return;
+            }
             int code = mapKey(e.getCode(), e.getText());
             if (code < 0) return;
             DMain.dPostEvent(new DEvent(DEvent.EV_KEYDOWN, code));
         });
         scene.setOnKeyReleased(e -> {
+            if (ascii != null && e.getCode() == KeyCode.F12) {
+                asciiDepthKeyHeld = false;
+                e.consume();
+                return;
+            }
             int code = mapKey(e.getCode(), e.getText());
             if (code < 0) return;
             DMain.dPostEvent(new DEvent(DEvent.EV_KEYUP, code));
@@ -424,7 +455,7 @@ public final class JfxDoomApp extends Application {
             // composite).
             if (swSurface != null) {
                 if (ascii != null && viewActive) {
-                    ascii.render(view, palette, vx, vy, vw, vh);
+                    ascii.render(view, palette, vx, vy, vw, vh, doom.render.RenderDepth.pixels);
                 }
                 compositeSoftware(swSurface.argb, ui, view, viewActive,
                         vx, vy, vw, vh, renderW, renderH, rm,
@@ -571,6 +602,7 @@ public final class JfxDoomApp extends Application {
     // screen if the WAD carries one (DOS doom.exe painted it into
     // VGA text mode on exit), and swap back to a fresh Launchpad.
     private void returnToLauncher(Stage stage) {
+        doom.render.RenderDepth.disable();
         if (animationTimer != null) {
             animationTimer.stop();
             animationTimer = null;
@@ -799,6 +831,7 @@ public final class JfxDoomApp extends Application {
 
     @Override
     public void stop() {
+        doom.render.RenderDepth.disable();
         // Window close → real exit. shuttingDown short-circuits
         // the quit hook so it doesn't try to re-show the launcher.
         shuttingDown = true;

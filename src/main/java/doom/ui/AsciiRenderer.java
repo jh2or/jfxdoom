@@ -105,73 +105,135 @@ final class AsciiRenderer {
     final int[] pixels;
     private final int width;
     private final int[] samples = new int[15];
+    private final int[] sampleCounts = new int[15];
+    private final byte[] levels;
+    private final int columns;
+    private int lastVx = -1, lastVy, lastVw, lastVh;
+    private boolean adaptive;
+
+    boolean adaptive() { return adaptive; }
+    void setAdaptive(boolean value) {
+        adaptive = value;
+        java.util.Arrays.fill(levels, (byte) 0);
+    }
 
     AsciiRenderer(int width, int height) {
         this.width = width;
         pixels = new int[width * height];
+        columns = (width + 3) / 4;
+        levels = new byte[columns * ((height + 5) / 6)];
     }
 
-    // Fixed render-pixel cells: increasing internal resolution adds symbols.
-    // Only the world viewport is converted; the shell composites UI afterward.
+    // Fixed render-pixel cells in uniform mode; depth mode groups distant cells.
     void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh) {
-        int right = vx + vw;
-        int bottom = vy + vh;
-        int cellW = 4;
-        int cellH = 6;
-        for (int cy = vy; cy < bottom; cy += cellH) {
-            int yEnd = Math.min(cy + cellH, bottom);
-            for (int cx = vx; cx < right; cx += cellW) {
-                int xEnd = Math.min(cx + cellW, right);
-                int red = 0, green = 0, blue = 0;
-                int darkest = 255, lightest = 0;
-                for (int y = cy; y < yEnd; y++) {
-                    for (int x = cx; x < xEnd; x++) {
-                        int rgb = palette[source[y * width + x] & 255];
-                        red += (rgb >>> 16) & 255;
-                        green += (rgb >>> 8) & 255;
-                        blue += rgb & 255;
-                        if (x - cx < 3 && y - cy < 5) {
-                            int value = (77 * ((rgb >>> 16) & 255)
-                                    + 150 * ((rgb >>> 8) & 255) + 29 * (rgb & 255)) >>> 8;
-                            samples[(y - cy) * 3 + x - cx] = value;
-                            darkest = Math.min(darkest, value);
-                            lightest = Math.max(lightest, value);
-                        }
-                    }
+        render(source, palette, vx, vy, vw, vh, null);
+    }
+
+    void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh, int[] depth) {
+        int right = vx + vw, bottom = vy + vh;
+        if (!adaptive || depth == null) {
+            for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
+                drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), 1);
+            }
+            return;
+        }
+        if (vx != lastVx || vy != lastVy || vw != lastVw || vh != lastVh) {
+            java.util.Arrays.fill(levels, (byte) 0);
+            lastVx = vx; lastVy = vy; lastVw = vw; lastVh = vh;
+        }
+        // Nearest depth wins, including one-pixel foreground edges and weapon posts.
+        for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
+            int nearest = Integer.MAX_VALUE;
+            for (int yy = y; yy < Math.min(y + 6, bottom); yy++) {
+                for (int xx = x; xx < Math.min(x + 4, right); xx++) {
+                    nearest = Math.min(nearest, depth[yy * width + xx]);
                 }
-                int count = (xEnd - cx) * (yEnd - cy);
-                red /= count;
-                green /= count;
-                blue /= count;
-                int luminance = (77 * red + 150 * green + 29 * blue) >>> 8;
-                // Sparse glyphs already reduce brightness. Lift their ink and
-                // density so shadowed Doom rooms do not become nearly black twice.
-                int density = (int) Math.sqrt(luminance * 255);
-                int glyphIndex;
-                if (lightest - darkest >= 48 && xEnd - cx >= 3 && yEnd - cy >= 5) {
-                    int threshold = (darkest + lightest) / 2;
-                    int pattern = 0;
-                    for (int sample : samples) pattern = (pattern << 1) | (sample > threshold ? 1 : 0);
-                    glyphIndex = SHAPE_GLYPHS[pattern];
-                } else {
-                    glyphIndex = TONE_GLYPHS[density];
+            }
+            int index = ((y - vy) / 6) * columns + (x - vx) / 4;
+            int previous = levels[index];
+            // Refine immediately; require extra distance before becoming coarser.
+            levels[index] = (byte) (nearest < (previous == 0 ? 224 : 192) ? 0
+                    : nearest < (previous < 2 ? 896 : 768) ? 1 : 2);
+        }
+        for (int y = vy; y < bottom; y += 24) for (int x = vx; x < right; x += 16) {
+            drawRegion(source, palette, x, y, right, bottom, vx, vy, 4);
+        }
+    }
+
+    private void drawRegion(byte[] source, int[] palette, int x, int y,
+                            int right, int bottom, int vx, int vy, int scale) {
+        int xEnd = Math.min(x + 4 * scale, right), yEnd = Math.min(y + 6 * scale, bottom);
+        int required = scale == 4 ? 2 : scale == 2 ? 1 : 0;
+        boolean split = false;
+        for (int yy = y; yy < yEnd; yy += 6) for (int xx = x; xx < xEnd; xx += 4) {
+            if (levels[((yy - vy) / 6) * columns + (xx - vx) / 4] < required) split = true;
+        }
+        if (split && scale > 1) {
+            int half = scale / 2;
+            for (int yy = y; yy < yEnd; yy += 6 * half) for (int xx = x; xx < xEnd; xx += 4 * half) {
+                drawRegion(source, palette, xx, yy, xEnd, yEnd, vx, vy, half);
+            }
+        } else {
+            drawCell(source, palette, x, y, xEnd, yEnd, scale);
+        }
+    }
+
+    private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int scale) {
+        int red = 0, green = 0, blue = 0;
+        int darkest = 255, lightest = 0;
+        java.util.Arrays.fill(samples, 0);
+        java.util.Arrays.fill(sampleCounts, 0);
+        for (int y = cy; y < yEnd; y++) {
+            for (int x = cx; x < xEnd; x++) {
+                int rgb = palette[source[y * width + x] & 255];
+                red += (rgb >>> 16) & 255;
+                green += (rgb >>> 8) & 255;
+                blue += rgb & 255;
+                if ((x - cx) / scale < 3 && (y - cy) / scale < 5) {
+                    int value = (77 * ((rgb >>> 16) & 255)
+                            + 150 * ((rgb >>> 8) & 255) + 29 * (rgb & 255)) >>> 8;
+                    int sample = ((y - cy) / scale) * 3 + (x - cx) / scale;
+                    samples[sample] += value;
+                    sampleCounts[sample]++;
                 }
-                int[] glyph = GLYPHS[glyphIndex];
-                int peak = Math.max(red, Math.max(green, blue));
-                if (peak > 0 && peak < 192) {
-                    red = red * 192 / peak;
-                    green = green * 192 / peak;
-                    blue = blue * 192 / peak;
-                }
-                int ink = 0xff000000 | (red << 16) | (green << 8) | blue;
-                for (int y = cy; y < yEnd; y++) {
-                    int gy = y - cy;
-                    for (int x = cx; x < xEnd; x++) {
-                        int gx = x - cx;
-                        boolean on = gy < 5 && gx < 3 && (glyph[gy] & (4 >> gx)) != 0;
-                        pixels[y * width + x] = on ? ink : 0xff000000;
-                    }
-                }
+            }
+        }
+        for (int i = 0; i < samples.length; i++) {
+            if (sampleCounts[i] > 0) samples[i] /= sampleCounts[i];
+            darkest = Math.min(darkest, samples[i]);
+            lightest = Math.max(lightest, samples[i]);
+        }
+        int count = (xEnd - cx) * (yEnd - cy);
+        red /= count;
+        green /= count;
+        blue /= count;
+        int luminance = (77 * red + 150 * green + 29 * blue) >>> 8;
+        // Sparse glyphs already reduce brightness. Lift their ink and
+        // density so shadowed Doom rooms do not become nearly black twice.
+        int density = (int) Math.sqrt(luminance * 255);
+        int glyphIndex;
+        if (lightest - darkest >= 48 && xEnd - cx >= 3 * scale && yEnd - cy >= 5 * scale) {
+            int threshold = (darkest + lightest) / 2;
+            int pattern = 0;
+            for (int sample : samples) pattern = (pattern << 1) | (sample > threshold ? 1 : 0);
+            glyphIndex = SHAPE_GLYPHS[pattern];
+        } else {
+            glyphIndex = TONE_GLYPHS[density];
+        }
+        int[] glyph = GLYPHS[glyphIndex];
+        int peak = Math.max(red, Math.max(green, blue));
+        if (peak > 0 && peak < 192) {
+            red = red * 192 / peak;
+            green = green * 192 / peak;
+            blue = blue * 192 / peak;
+        }
+        int ink = 0xff000000 | (red << 16) | (green << 8) | blue;
+        for (int y = cy; y < yEnd; y++) {
+            int gy = (y - cy) / scale;
+            for (int x = cx; x < xEnd; x++) {
+                int gx = (x - cx) / scale;
+                boolean on = gy < 5 && gx < 3 && (glyph[gy] & (4 >> gx)) != 0;
+                pixels[y * width + x] = on ? ink : 0xff000000;
             }
         }
     }

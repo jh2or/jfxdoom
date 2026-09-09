@@ -26,11 +26,14 @@ class AsciiRendererTest {
         for (int scale = 1; scale <= 4; scale++) {
             int w = 13 * scale, h = 15 * scale;
             AsciiRenderer renderer = new AsciiRenderer(w, h);
+            renderer.setAdaptive(true);
+            int[] depth = new int[w * h];
+            Arrays.fill(depth, Integer.MAX_VALUE);
             byte[] source = new byte[w * h];
             int[] palette = new int[256];
             palette[0] = 0xffff0000;
             Arrays.fill(renderer.pixels, 0x12345678);
-            renderer.render(source, palette, scale, scale, 9 * scale, 11 * scale);
+            renderer.render(source, palette, scale, scale, 9 * scale, 11 * scale, depth);
             int inkCount = 0;
             for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
                 int pixel = renderer.pixels[y * w + x];
@@ -43,7 +46,7 @@ class AsciiRendererTest {
             }
             assertTrue(inkCount > 0);
             palette[0] = 0xff000000;
-            renderer.render(source, palette, scale, scale, 9 * scale, 11 * scale);
+            renderer.render(source, palette, scale, scale, 9 * scale, 11 * scale, depth);
             assertEquals(0xff000000, renderer.pixels[2 * scale * w + 2 * scale], "No stale glyph pixels");
         }
     }
@@ -110,6 +113,55 @@ class AsciiRendererTest {
             patterns.add(pattern.toString());
         }
         assertTrue(patterns.size() >= 30, "At least 30 distinct glyph shapes across the tone ramp");
+    }
+
+    @Test void depthDensityGroupsDistantCellsAndToggleRestoresUniformOutput() {
+        int w = 48, h = 24;
+        byte[] source = new byte[w * h];
+        int[] palette = new int[256];
+        palette[0] = 0xffffffff;
+        int[] depth = new int[w * h];
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            depth[y * w + x] = x < 16 ? 64 : x < 32 ? 400 : 1500;
+        }
+        AsciiRenderer renderer = new AsciiRenderer(w, h);
+        renderer.render(source, palette, 0, 0, w, h);
+        int[] uniform = renderer.pixels.clone();
+        renderer.setAdaptive(true);
+        renderer.render(source, palette, 0, 0, w, h, depth);
+        int columns = 0;
+        for (int x = 0; x < w; x++) if (renderer.pixels[x] == 0xffffffff
+                && (x == 0 || renderer.pixels[x - 1] == 0xff000000)) columns++;
+        assertEquals(7, columns, "Four near, two medium, one far glyph");
+        renderer.setAdaptive(false);
+        renderer.render(source, palette, 0, 0, w, h, depth);
+        assertArrayEquals(uniform, renderer.pixels);
+    }
+
+    @Test void foregroundPixelForcesFineCellAndThresholdMarginPreventsChatter() {
+        AsciiRenderer renderer = new AsciiRenderer(16, 24);
+        byte[] source = new byte[16 * 24];
+        int[] depth = new int[source.length], palette = new int[256];
+        palette[0] = 0xffffffff;
+        renderer.setAdaptive(true);
+        Arrays.fill(depth, 1500);
+        depth[0] = 0; // One visible near/weapon pixel must prevent a coarse block.
+        renderer.render(source, palette, 0, 0, 16, 24, depth);
+        assertEquals(0xff000000, renderer.pixels[3], "Fine-cell gutter, not an enlarged foreground glyph");
+        renderer.setAdaptive(true);
+        Arrays.fill(depth, 180);
+        renderer.render(source, palette, 0, 0, 16, 24, depth);
+        int[] near = renderer.pixels.clone();
+        Arrays.fill(depth, 205);
+        renderer.render(source, palette, 0, 0, 16, 24, depth);
+        assertArrayEquals(near, renderer.pixels, "Small movements across the boundary must retain density");
+        Arrays.fill(depth, 250);
+        renderer.render(source, palette, 0, 0, 16, 24, depth);
+        assertFalse(Arrays.equals(near, renderer.pixels));
+        int[] medium = renderer.pixels.clone();
+        Arrays.fill(depth, 205);
+        renderer.render(source, palette, 0, 0, 16, 24, depth);
+        assertArrayEquals(medium, renderer.pixels);
     }
 
     @Test void asciiModeUsesOnlyTheSoftwarePath() {

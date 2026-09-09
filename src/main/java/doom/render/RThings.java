@@ -753,7 +753,9 @@ public final class RThings {
             vis.colormapOfs = spritelights[RMain.MAXLIGHTSCALE - 1];
         }
 
-        rDrawVisSprite(vis, vis.x1, vis.x2);
+        RenderDepth.weapon = true;
+        try { rDrawVisSprite(vis, vis.x1, vis.x2); }
+        finally { RenderDepth.weapon = false; }
     }
 
 

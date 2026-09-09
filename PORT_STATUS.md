@@ -7,6 +7,24 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## Optional depth-dependent ASCII density (2026-09-09)
+
+- Added default-off Launchpad checkbox, `-ascii -ascii-depth` CLI selection and
+  an ASCII-only F12 toggle with repeat suppression. Disabling frees depth data;
+  relaunch/shutdown clears capture state.
+- `RenderDepth` records visible forward depth in map units alongside software
+  columns/spans, including masked sprites, translated/fuzz pixels and low-detail
+  drawing. Sky is far; weapon posts override depth to zero. No color writes or
+  playsim data were changed. Depth is derived from projection/texture scale for
+  columns and the existing plane-distance calculation for spans.
+- ASCII subdivides aligned 16×24 blocks into 8×12 or 4×6 cells using nearest
+  visible depth. Nominal thresholds are 192 and 768 map units; coarsening waits
+  until 224/896 to reduce threshold chatter. Near pixels prevent larger cells
+  from swallowing foreground detail. Partial viewport cells are clipped.
+- Demo validation compares both actor state and color-frame checksums with
+  capture on/off. Tests cover scale/detail independence, sky/weapon override,
+  partial cells, density bands, hysteresis and uniform-mode restoration.
+
 ## ASCII renderer (2026-09-09)
 
 - Added an optional third renderer to the Launchpad and CLI (`-ascii`). It

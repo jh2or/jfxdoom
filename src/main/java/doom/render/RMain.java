@@ -737,6 +737,7 @@ public final class RMain {
     // r_main.c lines 870–898.
     public static void rRenderPlayerView(Player player) {
         rSetupFrame(player);
+        RenderDepth.beginFrame();
 
         // Clear buffers.
         RBsp.rClearClipSegs();
