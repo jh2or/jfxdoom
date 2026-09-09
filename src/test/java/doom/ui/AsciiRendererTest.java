@@ -122,7 +122,7 @@ class AsciiRendererTest {
         palette[0] = 0xffffffff;
         int[] depth = new int[w * h];
         int[] distances = {64, 260, 420, 640, 880, 1200, 1500, 1900, 2400, 3000};
-        int[] intensities = {255, 234, 213, 191, 170, 149, 128, 106, 85, 64};
+        int[] intensities = {255, 235, 214, 194, 173, 153, 133, 112, 92, 71};
         AsciiRenderer renderer = new AsciiRenderer(w, h);
         renderer.render(source, palette, 0, 0, w, h);
         int[] uniform = renderer.pixels.clone();
@@ -142,7 +142,7 @@ class AsciiRendererTest {
         assertArrayEquals(uniform, renderer.pixels);
     }
 
-    @Test void farLayerRetainsQuarterOfEachColorChannelAndNearLayerIsUnchanged() {
+    @Test void farLayerRetains28PercentOfEachColorChannelAndNearLayerIsUnchanged() {
         AsciiRenderer renderer = new AsciiRenderer(4, 6);
         byte[] source = new byte[24];
         int[] palette = new int[256], depth = new int[24];
@@ -156,7 +156,7 @@ class AsciiRendererTest {
         Arrays.fill(depth, Integer.MAX_VALUE);
         renderer.render(source, palette, 0, 0, 4, 6, depth);
         for (int i = 0; i < original.length; i++) {
-            assertEquals(original[i] == 0xff000000 ? 0xff000000 : 0xff30180c, renderer.pixels[i]);
+            assertEquals(original[i] == 0xff000000 ? 0xff000000 : 0xff361b0d, renderer.pixels[i]);
         }
     }
 
