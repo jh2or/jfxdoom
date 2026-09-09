@@ -85,7 +85,10 @@ To play in ASCII mode:
 
 Or select **ASCII (colored text)** in the Launchpad. It uses the software
 framebuffer directly, averages color and brightness per cell, and draws bitmap
-ASCII glyphs on black. Each symbol occupies 4×6 render pixels, so **Internal
+ASCII glyphs on black. A 64-glyph bitmap font includes digits, uppercase letters,
+selected lowercase forms and punctuation. Contrasting cells choose the closest
+stroke pattern; flatter cells use a richer brightness ramp. Selection is
+deterministic, with no randomized characters. Each symbol occupies 4×6 render pixels, so **Internal
 Render Resolution** controls the text density:
 
 | Internal resolution | Text columns | Rows with the status bar visible |

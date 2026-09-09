@@ -188,3 +188,13 @@ presentation branch, as requested.
 Density follow-up: all five ASCII tests passed. A live JavaFX run at internal
 3× passed and its captured 240-column world was visually inspected at a
 1280×800 display size. HUD composition remains unchanged.
+
+Glyph fidelity follow-up: the alphabet now includes 64 bitmap glyphs. Tests
+verify exact letter, digit and opposing diagonal stroke patterns, deterministic
+output after intervening frames, and at least 30 distinct shapes across a smooth
+brightness ramp. Compare textured walls, door frames and weapon outlines at
+internal 2× or 3×: letters, digits and punctuation should replace the old small
+symbol set. Flat regions use tone mapping; high-contrast cells match local
+strokes. Native motion testing remains useful for judging small-glyph readability.
+All seven focused ASCII tests passed for this change. The live JavaFX 3× run
+passed, and its captured scene was visually checked for the expanded glyph mix.

@@ -69,6 +69,49 @@ class AsciiRendererTest {
         }
     }
 
+    @Test void contrastingCellsPreserveLettersDigitsAndDirectionalStrokes() {
+        int[][] shapes = {
+                {2, 5, 7, 5, 5}, // A
+                {6, 1, 7, 4, 7}, // 2
+                {1, 1, 2, 4, 4}, // slash
+                {4, 4, 2, 1, 1}  // backslash: same brightness, different direction
+        };
+        int[] palette = new int[256];
+        palette[0] = 0xff000000;
+        palette[1] = 0xffffffff;
+        AsciiRenderer renderer = new AsciiRenderer(4, 6);
+        for (int[] shape : shapes) {
+            byte[] source = new byte[24];
+            for (int y = 0; y < 5; y++) for (int x = 0; x < 3; x++) {
+                if ((shape[y] & (4 >> x)) != 0) source[y * 4 + x] = 1;
+            }
+            renderer.render(source, palette, 0, 0, 4, 6);
+            for (int y = 0; y < 5; y++) for (int x = 0; x < 3; x++) {
+                assertEquals((shape[y] & (4 >> x)) != 0,
+                        renderer.pixels[y * 4 + x] != 0xff000000,
+                        "Preserve strokes rather than selecting by average brightness alone");
+            }
+            int[] first = renderer.pixels.clone();
+            renderer.render(new byte[24], palette, 0, 0, 4, 6);
+            renderer.render(source, palette, 0, 0, 4, 6);
+            assertArrayEquals(first, renderer.pixels, "Selection must not depend on frame history");
+        }
+    }
+
+    @Test void smoothBrightnessRampUsesMoreThanTheOriginalNineSymbols() {
+        int[] palette = new int[256];
+        java.util.Set<String> patterns = new java.util.HashSet<>();
+        AsciiRenderer renderer = new AsciiRenderer(4, 6);
+        for (int gray = 0; gray < 256; gray++) {
+            palette[0] = 0xff000000 | gray << 16 | gray << 8 | gray;
+            renderer.render(new byte[24], palette, 0, 0, 4, 6);
+            StringBuilder pattern = new StringBuilder();
+            for (int pixel : renderer.pixels) pattern.append(pixel == 0xff000000 ? '.' : '#');
+            patterns.add(pattern.toString());
+        }
+        assertTrue(patterns.size() >= 30, "At least 30 distinct glyph shapes across the tone ramp");
+    }
+
     @Test void asciiModeUsesOnlyTheSoftwarePath() {
         assertFalse(Launchpad.RendererMode.ASCII.usesFx3());
         assertFalse(Launchpad.RendererMode.ASCII.sideBySide());
