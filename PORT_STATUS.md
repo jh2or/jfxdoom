@@ -7,6 +7,23 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## Separate ASCII sprite alphabet (2026-09-09)
+
+- Split the 64-glyph font into disjoint sprite (`0123456789iltx!?*%`) and
+  geometry (uppercase letters and remaining punctuation) tables, each with
+  deterministic tone and stroke matching. Cell size and depth fading are unchanged.
+- Added optional visible-pixel sprite provenance alongside software raster writes.
+  Transparent sprite gaps retain the underlying surface; later geometry writes
+  clear sprite tags. Normal, translated, fuzz and weapon sprites are covered.
+- Sprite pixels take priority in mixed cells and alone determine their color.
+  This can expand a thin silhouette to its containing 4×6 cell.
+- Capture runs only in ASCII mode, independently of F12/depth capture, reuses one
+  boolean per render pixel, and releases its buffer when leaving the renderer.
+- Full suite: 1,026 tests, zero failures/errors, 11 skipped. Added disjoint glyph,
+  thin-sprite color and mask lifecycle checks; demo state/frame checksums match
+  with metadata enabled and disabled. Live JavaFX smoke passed at 3×, including
+  F12 off/on with sprite capture remaining active.
+
 ## ASCII diagonal brightness artifact (2026-09-09)
 
 - Reproduced with a uniform 4× glyph texture (1280×800), without game geometry

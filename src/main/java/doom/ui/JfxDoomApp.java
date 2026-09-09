@@ -268,6 +268,8 @@ public final class JfxDoomApp extends Application {
         lastAsciiDepth = java.util.Arrays.asList(args).contains("-ascii-depth");
         asciiDepthKeyHeld = false;
         doom.render.RenderDepth.disable();
+        doom.render.RenderSpriteMask.disable();
+        doom.render.RenderSpriteMask.enabled = ascii != null;
         if (ascii != null) {
             ascii.setAdaptive(lastAsciiDepth);
             doom.render.RenderDepth.enabled = lastAsciiDepth;
@@ -474,7 +476,8 @@ public final class JfxDoomApp extends Application {
             // composite).
             if (swSurface != null) {
                 if (ascii != null && viewActive) {
-                    ascii.render(view, palette, vx, vy, vw, vh, doom.render.RenderDepth.pixels);
+                    ascii.render(view, palette, vx, vy, vw, vh, doom.render.RenderDepth.pixels,
+                            doom.render.RenderSpriteMask.pixels);
                 }
                 compositeSoftware(swSurface.argb, ui, view, viewActive,
                         vx, vy, vw, vh, renderW, renderH, rm,
@@ -621,6 +624,7 @@ public final class JfxDoomApp extends Application {
     // screen if the WAD carries one (DOS doom.exe painted it into
     // VGA text mode on exit), and swap back to a fresh Launchpad.
     private void returnToLauncher(Stage stage) {
+        doom.render.RenderSpriteMask.disable();
         doom.render.RenderDepth.disable();
         if (animationTimer != null) {
             animationTimer.stop();
@@ -850,6 +854,7 @@ public final class JfxDoomApp extends Application {
 
     @Override
     public void stop() {
+        doom.render.RenderSpriteMask.disable();
         doom.render.RenderDepth.disable();
         // Window close → real exit. shuttingDown short-circuits
         // the quit hook so it doesn't try to re-show the launcher.

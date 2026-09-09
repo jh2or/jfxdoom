@@ -406,6 +406,13 @@ public final class RThings {
     //
     // r_things.c lines 396–443.
     public static void rDrawVisSprite(Vissprite vis, int x1, int x2) {
+        boolean previous = RenderSpriteMask.sprite;
+        RenderSpriteMask.sprite = true;
+        try { drawVisSpritePixels(vis, x1, x2); }
+        finally { RenderSpriteMask.sprite = previous; }
+    }
+
+    private static void drawVisSpritePixels(Vissprite vis, int x1, int x2) {
         int texturecolumn;
         int frac;
         byte[] patch;

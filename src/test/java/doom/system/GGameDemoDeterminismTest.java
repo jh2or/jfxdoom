@@ -36,6 +36,7 @@ class GGameDemoDeterminismTest {
             assertTrue(Doomstat.respawnmonsters, "A non-Nightmare demo must retain requested respawning");
         } finally {
             doom.render.RenderDepth.disable();
+            doom.render.RenderSpriteMask.disable();
             Doomstat.demoplayback = false;
             Doomstat.fastparm = false;
             Doomstat.respawnparm = false;
@@ -48,6 +49,7 @@ class GGameDemoDeterminismTest {
 
     private List<String> playDemo(boolean depth) {
         doom.render.RenderDepth.enabled = depth;
+        doom.render.RenderSpriteMask.enabled = depth;
         doom.render.RDraw.fuzzpos = 0;
         Doomstat.paused = false;
         doom.ui.MMenu.menuactive = false;

@@ -252,3 +252,21 @@ OpenGL pipeline. Native retest: use internal 4× at the affected window/fullscre
 size and toggle F12; neither mode should have triangular shading. Compare 2×/3×,
 resize the window, and check any HiDPI monitor configuration. Fractional scaling
 slightly softens glyph edges to remove unstable nearest-neighbor sampling.
+
+## Distinct ASCII sprite symbols
+
+Launch ASCII mode and walk toward monsters or pickups, then fire while turning.
+Sprites (including the held weapon and flashes) use `0123456789iltx!?*%`;
+geometry uses uppercase letters and other punctuation. Check that sprites remain
+recognizable against walls and that their old locations leave no sprite symbols
+behind. Check partially occluded monsters and thin projectiles: a mixed 4×6 cell
+uses the visible sprite's color and alphabet. Toggle F12: only depth fading should
+change, with the separate alphabets active in both states. Repeat at your usual
+internal resolution and fullscreen setting to judge readability in motion.
+
+Automated coverage checks disjoint alphabets and rendered tone patterns,
+thin-sprite color preservation, clearing/overwriting sprite metadata, and unchanged
+software frame checksums and gameplay in demo playback. The full suite passed
+(1,026 tests, 11 skipped, zero failures/errors). A live JavaFX 3× smoke run detected
+15,726 visible sprite pixels and passed F12 off/on and key-repeat checks while
+sprite capture stayed enabled. Native motion/readability still needs playtesting.

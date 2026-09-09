@@ -71,20 +71,33 @@ final class AsciiRenderer {
             {2, 7, 2, 2, 3}, // t
             {0, 0, 5, 2, 5} // x
     };
-    // Flat regions use a tone ramp; structured cells choose matching strokes.
+    // Disjoint alphabets: digits/lowercase/effect marks identify sprites;
+    // uppercase letters and the remaining punctuation describe the level.
+    static final String SPRITE_CHARACTERS = "0123456789iltx!?*%";
+    static final String GEOMETRY_CHARACTERS = geometryCharacters();
     private static final String TONES = " .,:;!i-lI+1tYJx/()<>?C24VZEF3A5PHK69G0BDRUQMWN8#@";
-    private static final int[] TONE_GLYPHS = buildToneLookup();
-    private static final int[] SHAPE_GLYPHS = buildShapeLookup();
+    private static final int[][] TONE_GLYPHS = {
+            buildToneLookup(GEOMETRY_CHARACTERS), buildToneLookup(SPRITE_CHARACTERS)};
+    private static final int[][] SHAPE_GLYPHS = {
+            buildShapeLookup(GEOMETRY_CHARACTERS), buildShapeLookup(SPRITE_CHARACTERS)};
 
-    private static int[] buildToneLookup() {
+    private static String geometryCharacters() {
+        StringBuilder result = new StringBuilder();
+        for (char c : CHARACTERS.toCharArray()) if (SPRITE_CHARACTERS.indexOf(c) < 0) result.append(c);
+        return result.toString();
+    }
+
+    private static int[] buildToneLookup(String alphabet) {
+        StringBuilder ramp = new StringBuilder();
+        for (char c : TONES.toCharArray()) if (alphabet.indexOf(c) >= 0) ramp.append(c);
         int[] lookup = new int[256];
         for (int level = 0; level < lookup.length; level++) {
-            lookup[level] = CHARACTERS.indexOf(TONES.charAt(level * TONES.length() / 256));
+            lookup[level] = CHARACTERS.indexOf(ramp.charAt(level * ramp.length() / 256));
         }
         return lookup;
     }
 
-    private static int[] buildShapeLookup() {
+    private static int[] buildShapeLookup(String alphabet) {
         int[] masks = new int[GLYPHS.length];
         for (int g = 0; g < GLYPHS.length; g++) {
             for (int row : GLYPHS[g]) masks[g] = (masks[g] << 3) | row;
@@ -93,6 +106,7 @@ final class AsciiRenderer {
         for (int pattern = 0; pattern < lookup.length; pattern++) {
             int best = 16;
             for (int g = 0; g < masks.length; g++) {
+                if (alphabet.indexOf(CHARACTERS.charAt(g)) < 0) continue;
                 int difference = Integer.bitCount(pattern ^ masks[g]);
                 if (difference < best) {
                     best = difference;
@@ -132,10 +146,14 @@ final class AsciiRenderer {
     }
 
     void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh, int[] depth) {
+        render(source, palette, vx, vy, vw, vh, depth, null);
+    }
+
+    void render(byte[] source, int[] palette, int vx, int vy, int vw, int vh, int[] depth, boolean[] spriteMask) {
         int right = vx + vw, bottom = vy + vh;
         if (!adaptive || depth == null) {
             for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
-                drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), 0);
+                drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), 0, spriteMask);
             }
             return;
         }
@@ -165,18 +183,28 @@ final class AsciiRenderer {
         }
         for (int y = vy; y < bottom; y += 6) for (int x = vx; x < right; x += 4) {
             int index = ((y - vy) / 6) * columns + (x - vx) / 4;
-            drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), levels[index]);
+            drawCell(source, palette, x, y, Math.min(x + 4, right), Math.min(y + 6, bottom), levels[index], spriteMask);
         }
     }
 
-    private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int level) {
+    private void drawCell(byte[] source, int[] palette, int cx, int cy, int xEnd, int yEnd, int level, boolean[] spriteMask) {
+        int spriteCount = 0;
+        if (spriteMask != null) {
+            for (int y = cy; y < yEnd; y++) for (int x = cx; x < xEnd; x++) {
+                if (spriteMask[y * width + x]) spriteCount++;
+            }
+        }
+        int table = spriteCount > 0 ? 1 : 0;
         int red = 0, green = 0, blue = 0;
         int darkest = 255, lightest = 0;
         java.util.Arrays.fill(samples, 0);
         java.util.Arrays.fill(sampleCounts, 0);
         for (int y = cy; y < yEnd; y++) {
             for (int x = cx; x < xEnd; x++) {
-                int rgb = palette[source[y * width + x] & 255];
+                // A thin sprite/effect wins its cell; average only its visible
+                // pixels so background geometry cannot wash out its color.
+                boolean belongs = table == 0 || spriteMask[y * width + x];
+                int rgb = belongs ? palette[source[y * width + x] & 255] : 0;
                 red += (rgb >>> 16) & 255;
                 green += (rgb >>> 8) & 255;
                 blue += rgb & 255;
@@ -194,7 +222,7 @@ final class AsciiRenderer {
             darkest = Math.min(darkest, samples[i]);
             lightest = Math.max(lightest, samples[i]);
         }
-        int count = (xEnd - cx) * (yEnd - cy);
+        int count = table == 1 ? spriteCount : (xEnd - cx) * (yEnd - cy);
         red /= count;
         green /= count;
         blue /= count;
@@ -207,9 +235,9 @@ final class AsciiRenderer {
             int threshold = (darkest + lightest) / 2;
             int pattern = 0;
             for (int sample : samples) pattern = (pattern << 1) | (sample > threshold ? 1 : 0);
-            glyphIndex = SHAPE_GLYPHS[pattern];
+            glyphIndex = SHAPE_GLYPHS[table][pattern];
         } else {
-            glyphIndex = TONE_GLYPHS[density];
+            glyphIndex = TONE_GLYPHS[table][density];
         }
         int[] glyph = GLYPHS[glyphIndex];
         int peak = Math.max(red, Math.max(green, blue));

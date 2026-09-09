@@ -85,10 +85,12 @@ class AsciiRendererTest {
         AsciiRenderer renderer = new AsciiRenderer(4, 6);
         for (int[] shape : shapes) {
             byte[] source = new byte[24];
+            boolean[] mask = new boolean[24];
+            Arrays.fill(mask, shape == shapes[1]);
             for (int y = 0; y < 5; y++) for (int x = 0; x < 3; x++) {
                 if ((shape[y] & (4 >> x)) != 0) source[y * 4 + x] = 1;
             }
-            renderer.render(source, palette, 0, 0, 4, 6);
+            renderer.render(source, palette, 0, 0, 4, 6, null, mask);
             for (int y = 0; y < 5; y++) for (int x = 0; x < 3; x++) {
                 assertEquals((shape[y] & (4 >> x)) != 0,
                         renderer.pixels[y * 4 + x] != 0xff000000,
@@ -96,7 +98,7 @@ class AsciiRendererTest {
             }
             int[] first = renderer.pixels.clone();
             renderer.render(new byte[24], palette, 0, 0, 4, 6);
-            renderer.render(source, palette, 0, 0, 4, 6);
+            renderer.render(source, palette, 0, 0, 4, 6, null, mask);
             assertArrayEquals(first, renderer.pixels, "Selection must not depend on frame history");
         }
     }
@@ -212,6 +214,52 @@ class AsciiRendererTest {
             boolean on = x < 3 && (rows[y] & (4 >> x)) != 0;
             assertEquals(on ? 0xffffffff : 0xff000000, renderer.pixels[(cellY + y) * w + cellX + x]);
         }
+    }
+
+    @Test void spriteAndGeometryAlphabetsAndRenderedToneShapesAreDisjoint() {
+        for (char c : AsciiRenderer.SPRITE_CHARACTERS.toCharArray()) {
+            assertFalse(AsciiRenderer.GEOMETRY_CHARACTERS.indexOf(c) >= 0);
+        }
+        AsciiRenderer renderer = new AsciiRenderer(4, 6);
+        byte[] source = new byte[24];
+        boolean[] mask = new boolean[24];
+        int[] palette = new int[256];
+        java.util.Set<String> geometry = new java.util.HashSet<>(), sprites = new java.util.HashSet<>();
+        for (int gray = 32; gray < 256; gray++) {
+            palette[0] = 0xff000000 | gray << 16 | gray << 8 | gray;
+            for (int type = 0; type < 2; type++) {
+                Arrays.fill(mask, type == 1);
+                renderer.render(source, palette, 0, 0, 4, 6, null, mask);
+                StringBuilder pattern = new StringBuilder();
+                for (int pixel : renderer.pixels) pattern.append(pixel == 0xff000000 ? '.' : '#');
+                (type == 0 ? geometry : sprites).add(pattern.toString());
+            }
+        }
+        assertTrue(sprites.size() >= 10, "Sprites use a varied glyph set even with depth fading off");
+        assertTrue(java.util.Collections.disjoint(geometry, sprites), "Disjoint characters must also look different");
+    }
+
+    @Test void thinSpriteCellKeepsSpriteColorRatherThanAveragingBackground() {
+        AsciiRenderer renderer = new AsciiRenderer(4, 6);
+        byte[] source = new byte[24];
+        source[0] = 1;
+        boolean[] mask = new boolean[24];
+        mask[0] = true;
+        int[] palette = new int[256];
+        palette[0] = 0xff0000ff;
+        palette[1] = 0xffff0000;
+        renderer.render(source, palette, 0, 0, 4, 6, null, mask);
+        int[] sprite = renderer.pixels.clone();
+        assertTrue(Arrays.stream(sprite).anyMatch(p -> p == 0xffff0000));
+        for (int p : sprite) assertTrue(p == 0xff000000 || p == 0xffff0000);
+        palette[0] = 0xffffffff;
+        renderer.render(source, palette, 0, 0, 4, 6, null, mask);
+        assertArrayEquals(sprite, renderer.pixels, "Background changes must not wash out a sprite");
+        Arrays.fill(mask, false);
+        renderer.render(source, palette, 0, 0, 4, 6, null, mask);
+        int[] geometry = renderer.pixels.clone();
+        renderer.render(source, palette, 0, 0, 4, 6);
+        assertArrayEquals(geometry, renderer.pixels, "Cleared mask restores geometry selection");
     }
 
     @Test void asciiModeUsesOnlyTheSoftwarePath() {

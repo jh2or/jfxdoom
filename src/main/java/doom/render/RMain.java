@@ -738,6 +738,7 @@ public final class RMain {
     public static void rRenderPlayerView(Player player) {
         rSetupFrame(player);
         RenderDepth.beginFrame();
+        RenderSpriteMask.beginFrame();
 
         // Clear buffers.
         RBsp.rClearClipSegs();

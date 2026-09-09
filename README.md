@@ -86,7 +86,12 @@ To play in ASCII mode:
 Or select **ASCII (colored text)** in the Launchpad. It uses the software
 framebuffer directly, averages color and brightness per cell, and draws bitmap
 ASCII glyphs on black. A 64-glyph bitmap font includes digits, uppercase letters,
-selected lowercase forms and punctuation. Contrasting cells choose the closest
+selected lowercase forms and punctuation, split into disjoint alphabets. Sprites
+(monsters, pickups, projectiles, weapons and flashes) use `0123456789iltx!?*%`;
+level geometry uses uppercase letters and the remaining punctuation. Visible
+sprite pixels take priority in mixed cells and supply their color, keeping thin
+effects distinct from their background. This applies with depth fading on or off.
+Contrasting cells choose the closest
 stroke pattern; flatter cells use a richer brightness ramp. Selection is
 deterministic, with no randomized characters. Each symbol occupies 4×6 render pixels, so **Internal
 Render Resolution** controls the text density:

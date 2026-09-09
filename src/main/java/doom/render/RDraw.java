@@ -173,6 +173,7 @@ public final class RDraw {
         byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
         RenderDepth.column(destIdx, count + 1);
+        RenderSpriteMask.column(destIdx, count + 1);
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
@@ -217,8 +218,10 @@ public final class RDraw {
         byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
         RenderDepth.column(destIdx, count + 1);
+        RenderSpriteMask.column(destIdx, count + 1);
         int dest2Idx = ylookup[dcYl] + columnofs[dcX + 1];
         RenderDepth.column(dest2Idx, count + 1);
+        RenderSpriteMask.column(dest2Idx, count + 1);
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
@@ -265,6 +268,7 @@ public final class RDraw {
         byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
         RenderDepth.column(destIdx, count + 1);
+        RenderSpriteMask.column(destIdx, count + 1);
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
@@ -302,6 +306,7 @@ public final class RDraw {
         byte[] screen = VVideo.viewBuffer;
         int destIdx = ylookup[dcYl] + columnofs[dcX];
         RenderDepth.column(destIdx, count + 1);
+        RenderSpriteMask.column(destIdx, count + 1);
 
         int fracstep = dcIscale;
         int frac = dcTexturemid + (dcYl - RMain.centery) * fracstep;
@@ -355,6 +360,7 @@ public final class RDraw {
 
         int count = dsX2 - dsX1;
         RenderDepth.span(destIdx, count + 1);
+        RenderSpriteMask.span(destIdx, count + 1);
 
         do {
             // Current texture index in u,v.
@@ -388,6 +394,7 @@ public final class RDraw {
 
         int count = dsX2 - dsX1;
         RenderDepth.span(destIdx, 2 * (count + 1));
+        RenderSpriteMask.span(destIdx, 2 * (count + 1));
         do {
             int spot = ((yfrac >> (16 - 6)) & (63 * 64)) + ((xfrac >> 16) & 63);
             byte v = dsColormap[dsColormapOfs + (dsSource[dsSourceOfs + spot] & 0xFF)];
