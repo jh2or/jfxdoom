@@ -153,3 +153,31 @@ bash ./gradlew run --args='-iwad reference-wads/DOOM.WAD -warp 1 1'
 - Other pre-existing scope gaps remain: multiplayer, mouse/joystick input,
   optional graphics precaching, and the object-removal sound-stop call. This review's
   fixes do not constitute a complete vanilla-compatibility certification.
+
+## ASCII renderer
+
+Run `./gradlew test --max-workers=2`. `AsciiRendererTest` checks exact bitmap
+output, palette color, input immutability, scales 1–4, partial-cell clipping,
+replacement of previous glyphs, software-only mode selection, UI overlays and
+non-world bypass. The original demo-determinism suite still runs unchanged.
+
+Launch `./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -ascii"`,
+or choose ASCII in the Launchpad. Walk, turn and fire: walls, sprites and weapon
+should consist of colored glyphs on black. Check HUD text, menus and automap
+remain normal graphics. Test windowed/fullscreen, internal scales 1–4, reduced
+view size (+/−), level transitions, quit and relaunch into the other renderers.
+ASCII is a software post-process; it still incurs the original software render
+cost. The glyph grid deliberately stays at 80 columns for a full-width view.
+
+Branch layout: `feat/rest-of-todo` was restored to `3a9d4e7`; the two subsequent
+presentation fixes are preserved on `fix/fullscreen-presentation`. ASCII work
+starts at the restored base on `feat/ascii-renderer`, so its 35 Hz presentation
+and any pre-existing base-branch issues remain until separately integrated.
+
+Validation: 1,013 tests, 1,003 passed and 10 optional diagnostics skipped.
+The actual JavaFX ASCII scene was captured and inspected; glyph contrast was
+adjusted after the first capture showed excessive darkness. A virtual-display
+smoke check passed live ticks, menu open/close, quit scene, WAD cleanup and timer
+shutdown. Native fullscreen performance remains a manual check. The baseline's
+known oversized quit-message warning can still occur; its fix is on the separate
+presentation branch, as requested.

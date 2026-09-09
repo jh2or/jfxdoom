@@ -7,6 +7,19 @@ The module table describes implemented scope. Known gaps and integrated review
 fixes are tracked below; a historical `Verified` label does not override
 those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
 
+## ASCII renderer (2026-09-09)
+
+- Added an optional third renderer to the Launchpad and CLI (`-ascii`). It
+  converts the palette-indexed software world and weapon into colored bitmap
+  glyphs before UI composition. No JavaFX snapshot, GPU readback, platform font,
+  or engine-state changes are involved. Buffers are reused across frames.
+- Logical 4×6 cells yield 80 columns across a full-width view; internal scaling
+  keeps the same text grid. Partial cells clip to the current viewport.
+- HUD/menu overlays, automap and non-level screens retain their original art.
+  Existing software, FX3 and comparison modes retain their behavior.
+- This branch is based on `3a9d4e7`. The later interpolation and artifact fixes
+  live separately on `fix/fullscreen-presentation` and are not included here.
+
 ## Legend
 
 - **Class** — `class = file prefix (PascalCase), method = camelCase of the rest` (CLAUDE.md §2).

@@ -71,6 +71,7 @@ public final class Launchpad {
     public enum RendererMode {
         SOFTWARE("Software (faithful)"),
         FX3D("JavaFX 3D (experimental)"),
+        ASCII("ASCII (colored text)"),
         SBS_H("Side-by-side (software | 3D)"),
         SBS_V("Stacked (software / 3D)");
 
@@ -78,7 +79,7 @@ public final class Launchpad {
 
         RendererMode(String label) { this.label = label; }
 
-        public boolean usesFx3() { return this != SOFTWARE; }
+        public boolean usesFx3() { return this == FX3D || sideBySide(); }
         public boolean sideBySide() { return this == SBS_H || this == SBS_V; }
 
         @Override

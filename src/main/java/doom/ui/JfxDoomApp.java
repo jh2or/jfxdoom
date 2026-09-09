@@ -154,6 +154,7 @@ public final class JfxDoomApp extends Application {
             Launchpad.RendererMode mode = Launchpad.RendererMode.SOFTWARE;
             for (String a : launchArgs) {
                 if ("-fx3d".equals(a)) mode = Launchpad.RendererMode.FX3D;
+                else if ("-ascii".equals(a)) mode = Launchpad.RendererMode.ASCII;
                 else if ("-sbs".equals(a))  mode = Launchpad.RendererMode.SBS_H;
                 else if ("-sbsv".equals(a)) mode = Launchpad.RendererMode.SBS_V;
             }
@@ -236,6 +237,8 @@ public final class JfxDoomApp extends Application {
         final BlitSurface swSurface =
                 (mode != Launchpad.RendererMode.FX3D) ? new BlitSurface(w, h) : null;
         final BlitSurface fxSurface = fx3 ? new BlitSurface(w, h) : null;
+        final AsciiRenderer ascii = mode == Launchpad.RendererMode.ASCII
+                ? new AsciiRenderer(w, h, renderMul) : null;
 
         // Engine state needs a fresh start on re-launch: clear
         // the quitting guard and drop the previous WAD list so
@@ -420,8 +423,12 @@ public final class JfxDoomApp extends Application {
             // Software pane: UI over viewBuffer (the classic
             // composite).
             if (swSurface != null) {
+                if (ascii != null && viewActive) {
+                    ascii.render(view, palette, vx, vy, vw, vh);
+                }
                 compositeSoftware(swSurface.argb, ui, view, viewActive,
-                        vx, vy, vw, vh, renderW, renderH, rm);
+                        vx, vy, vw, vh, renderW, renderH, rm,
+                        ascii == null ? null : ascii.pixels);
                 swSurface.blit(false);
             }
 
@@ -660,7 +667,7 @@ public final class JfxDoomApp extends Application {
     private void compositeSoftware(int[] out, byte[] ui, byte[] view,
                                    boolean viewActive, int vx, int vy,
                                    int vw, int vh,
-                                   int renderW, int renderH, int rm) {
+                                   int renderW, int renderH, int rm, int[] asciiWorld) {
         int vxEnd = vx + vw;
         int vyEnd = vy + vh;
         int i = 0;
@@ -672,6 +679,10 @@ public final class JfxDoomApp extends Application {
                 int pal;
                 if (rowInView && x >= vx && x < vxEnd) {
                     int uiPal = ui[uiRowOff + (x / rm)] & 0xff;
+                    if (uiPal == 0 && asciiWorld != null) {
+                        out[i] = asciiWorld[viewRowOff + x];
+                        continue;
+                    }
                     pal = (uiPal != 0) ? uiPal : (view[viewRowOff + x] & 0xff);
                 } else {
                     pal = ui[uiRowOff + (x / rm)] & 0xff;
