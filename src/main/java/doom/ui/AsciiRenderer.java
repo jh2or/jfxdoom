@@ -4,7 +4,7 @@ package doom.ui;
 final class AsciiRenderer {
     // Original 3x5 bitmap font, with a blank column/row between cells.
     // Shape matching uses a precomputed 15-bit lookup, not a font search per cell.
-    private static final String CHARACTERS = " .,:;!?-_=+/\\|()[]<>*#@%0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZiltx一二三十上下土士王干工口日中山井";
+    private static final String CHARACTERS = " .,:;!?-_=+/\\|()[]<>*#@%0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZiltx";
     private static final int[][] GLYPHS = {
             {0, 0, 0, 0, 0}, // space
             {0, 0, 0, 0, 2}, // .
@@ -69,28 +69,11 @@ final class AsciiRenderer {
             {2, 0, 2, 2, 2}, // i
             {6, 2, 2, 2, 7}, // l
             {2, 7, 2, 2, 3}, // t
-            {0, 0, 5, 2, 5}, // x
-            // Minimal Han bitmap forms: deliberately simple at this 3x5 size.
-            {0, 0, 7, 0, 0}, // 一
-            {0, 7, 0, 7, 0}, // 二
-            {7, 0, 7, 0, 7}, // 三
-            {2, 2, 7, 2, 2}, // 十
-            {2, 3, 2, 2, 7}, // 上
-            {7, 2, 3, 2, 2}, // 下
-            {2, 2, 7, 2, 7}, // 土
-            {2, 7, 2, 2, 7}, // 士
-            {7, 2, 7, 2, 7}, // 王
-            {7, 2, 7, 2, 2}, // 干
-            {7, 2, 2, 2, 7}, // 工
-            {7, 5, 5, 5, 7}, // 口
-            {7, 5, 7, 5, 7}, // 日
-            {2, 7, 7, 7, 2}, // 中
-            {2, 7, 7, 5, 7}, // 山
-            {5, 7, 5, 7, 5} // 井
+            {0, 0, 5, 2, 5} // x
     };
-    // Han characters identify sprites; geometry retains Latin characters and
-    // punctuation, excluding bitmap lookalikes to preserve visual separation.
-    static final String SPRITE_CHARACTERS = "一二三十上下土士王干工口日中山井";
+    // Disjoint alphabets: digits/lowercase/effect marks identify sprites;
+    // uppercase letters and the remaining punctuation describe the level.
+    static final String SPRITE_CHARACTERS = "0123456789iltx!?*%";
     static final String GEOMETRY_CHARACTERS = geometryCharacters();
     private static final String TONES = " .,:;!i-lI+1tYJx/()<>?C24VZEF3A5PHK69G0BDRUQMWN8#@";
     private static final int[][] TONE_GLYPHS = {
@@ -100,27 +83,13 @@ final class AsciiRenderer {
 
     private static String geometryCharacters() {
         StringBuilder result = new StringBuilder();
-        outer: for (int g = 0; g < CHARACTERS.length(); g++) {
-            for (char c : SPRITE_CHARACTERS.toCharArray()) {
-                if (java.util.Arrays.equals(GLYPHS[g], GLYPHS[CHARACTERS.indexOf(c)])) continue outer;
-            }
-            result.append(CHARACTERS.charAt(g));
-        }
+        for (char c : CHARACTERS.toCharArray()) if (SPRITE_CHARACTERS.indexOf(c) < 0) result.append(c);
         return result.toString();
     }
 
     private static int[] buildToneLookup(String alphabet) {
         StringBuilder ramp = new StringBuilder();
-        if (alphabet.equals(SPRITE_CHARACTERS)) {
-            // Order by ink coverage once at startup for a monotonic tone ramp.
-            alphabet.chars().boxed().sorted(java.util.Comparator.comparingInt(c -> {
-                int ink = 0;
-                for (int row : GLYPHS[CHARACTERS.indexOf(c)]) ink += Integer.bitCount(row);
-                return ink;
-            })).forEach(c -> ramp.append((char) c.intValue()));
-        } else {
-            for (char c : TONES.toCharArray()) if (alphabet.indexOf(c) >= 0) ramp.append(c);
-        }
+        for (char c : TONES.toCharArray()) if (alphabet.indexOf(c) >= 0) ramp.append(c);
         int[] lookup = new int[256];
         for (int level = 0; level < lookup.length; level++) {
             lookup[level] = CHARACTERS.indexOf(ramp.charAt(level * ramp.length() / 256));
