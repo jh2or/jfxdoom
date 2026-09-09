@@ -30,13 +30,13 @@ those findings. The 2026-09-08 audit corrected stale dependency/stub notes.
   playsim data were changed. Depth is derived from projection/texture scale for
   columns and the existing plane-distance calculation for spans.
 - Replaced depth-dependent cell sizing with ten color-intensity layers: 100%
-  down to 28% in steps of eight percentage points. Glyph geometry and selection remain identical to
+  down to 25% using the quadratic curve `1 - 0.75 * (layer / 9)^2` (layer 0–9). Glyph geometry and selection remain identical to
   standard ASCII rendering; fading scales RGB after normal color processing.
   Foreground/weapon cells use their nearest visible depth and remain fully lit.
 - Nominal boundaries remain 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
   map units, with a 1/6 margin before dimming to reduce threshold flicker.
 - Demo validation compares actor state and software-frame checksums with depth
-  capture on/off. ASCII tests cover all ten intensity layers, the 28% far-layer RGB value,
+  capture on/off. ASCII tests cover all ten intensity layers, the 25% far-layer RGB value,
   unchanged glyph geometry, foreground cells, partial viewports, hysteresis and
   restoration of the original image when disabled.
 

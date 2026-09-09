@@ -208,17 +208,19 @@ intensity instead of glyph size. Test at 2× or 3× internal resolution: approac
 and retreat from walls, look along corridors, fire in front of distant geometry,
 and approach thin foreground objects. Symbols must retain the same size and
 shape while their color fades with depth. Near cells and the weapon stay fully
-visible; distant cells/sky retain 28% of normal glyph intensity. HUD,
+visible; distant cells/sky retain 25% of normal glyph intensity. HUD,
 menus and automap remain unchanged. Hold F12 to verify one toggle per press.
 
-There are ten intensity layers: 100%, 92%, 84%, 76%, 68%, 60%, 52%,
-44%, 36%, 28%, with RGB channels rounded to the nearest integer. Nominal
+The ten layers use `1 - 0.75 * (layer / 9)^2`, for layer indices 0–9:
+approximately 100%, 99.1%, 96.3%, 91.7%, 85.2%, 76.9%, 66.7%, 54.6%, 40.7%,
+and 25%, with RGB channels rounded to the nearest integer. Near layers retain
+more brightness than the previous linear fade; distant layers fade faster. Nominal
 depth boundaries remain 192, 320, 480, 672, 896, 1152, 1472, 1856 and 2304
 map units. A 1/6 margin before dimming reduces threshold chatter. Colors fade
 toward black; they are not quantized to fewer bits or composited over old frames.
 
 `AsciiRendererTest` compares every glyph pixel across all ten layers, checks
-exact 28%-intensity RGB for the far layer, full near color, unchanged glyph
+exact 25%-intensity RGB for the far layer, full near color, unchanged glyph
 geometry, one-pixel foreground protection, threshold hysteresis, partial-cell
 clipping and exact image restoration when disabled. `RenderDepthTest` covers
 resolution/detail scaling and weapon/sky overrides; the demo regression compares

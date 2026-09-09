@@ -102,7 +102,7 @@ final class AsciiRenderer {
         }
         return lookup;
     }
-    // Nine boundaries define ten color-intensity layers, from 100% down to 28%.
+    // Nine boundaries define ten color-intensity layers, from 100% down to 25%.
     private static final int[] DEPTH_BOUNDARIES = {192, 320, 480, 672, 896, 1152, 1472, 1856, 2304};
     final int[] pixels;
     private final int width;
@@ -218,14 +218,15 @@ final class AsciiRenderer {
             green = green * 192 / peak;
             blue = blue * 192 / peak;
         }
-        // Eight percentage points per layer: 100%, 92%, ... 28%. Apply after normal glyph
+        // Quadratic fade: 1 - 0.75 * (level / 9)^2 = (108 - level^2) / 108.
+        // Keep near layers bright and steepen toward 25%. Apply after normal glyph
         // selection/color lifting so depth never changes the symbol or its hue.
         // Opaque RGB attenuation is equivalent to fading over our black backdrop
         // without revealing stale Canvas contents through transparent pixels.
-        int intensity = 100 - 8 * level;
-        red = (red * intensity + 50) / 100;
-        green = (green * intensity + 50) / 100;
-        blue = (blue * intensity + 50) / 100;
+        int intensity = 108 - level * level;
+        red = (red * intensity + 54) / 108;
+        green = (green * intensity + 54) / 108;
+        blue = (blue * intensity + 54) / 108;
         int ink = 0xff000000 | (red << 16) | (green << 8) | blue;
         for (int y = cy; y < yEnd; y++) {
             int gy = (y - cy);

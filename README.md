@@ -115,9 +115,10 @@ in the Launchpad, or add `-ascii-depth` alongside `-ascii`. Press **F12** in
 ASCII mode to toggle it during play (off by default). Symbol size, count and
 shape stay unchanged; internal resolution still controls the text density.
 
-The **10 depth layers** retain 100%, 92%, 84%, 76%, 68%, 60%, 52%,
-44%, 36% and 28% of the normal glyph color intensity, from nearest to
-farthest. All RGB channels fade together toward the black background, preserving
+The **10 depth layers** use a quadratic fade, retaining approximately
+100%, 99.1%, 96.3%, 91.7%, 85.2%, 76.9%, 66.7%, 54.6%, 40.7%, and 25%
+of normal glyph color intensity from nearest to farthest. The curve keeps
+nearby layers bright and fades more strongly in the distance. All RGB channels fade together toward the black background, preserving
 color rather than reducing color bit depth. The nearest visible depth in each
 cell wins, so weapon and foreground cells stay fully visible. HUD and menus
 remain unchanged.
