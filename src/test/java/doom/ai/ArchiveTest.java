@@ -27,6 +27,21 @@ class ArchiveTest {
         assertTrue(a.entries().stream().allMatch(e -> Route.steps(e.route).size() >= 2));
     }
 
+    @Test void retainsDistantFrontierWhenEarlyRoomVariantsFillArchive() {
+        Archive a = new Archive(4, 100, 128);
+        Route root = new Route(null, Action.IDLE, 4, 1);
+        for (int facing = 0; facing < 4; facing++)
+            a.offer(new Archive.Cell(0, 0, facing, 3, 2, 3, 8, 0), root, 100);
+        Route distant = root;
+        for (int i = 0; i < 100; i++) distant = new Route(distant, Action.IDLE, 32, i);
+        // Use a larger node budget: this tests entry eviction, not a route that cannot fit.
+        Archive roomy = new Archive(4, 200, 128);
+        for (var e : a.entries()) roomy.offer(e.cell, e.route, e.health);
+        assertTrue(roomy.offer(cell(20), distant, 10));
+        assertEquals(4, roomy.size());
+        assertTrue(roomy.entries().stream().anyMatch(e -> e.cell.x() == 20));
+    }
+
     @Test void checkpointRetainsSharedRoutesSelectionCountsAndRandomStream() throws Exception {
         TrainingConfig config = config(10, 100);
         Checkpoint.Progress p = new Checkpoint.Progress(config);

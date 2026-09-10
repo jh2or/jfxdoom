@@ -112,6 +112,8 @@ public final class Trainer {
                 } else {
                     Archive.Entry selected = progress.archive.select(progress.random);
                     route = selected == null ? null : selected.route;
+                    if (route != null && route.tics > 700 && progress.attempts % 4 == 0)
+                        route = PrefixOptimizer.shorten(episode, route, optimizer, progress.attempts / 4, stop);
                     prefixTics = route == null ? 0 : route.tics;
                     episode.reset();
                     for (Route node : Route.steps(route)) {

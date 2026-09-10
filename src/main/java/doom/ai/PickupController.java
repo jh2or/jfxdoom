@@ -54,6 +54,15 @@ final class PickupController {
         Inventory inv = o.inventory();
         boolean shotgun = Inventory.owns(o.weapons(), Doomdef.wp_shotgun);
         return switch (item.sprite) {
+            case Info.SPR_BKEY -> (o.keys() & (1 << Doomdef.it_bluecard)) == 0 ? 250 : 0;
+            case Info.SPR_YKEY -> (o.keys() & (1 << Doomdef.it_yellowcard)) == 0 ? 250 : 0;
+            case Info.SPR_RKEY -> (o.keys() & (1 << Doomdef.it_redcard)) == 0 ? 250 : 0;
+            case Info.SPR_BSKU -> (o.keys() & (1 << Doomdef.it_blueskull)) == 0 ? 250 : 0;
+            case Info.SPR_YSKU -> (o.keys() & (1 << Doomdef.it_yellowskull)) == 0 ? 250 : 0;
+            case Info.SPR_RSKU -> (o.keys() & (1 << Doomdef.it_redskull)) == 0 ? 250 : 0;
+            case Info.SPR_STIM -> o.health() < 100 ? 40 + (100 - o.health()) : 0;
+            case Info.SPR_MEDI -> o.health() < 100 ? 50 + (100 - o.health()) : 0;
+            case Info.SPR_SOUL -> o.health() < 200 ? 120 : 0;
             case Info.SPR_ARM1 -> inv.armor() < 100 && (inv.armorType() < 2 || inv.armor() < 50) ? 100 - inv.armor() : 0;
             case Info.SPR_ARM2 -> inv.armor() < 200 ? 160 - inv.armor() * .5 : 0;
             case Info.SPR_BON2 -> inv.armor() < 200 ? 2 : 0;

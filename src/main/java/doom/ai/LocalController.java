@@ -21,7 +21,7 @@ final class LocalController {
                 o.y() + Math.sin(desired) * Math.min(distance, 128));
         var obstruction = probe.useTarget(desired, java.util.Set.of());
         boolean approachDoor = obstruction != null && obstruction.backsector != null
-                && MotionProbe.opening(obstruction) < o.height();
+                && probe.blocks(obstruction);
         if (reachable < Math.min(24, distance * .75) && !approachDoor) {
             // A visible waypoint can require a small bend around a corner: do not idle forever facing it.
             double best = Double.NEGATIVE_INFINITY;
@@ -75,6 +75,13 @@ final class LocalController {
             if (safeMotion(o, probe, diagonalMove, 2)) {
                 forward = diagonalMove.forward(); side = diagonalMove.side(); turn = strafeTurn; duration = 2;
             }
+        }
+        if (probe.avoidsDrops() && !safeMotion(o, probe, new Action(forward, side, turn, 0), duration)) {
+            // Turning does not remove inertia: brake both world-space momentum components before a cliff.
+            double c = Math.cos(o.angle()), s = Math.sin(o.angle());
+            forward = (int) Math.round(Math.max(-50, Math.min(50, -8 * (o.momx() * c + o.momy() * s))));
+            side = (int) Math.round(Math.max(-40, Math.min(40, -8 * (o.momx() * s - o.momy() * c))));
+            duration = 1;
         }
         // Check interaction every tic near a door or wall; use is edge-triggered in Doom.
         if (probe.door(80) != null || reachable < 64) duration = 1;

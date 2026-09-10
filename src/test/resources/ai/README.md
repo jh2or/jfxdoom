@@ -29,3 +29,25 @@ par. The original milestone proposal completed in 2,388 tics (68.229 seconds).
 The later equipment-aware sixth following variant also collects armor and a
 chaingun, completing in 3,194 tics (91.257 seconds). The assertion remains the
 150-second threshold rather than a fixed historical completion time. The matching-WAD test skips when that local WAD is unavailable.
+
+## E1M3
+
+Both fixtures contain only algorithm-generated inputs for the same WAD hash,
+skill 3, normal flags, and a standard pistol start. Neither supplies a route
+to normal fresh training.
+
+- `e1m3-bluekey.lmp`: an unfinished 6,619-tic discovery from the seed-2
+  exploration trial before partial-route optimization was integrated. It ends
+  with the blue key and 26 health. The partial-route regression shortens it
+  while preserving the key, weapons and at least that health. It is deliberately
+  **not** a level-completion demo.
+- `e1m3-learned.lmp`: the final seed-2 fresh search's first completed route,
+  found on attempt 224. It reaches the normal exit in 6,930 tics (198 seconds)
+  with 23 health, 68 armor and a shotgun. Its matching-WAD regression checks
+  actual completion within twice par, automatically shortens it below par in
+  up to 49 proposals, and verifies the exported demo. The measured optimized
+  result is 2,185 tics (62.43 seconds), 11 health and 69 armor.
+
+Development used additional unsuccessful searches and diagnostic replays.
+The final successful search supplied no demo and used automatic shortening of
+its own archived prefixes. Neither fixture contains WAD assets or a human route.

@@ -69,6 +69,17 @@ class EquipmentTest {
         assertEquals(2, RouteOptimizer.equipmentFrontier(path, 0, 0, 7, java.util.Set.of()));
     }
 
+    @Test void seeksUnownedKeysAndUsefulHealthButIgnoresRedundantPickups() {
+        Mobj key = item(Info.SPR_BKEY, 64, 0), medkit = item(Info.SPR_MEDI, 64, 0);
+        Observation healthy = at(Inventory.PISTOL_START, 3, key, medkit);
+        assertTrue(PickupController.value(healthy, key) > 0);
+        assertEquals(0, PickupController.value(healthy, medkit));
+        Observation hurt = new Observation(0, 0, 0, 20, 50, 3, 8, null, 0, 56, 16, 0, 0, 1,
+                1 << Doomdef.it_bluecard, Inventory.PISTOL_START, List.of(key, medkit));
+        assertEquals(0, PickupController.value(hurt, key));
+        assertSame(medkit, new PickupController().choose(hurt, new MotionProbe(hurt), 200, 0, 0));
+    }
+
     @Test void selectsShotgunWithoutAnEnemyAndFallsBackWhenShellsRunOut() {
         Inventory loaded = new Inventory(0, 0, 50, 2, 0, Doomdef.wp_pistol, Doomdef.wp_nochange);
         assertEquals(Doomdef.wp_shotgun, loaded.preferredWeapon(7));

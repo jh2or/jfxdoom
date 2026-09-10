@@ -4,6 +4,68 @@ The Java-only `doom.ai` component discovers routes, remembers useful input
 prefixes, and optimizes successful runs. It needs Java 21 and a Doom 1 WAD;
 there are no additional runtime dependencies.
 
+## E1M3 milestone
+
+The final fresh seed-2 search reached the **normal exit to E1M4** in
+**198.00 seconds / 6,930 tics**, below twice E1M3's 120-second par
+(**240 seconds**). It used skill 3, normal monsters and a pistol start,
+finishing with **23 health, 68 armor, a shotgun, and 42 kills**. The blue key
+was collected; the yellow key and secret exit were unnecessary. Both fresh
+route replay and the engine's external demo loader verified completion.
+
+This first completion was exploration attempt **224**, approximately **234
+seconds** into that final experiment. The search began without a supplied
+demo and shortened its own intermediate discoveries before finding an exit.
+Earlier development trials failed; this timing describes the final experiment,
+not the whole development effort or a guarantee across seeds. A separate final
+seed-1 search did not finish within its four-minute training budget.
+
+```sh
+# Repeat a fresh search with the successful settings.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M3 --output training/new-e1m3 --seed 2 --target-seconds 240 --attempts 1000 --minutes 4"
+
+# Watch or independently verify the milestone.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m3-milestone/winning.lmp"
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M3 --verify training/e1m3-milestone/winning.lmp"
+```
+
+E1M3 exposed several general limitations: accumulated stair rises were judged
+against the starting height; inertia could carry the player into deep pits;
+raised lifts were not treated as use targets; and redundant early-room states
+could evict later discoveries. Exploration now handles those cases and seeks
+nearby unpressed switch textures, useful health items and unowned keys. Switch
+recognition uses the visible side's `SW1` texture family, with a local visibility
+check. It does not read a line's special, tag or exit identifier.
+
+Every fourth eligible archived restart also tries shortening a route longer
+than 20 seconds. A replacement must reach the observed intermediate location
+with its keys and weapons, at least the original health, and less elapsed game
+time; an actual early completion is also accepted. Failed proposals preserve
+the original prefix. This uses the same trajectory optimizer before a whole
+level has been solved. The input-only blue-key regression demonstrates a
+6,619-tic route shortened to under 30 seconds while retaining its key and
+improving health. Exploration and post-completion optimization remain distinct.
+
+A subsequent 49-proposal optimization pass reduced this learned completion to
+**62.43 seconds / 2,185 tics**, below E1M3's own **120-second par**. It uses the
+normal exit, finishes with **11 health, 69 armor and a shotgun**, and records
+**32 kills**. Blocked movement is **0.29 seconds**; idle input is **12.00
+seconds**. The optimizer first accepted three small input deletions, then a
+trajectory-following proposal produced the faster run. It passed fresh route
+replay and external-demo playback. This is the recommended demo to watch:
+
+```sh
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m3-optimized/winning.lmp"
+
+# Reproduce shortening from the algorithm's completed input-only fixture.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M3 --improve src/test/resources/ai/e1m3-learned.lmp --output training/new-e1m3-optimized --target-seconds 120 --attempts 49 --minutes 1"
+```
+
+The movement policy is conservative around deep drops during exploration;
+levels requiring deliberate drops may need further policy work. No global
+route graph, E1M3 coordinates, special IDs, or engine-rule changes are supplied
+to the learner. Generated demos, traces and logs remain under ignored `training/`.
+
 ## E1M2 milestone
 
 E1M2's engine par is **75 seconds** (`GGame.pars[1][2]`); the first milestone
@@ -168,7 +230,9 @@ memory; local movement and combat proposals use programmed heuristics.
 
 Each archive cell combines coarse position/facing, health/ammunition bands,
 weapon ownership, key ownership, armor protection, shell supplies, and local passage opening state. Up to two alternatives
-favor shorter arrival times and higher health. Selection favors less-visited
+favor shorter arrival times and higher health. When full, eviction first removes redundant entries from the most populated
+position/key group, preserving distant discoveries over extra early-room variants.
+Selection normalizes by group population and favors less-visited
 locations and less-selected entries; five percent of selections start fresh.
 Visit counts are separated by key ownership so returning after a pickup is useful.
 Shared prefixes, archive entries, and spatial visit counts are bounded. The
@@ -181,9 +245,15 @@ with optimization. There is no neural network or exact-world snapshot system.
 ## Movement and wall handling
 
 - A local swept **square** checks the player's footprint, respecting Doom's
-  bounding-box collision, step-height and passage-height constraints. A clear
+  bounding-box collision, step-height and passage-height constraints. The probe
+  accumulates legal stair rises along the predicted path. A clear
   center ray alone does not establish that the player fits past a corner.
-- Novelty is scored at a **reachable endpoint**, with a bounded bonus. Unvisited
+- Exploration treats drops greater than 24 units as hazards. Its inertial
+  prediction checks ordinary movement as well as strafing and brakes both axes
+  before a ledge. Route optimization may still use drops present in a learned
+  successful path.
+- Novelty is scored at a **reachable endpoint**, using logarithmic visit penalties
+  that remain useful after repeated visits. Unvisited
   space behind a solid wall cannot overwhelm the movement feasibility score.
 - Short movement bursts allow feedback near corners. Braking considers current
   momentum and clearance; blocked direct paths can use a small local detour.
@@ -194,7 +264,10 @@ with optimization. There is no neural network or exact-world snapshot system.
   releases it, and observes clearance changes to avoid reversing an opening
   door. Missed/ineffective activations have an eight-tic retry interval. Opening
   state is inferred from local geometry; line specials and exit IDs are not read.
-  An inherited held Use input is released after restarting an archived prefix.
+  Raised platforms can also be approached and activated even when the opening
+  is tall enough: their floor still blocks walking. Moving lifts are observed
+  until traversable. An inherited held Use input is released after restarting
+  an archived prefix.
 - In clear stretches the controller offsets its facing and combines forward
   running (up to 50) with sideways movement (up to 40). Both strafe directions
   are supported. A short prediction checks combined thrust, turning, existing

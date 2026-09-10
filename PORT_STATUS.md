@@ -1164,3 +1164,35 @@ fallback, preservation of equipment through checkpoints and route shortening,
 and the actual soldier-drop/pickup/firing sequence. Existing E1M1 and E1M2
 completion, replay and resume regressions continue to pass. Details and
 reproduction commands are in [LEARNING.md](LEARNING.md).
+
+## E1M3 normal-exit milestone
+
+A fresh seed-2 search now completes E1M3 through its normal exit to E1M4.
+Its first successful route took **6,930 tics / 198.00 seconds**, within twice
+E1M3's 120-second par. It was found on attempt 224, about 234 seconds into the
+final search. A subsequent 49-proposal optimization pass shortened it to
+**2,185 tics / 62.43 seconds**, below par, with **11 health, 69 armor, a shotgun
+and 32 kills**. Blocked movement was 0.29 seconds. Both recordings pass fresh
+route replay and the actual external-demo loader, with skill 3, normal monsters,
+a pistol start and no cheats. The faster demo is
+`training/e1m3-optimized/winning.lmp`; the first completion is preserved at
+`training/e1m3-milestone/winning.lmp`.
+
+The general learner changes accumulate legal stair rises, recognize raised
+lifts and visible unpressed switch textures, avoid deep exploratory drops with
+inertial braking, and seek useful nearby health and keys. Archive retention
+protects spatial/key coverage from redundant early-room variants. Intermediate
+routes can now be shortened before the first level completion, preserving the
+observed destination, keys, weapons and at least its health. The engine's
+rules remain unchanged; no E1M3 route, coordinates, special IDs or exit labels
+are supplied to the controller. The exploration drop policy remains conservative
+for maps that require deliberate drops. Earlier development searches failed,
+and these measured times are not a guarantee across seeds or WAD versions.
+
+Validation: **1,058 tests, 1,048 passed, 10 skipped, no failures**. Added
+regressions cover stair sequences, drop/inertia safety, raised-lift interaction,
+switch visibility and texture state, nearby keys/health, archive coverage,
+shortening an unfinished key route, and E1M3 normal-exit completion plus automatic
+optimization below par and exported-demo verification. E1M1 and E1M2 regressions
+still pass. Input-only E1M3 fixtures and reproduction commands are documented in
+[LEARNING.md](LEARNING.md) and [the fixture README](src/test/resources/ai/README.md).

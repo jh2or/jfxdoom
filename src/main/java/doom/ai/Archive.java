@@ -25,6 +25,7 @@ final class Archive {
     final LinkedHashMap<Cell, List<Entry>> cells = new LinkedHashMap<>();
     final LinkedHashMap<Location, Integer> visits = new LinkedHashMap<>();
     private final IdentityHashMap<Route, Integer> references = new IdentityHashMap<>();
+    private final Map<Location, Integer> populations = new HashMap<>();
     private int size;
     long discoveries;
 
@@ -59,16 +60,16 @@ final class Archive {
         }
         for (Iterator<Entry> it = group.iterator(); it.hasNext();) {
             Entry old = it.next();
-            if (route.tics <= old.route.tics && health >= old.health) { it.remove(); release(old.route); size--; }
+            if (route.tics <= old.route.tics && health >= old.health) { it.remove(); release(old.route); size--; population(old, -1); }
         }
         Entry next = new Entry(cell, route, health, ++discoveries);
-        group.add(next); retain(route); size++;
+        group.add(next); retain(route); size++; population(next, 1);
         if (group.size() > 2) {
             // Preserve the fastest and healthiest alternative.
             Entry fastest = Collections.min(group, Comparator.comparingInt(e -> e.route.tics));
             Entry healthiest = Collections.max(group, Comparator.comparingInt(e -> e.health));
             Entry remove = group.stream().filter(e -> e != fastest && e != healthiest).findFirst().orElse(next);
-            group.remove(remove); release(remove.route); size--;
+            group.remove(remove); release(remove.route); size--; population(remove, -1);
         }
         trim();
         return group.contains(next);
@@ -76,7 +77,7 @@ final class Archive {
 
     void restore(Entry entry) {
         cells.computeIfAbsent(entry.cell, k -> new ArrayList<>(2)).add(entry);
-        size++; retain(entry.route);
+        size++; retain(entry.route); population(entry, 1);
     }
 
     private void retain(Route route) {
@@ -94,16 +95,25 @@ final class Archive {
         }
     }
 
+    private void population(Entry entry, int delta) {
+        populations.compute(entry.cell.location(), (key, count) -> {
+            int next = (count == null ? 0 : count) + delta;
+            return next == 0 ? null : next;
+        });
+    }
+
     private void trim() {
         while (size > capacity || references.size() > nodeCapacity) {
             Entry worst = null;
             double score = Double.NEGATIVE_INFINITY;
             for (List<Entry> group : cells.values()) for (Entry e : group) {
-                double candidate = e.selected * 100.0 + e.route.tics - 8.0 * e.health;
+                // Keep spatial/key coverage before redundant inventory/facing variants.
+                double candidate = populations.get(e.cell.location()) * 1e9
+                        + e.selected * 100.0 + e.route.tics - 8.0 * e.health;
                 if (candidate > score) { score = candidate; worst = e; }
             }
             List<Entry> group = cells.get(worst.cell);
-            group.remove(worst); size--; release(worst.route);
+            group.remove(worst); size--; release(worst.route); population(worst, -1);
             if (group.isEmpty()) cells.remove(worst.cell);
         }
     }
@@ -112,10 +122,10 @@ final class Archive {
         if (size == 0 || random.nextDouble() < .05) return null;
         List<Entry> entries = entries();
         double total = 0;
-        for (Entry e : entries) total += weight(e);
+        for (Entry e : entries) total += weight(e) / populations.get(e.cell.location());
         double choice = random.nextDouble() * total;
         for (Entry e : entries) {
-            choice -= weight(e);
+            choice -= weight(e) / populations.get(e.cell.location());
             if (choice <= 0) { e.selected++; return e; }
         }
         Entry last = entries.getLast(); last.selected++; return last;

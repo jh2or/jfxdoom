@@ -15,6 +15,7 @@ final class Explorer {
     private Action previous = Action.IDLE;
     private Line door;
     private int doorDeadline;
+    private boolean switchTarget;
 
     Explorer(LearnerRandom random) { this.random = random; }
     void restart() {
@@ -23,17 +24,19 @@ final class Explorer {
     }
 
     Burst choose(Observation o, Archive archive, int tic) {
-        MotionProbe probe = new MotionProbe(o);
+        MotionProbe probe = new MotionProbe(o, true);
         if (previous.forward() != 0 || previous.side() != 0) {
             stuck = Math.hypot(o.x() - lastX, o.y() - lastY) < 1.5 ? stuck + tic - lastTic : 0;
         } else if (door == null) stuck = 0;
-        if (door != null && (!probe.blocks(door) || tic >= doorDeadline)) {
+        if (door != null && ((switchTarget ? !probe.switchPanel(door) : !probe.blocks(door)) || tic >= doorDeadline)) {
             doors.put(door, tic + 350); door = null; hold = 0; stuck = 0;
         }
         if (door == null) {
-            Line candidate = probe.door(72);
+            Line candidate = probe.switchPanel(192.0);
+            boolean panel = candidate != null && doors.getOrDefault(candidate, 0) <= tic;
+            if (!panel) candidate = probe.door(72);
             if (candidate != null && doors.getOrDefault(candidate, 0) <= tic) {
-                door = candidate; doorDeadline = tic + 70;
+                door = candidate; switchTarget = panel; doorDeadline = tic + (panel ? 140 : 70);
             }
         }
         Burst result;
@@ -57,8 +60,8 @@ final class Explorer {
                         double reachable = probe.distance(o.x() + 112 * Math.cos(a), o.y() + 112 * Math.sin(a));
                         double tx = o.x() + reachable * Math.cos(a), ty = o.y() + reachable * Math.sin(a);
                         // Bounded novelty at the reachable endpoint can never outweigh an impassable wall.
-                        double value = reachable < 16 ? -100 : 3 * reachable / 112
-                                + 1.5 / Math.sqrt(1 + archive.visits(tx, ty, o.keys()))
+                        double value = reachable < 16 ? -100 : 3 * Math.min(1, reachable / 32)
+                                + -1.5 * Math.log1p(archive.visits(tx, ty, o.keys()))
                                 + .5 * Math.cos(a - o.angle()) + random.nextDouble() * .8;
                         if (avoidUntil[i] > tic) value -= 5;
                         if (value > best) { best = value; heading = a; }

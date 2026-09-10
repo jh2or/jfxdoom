@@ -52,6 +52,24 @@ class UseControllerTest {
         assertFalse(use.press(probe(0), 0, 103));
     }
 
+    @Test void activatesRaisedLiftAndWaitsWhileItLowers() {
+        Line lift = door(48);
+        lift.frontsector.ceilingheight = lift.backsector.ceilingheight = 192 * 65536;
+        lift.backsector.floorheight = 64 * 65536;
+        PSetup.lines = new Line[] {lift};
+        assertSame(lift, probe(0).useTarget(0, Set.of()));
+        assertSame(lift, probe(0).door(72));
+        UseController use = new UseController();
+        for (int tic = 0; tic < 8; tic++) assertFalse(use.press(probe(0), 0, tic));
+        assertTrue(use.press(probe(0), 0, 8));
+        for (int tic = 9; tic <= 40; tic++) {
+            lift.backsector.floorheight -= 2 * 65536;
+            assertFalse(use.press(probe(0), 0, tic));
+        }
+        assertFalse(probe(0).blocks(lift));
+        assertFalse(use.press(probe(0), 0, 100));
+    }
+
     @Test void respectsFacingReachAndOcclusionAndCanTryASwitchWall() {
         Line door = door(48), wall = MotionProbeTest.line(24, -64, 24, 64);
         PSetup.lines = new Line[] {door, wall};

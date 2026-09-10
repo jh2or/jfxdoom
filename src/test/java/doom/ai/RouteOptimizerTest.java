@@ -71,6 +71,50 @@ class RouteOptimizerTest {
         assertEquals(candidate.route().tics, DemoVerifier.verify(WAD, demo, 3, 5250, candidate.route(), level));
     }
 
+    @Test void e1m3LearnsAndOptimizesANormalExitWithinTwicePar() throws Exception {
+        Level level = new Level(1, 3);
+        Path input = temp.resolve("e1m3.lmp");
+        try (var stream = getClass().getResourceAsStream("/ai/e1m3-learned.lmp")) { Files.copy(stream, input); }
+        Episode e = new Episode(WAD, 3, 21000, level);
+        RunTrace best = RunTrace.play(e, DemoInput.read(input, 3, 21000, level), () -> false);
+        assertEquals(Episode.Outcome.COMPLETED, best.outcome());
+        assertEquals(0, GGame.secretexit);
+        assertTrue(best.route().tics <= 2 * level.parSeconds() * 35);
+        RouteOptimizer optimizer = new RouteOptimizer(new LearnerRandom(1));
+        for (int attempt = 0; attempt < 49 && best.route().tics > level.parSeconds() * 35; attempt++) {
+            RunTrace candidate = optimizer.propose(e, best, attempt, () -> false);
+            if (candidate.outcome() == Episode.Outcome.COMPLETED && candidate.route().tics < best.route().tics) best = candidate;
+        }
+        assertTrue(best.route().tics <= level.parSeconds() * 35, "Shorten the learned completion below par");
+        Route.replay(e, best.route());
+        assertEquals(Episode.Outcome.COMPLETED, e.outcome());
+        assertEquals(0, GGame.secretexit);
+        assertNotEquals(0, Observation.keys(e.player()));
+        assertTrue(e.player().weaponowned[Doomdef.wp_shotgun]);
+        assertEquals(0, e.player().cheats); assertFalse(Doomstat.nomonsters);
+        Path demo = temp.resolve("m3fast.lmp"); Route.demo(demo, 3, best.route(), level);
+        assertEquals(best.route().tics, DemoVerifier.verify(WAD, demo, 3, 2 * level.parSeconds() * 35, best.route(), level));
+        assertEquals(0, GGame.secretexit);
+    }
+
+    @Test void shortensAnUnfinishedE1m3RouteWhilePreservingTheKeyAndHealth() throws Exception {
+        Level level = new Level(1, 3);
+        Path input = temp.resolve("keyslow.lmp");
+        try (var stream = getClass().getResourceAsStream("/ai/e1m3-bluekey.lmp")) { Files.copy(stream, input); }
+        Episode e = new Episode(WAD, 3, 21000, level);
+        RunTrace learned = RunTrace.play(e, DemoInput.read(input, 3, 21000, level), () -> false);
+        assertEquals(Episode.Outcome.RUNNING, learned.outcome(), "An intermediate discovery, not a completed demo");
+        int health = e.player().health, keys = Observation.keys(e.player());
+        assertNotEquals(0, keys);
+        Route shorter = PrefixOptimizer.shorten(e, learned.route(), new RouteOptimizer(new LearnerRandom(1)), 13, () -> false);
+        assertTrue(shorter.tics < 30 * 35);
+        Route.replay(e, shorter);
+        assertEquals(Episode.Outcome.RUNNING, e.outcome());
+        assertEquals(keys, Observation.keys(e.player()));
+        assertTrue(e.player().health >= health);
+        assertSame(shorter, PrefixOptimizer.shorten(e, shorter, new RouteOptimizer(new LearnerRandom(1)), 0, () -> true));
+    }
+
     @Test void killsShotgunnerCollectsItsDropAndArmorThenFiresTheShotgun() throws Exception {
         Episode e = new Episode(WAD, 3, 21000);
         var player = e.player().mo;

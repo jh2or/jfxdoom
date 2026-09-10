@@ -30,7 +30,7 @@ final class UseController {
         // Observe a moving passage until it is traversable. A closing door can be reopened.
         boolean opening = target.backsector != null && gap > 0 && !closing;
         if (release || tic - old.pressed < RETRY_TICS
-                || (opening && (gap >= 56 || tic - old.changed < RETRY_TICS))) return false;
+                || (opening && !probe.switchPanel(target) && (!probe.blocks(target) || tic - old.changed < RETRY_TICS))) return false;
         old.pressed = tic;
         held = true;
         return true;
