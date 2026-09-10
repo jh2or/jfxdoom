@@ -138,9 +138,9 @@ notes live in [`3D_OVERHAUL.md`](3D_OVERHAUL.md),
 [`3D_SIDEBYSIDE_PLAN.md`](3D_SIDEBYSIDE_PLAN.md) and
 [`3D_OVERHAUL_STATUS.md`](3D_OVERHAUL_STATUS.md).
 
-## Learning E1M1
+## Learning Doom levels
 
-A dependency-free Java archive explorer can learn an E1M1 route without opening
+A dependency-free Java archive explorer can learn a route without opening
 a window:
 
 ```sh
@@ -149,8 +149,10 @@ a window:
 
 It retains progress across attempts, supports `--resume`, and optimizes successful
 runs toward a two-minute target. Use `--improve <demo.lmp>` to improve a previously
-learned run. The original 6:56 run was shortened to a verified 22.03 seconds on
-the local WAD. See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
+learned run. E1M1 remains the default; select E1M2 with `--map E1M2` and use
+`--target-seconds 150` for its twice-par milestone. The learner has produced
+verified E1M1 and E1M2 demos, including a **68.23-second E1M2 completion**.
+See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
 
 ## Controls
 

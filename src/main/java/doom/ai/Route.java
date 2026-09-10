@@ -40,8 +40,12 @@ public final class Route {
     }
 
     public static void demo(Path path, int skill, Route end) throws IOException {
+        demo(path, skill, end, Level.E1M1);
+    }
+
+    public static void demo(Path path, int skill, Route end, Level level) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        bytes.writeBytes(new byte[] {(byte) GGame.DEMOVERSION, (byte) (skill - 1), 1, 1,
+        bytes.writeBytes(new byte[] {(byte) GGame.DEMOVERSION, (byte) (skill - 1), (byte) level.episode(), (byte) level.map(),
                 0, 0, 0, 0, 0, 1, 0, 0, 0});
         for (Route node : steps(end)) {
             int packed = node.action.packed();

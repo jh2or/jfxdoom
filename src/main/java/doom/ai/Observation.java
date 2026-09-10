@@ -6,12 +6,17 @@ import doom.render.*;
 /** Read-only local observations. No line specials, exit coordinates, or global route are exposed. */
 record Observation(double x, double y, double angle, int health, int ammo, int weapons,
                    int localOpening, Mobj enemy, double z, double height, double radius,
-                   double momx, double momy, int preferredWeapon) {
+                   double momx, double momy, int preferredWeapon, int keys, Inventory inventory, java.util.List<Mobj> pickups) {
+    Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
+                Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon, int keys) {
+        this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
+                preferredWeapon, keys, Inventory.PISTOL_START, java.util.List.of());
+    }
     static Observation read(Episode episode) {
         Player p = episode.player();
         Mobj mo = p.mo;
-        int weapons = 0;
-        for (int i = 0; i < p.weaponowned.length; i++) if (p.weaponowned[i]) weapons |= 1 << i;
+        int keys = keys(p);
+        int weapons = weapons(p);
         int ammo = p.ammo[0] + 4 * p.ammo[1];
         Sector s = mo.subsector.sector;
         int opening = (s.ceilingheight - s.floorheight) >> 20;
@@ -23,28 +28,45 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
             }
         }
         double x = mo.x / 65536.0, y = mo.y / 65536.0;
+        Inventory inventory = Inventory.read(p);
+        java.util.List<Mobj> pickups = new java.util.ArrayList<>();
         Mobj enemy = null;
         double nearest = 512;
         for (Thinker t = PTick.thinkercap.next; t != PTick.thinkercap; t = t.next) {
-            if (!(t instanceof Mobj other) || other == mo || other.health <= 0
-                    || (other.flags & Mobj.MF_COUNTKILL) == 0) continue;
+            if (!(t instanceof Mobj other) || other == mo) continue;
             double ox = other.x / 65536.0, oy = other.y / 65536.0;
             double distance = Math.hypot(ox - x, oy - y);
-            if (distance < nearest && clearance(x, y, ox, oy, false) > .99) {
-                nearest = distance; enemy = other;
+            if (distance <= 192 && (other.flags & Mobj.MF_SPECIAL) != 0) pickups.add(other);
+            if (other.health <= 0 || (other.flags & Mobj.MF_COUNTKILL) == 0 || distance >= 512) continue;
+            boolean shotgunner = other.type == Info.MT_SHOTGUY && !p.weaponowned[doom.system.Doomdef.wp_shotgun]
+                    && inventory.bullets() > 0 && distance < 192 && Math.abs(other.z - (double) mo.z) <= 24 * 65536;
+            double score = distance * (shotgunner ? .5 : 1);
+            if (score < nearest && clearance(x, y, ox, oy, false) > .99) {
+                nearest = score; enemy = other;
             }
         }
-        int preferred = p.weaponowned[doom.system.Doomdef.wp_shotgun] && p.ammo[1] > 0
-                ? doom.system.Doomdef.wp_shotgun : p.ammo[0] > 0 ? doom.system.Doomdef.wp_pistol : doom.system.Doomdef.wp_fist;
+        int preferred = inventory.preferredWeapon(weapons);
         return new Observation(x, y, Integer.toUnsignedLong(mo.angle) * (Math.PI * 2 / 4294967296.0),
                 p.health, ammo, weapons, opening, enemy, mo.z / 65536.0, mo.height / 65536.0,
-                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred);
+                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred, keys, inventory, java.util.List.copyOf(pickups));
+    }
+
+    static int weapons(Player p) {
+        int weapons = 0;
+        for (int i = 0; i < p.weaponowned.length; i++) if (p.weaponowned[i]) weapons |= 1 << i;
+        return weapons;
+    }
+
+    static int keys(Player p) {
+        int keys = 0;
+        for (int i = 0; i < p.cards.length; i++) if (p.cards[i]) keys |= 1 << i;
+        return keys;
     }
 
     Archive.Cell cell(int size) {
         return new Archive.Cell((int) Math.floor(x / size), (int) Math.floor(y / size),
                 ((int) Math.floor(angle / (Math.PI / 4))) & 7,
-                health / 25, ammo / 20, weapons, localOpening);
+                health / 25, ammo / 20, weapons, localOpening, keys, inventory.armorBand(), inventory.shellBand());
     }
 
     static double distanceToLine(double x, double y, Line l) {

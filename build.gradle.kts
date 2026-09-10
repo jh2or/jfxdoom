@@ -51,7 +51,7 @@ tasks.test {
 // Example: ./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --minutes 10"
 tasks.register<JavaExec>("train") {
     group = "application"
-    description = "Learn an E1M1 route without opening a window"
+    description = "Learn a Doom level route without opening a window"
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("doom.ai.Trainer")
     maxHeapSize = "1g"

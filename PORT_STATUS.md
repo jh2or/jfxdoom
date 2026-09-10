@@ -1099,3 +1099,68 @@ opening/closing transitions, bounded retries, reach/facing/occlusion, diagonal
 thrust in either orientation, and rejection of momentum into a side wall.
 The real-WAD optimization regression requires a faster-than-771-tic completion
 that actually uses combined forward and strafe inputs and verifies its demo.
+
+## Configurable maps and E1M2 milestone (v3)
+
+Added `--map` (default E1M1), shared original-Doom level identity and par lookup,
+and map-specific resets, demo headers, input validation, verification and
+checkpoint identity. Archive cells and visit counts include key ownership;
+version-3 checkpoints serialize these states. Old checkpoints are rejected,
+while their input demos remain importable with the appropriate selected map.
+
+E1M2 trials exposed missing dependencies in trajectory optimization. Shortcuts
+now preserve uncollected key acquisitions. Some variants also retain successful
+Use interactions observed as nearby switch texture changes and reproduce their
+facing; alternate variants may omit optional switches. Additional local
+shortcut distances, descending waypoints, bounded combat pauses and a fix for
+off-route doors suppressing corner detours help the generic controller.
+No map route, switch special IDs, or exit coordinates were added to the learner.
+Normal engine gameplay was not modified. Traces include keys and switch events.
+
+**Milestone reached: 2,388 tics / 68.23 seconds**, below E1M2's 75-second par
+and the requested 150-second threshold, at skill 3 with monsters and a standard
+pistol start. The player finishes with the red key, 10 health and 14 kills;
+blocked movement is 9 tics (0.26 seconds). The algorithm's own initial seed-1
+completion took 568.40 seconds; the final optimizer shortened its slightly
+improved 568.34-second recording on proposal 16. Both fresh-start replay and
+external-demo playback verified the final artifact at
+`training/e1m2-milestone/winning.lmp`. Reproduction commands, intermediate-trial
+limitations and fixture provenance are in [LEARNING.md](LEARNING.md).
+
+Validation: **1,041 tests, 1,031 passed, 10 skipped, no failures** with the local
+WAD. Tests cover map selection/reset, wrong-map demo/checkpoint rejection,
+key-state preservation and revisit counts across checkpoint serialization,
+key/switch shortcut boundaries, bounded combat, the door/corner regression,
+and a real-WAD E1M2 optimization plus exported-demo verification within twice
+par. The existing E1M1 speed, deterministic replay and resume tests still pass.
+
+## Opportunistic armor and weapon pickups (v4)
+
+Added local pickup selection with visibility, height and footprint checks,
+bounded detours/deadlines, and cooldowns for failed approaches. Useful nearby
+armor and ammunition are collected; new non-explosive guns have a slightly
+larger approach radius. Nearby shotgun soldiers are prioritized while the
+player lacks a shotgun; their engine-generated drops become pickup targets.
+Proactive weapon selection prefers an owned shotgun with shells over the
+pistol, respects pending changes and falls back when ammunition runs out.
+The archive now distinguishes armor protection and shell supplies; version-4
+checkpoints reject older schemas. Equipment-aware shortcut variants preserve
+observed useful gun acquisitions. Traces include equipment and ammunition.
+
+Verified skill-3 E1M2 results: the fastest new run finishes in 2,443 tics
+(**69.80 seconds**) with 91 health after acquiring and firing the chaingun.
+A separately evaluated variant collects both green armor and the chaingun,
+finishing in 3,194 tics (**91.26 seconds**) with **70 health and 81 armor**.
+Both pass route replay and external-demo verification and meet the 150-second
+milestone. Demos are `training/e1m2-supplies/winning.lmp` and
+`training/e1m2-equipped/winning.lmp`. E1M2 shotgun soldiers are hard-skill-only
+in this WAD, so these skill-3 demonstrations use the chaingun; the real-engine
+test covers the kill/drop/pickup/shotgun-fire tactic in a controlled encounter.
+
+Validation: **1,048 tests, 1,038 passed, 10 skipped, no failures**. Added tests
+cover armor value and downgrade avoidance, pickup visibility/reach/deadlines,
+dropped shotgun detection, ammunition needs, proactive weapon switching and
+fallback, preservation of equipment through checkpoints and route shortening,
+and the actual soldier-drop/pickup/firing sequence. Existing E1M1 and E1M2
+completion, replay and resume regressions continue to pass. Details and
+reproduction commands are in [LEARNING.md](LEARNING.md).

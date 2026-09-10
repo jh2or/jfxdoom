@@ -1,8 +1,131 @@
-# Learning and improving E1M1
+# Learning and improving Doom levels
 
-The Java-only `doom.ai` component discovers E1M1 routes, remembers useful input
+The Java-only `doom.ai` component discovers routes, remembers useful input
 prefixes, and optimizes successful runs. It needs Java 21 and a Doom 1 WAD;
 there are no additional runtime dependencies.
+
+## E1M2 milestone
+
+E1M2's engine par is **75 seconds** (`GGame.pars[1][2]`); the first milestone
+was a verified run within **150 seconds / 5,250 tics**. The learner produced
+**68.23 seconds / 2,388 tics**, with **10 health**, **14 kills**, the red key,
+and **0.26 seconds** of blocked movement. Both fresh-start route replay and the
+engine's external-demo playback verified completion. These are gameplay times,
+not training wall-clock durations. The generated demo and reports are in
+`training/e1m2-milestone/` (ignored by Git).
+
+```sh
+# Start a fresh search, with skill 3, normal monsters and a pistol start.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M2 --output training/new-e1m2 --target-seconds 150 --minutes 10"
+
+# Watch the verified milestone recording.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m2-milestone/winning.lmp"
+
+# Independently verify the selected map, or inspect its input/interaction trace.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M2 --verify training/e1m2-milestone/winning.lmp"
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M2 --analyze training/e1m2-milestone/winning.lmp --output training/e1m2-analysis"
+
+# Reproduce optimization from the algorithm's own earlier learned recording.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M2 --improve src/test/resources/ai/e1m2-learned.lmp --output training/e1m2-reproduce --target-seconds 150 --attempts 16 --minutes 1"
+```
+
+The initial seed-1 search found a 568.40-second completion on attempt 8, then
+made tiny improvements to 568.34 seconds. That learned input recording became
+the regression fixture. The milestone optimizer reached 68.23 seconds on proposal
+16 from this fixture. No human route, switch coordinates or exit location was
+supplied. Fresh discovery with the final controller has not been benchmarked
+across seeds; the result establishes the milestone and replay correctness,
+not a guaranteed training time or completion rate. During development, seed 2
+found a roughly 328-second route, while seed 3 exhausted its two-minute search
+budget without a completion. These were different intermediate builds and are
+not a controlled comparison of seed performance.
+
+The changes needed beyond selecting a map were:
+
+- Store keys in archive cells and in visit-history locations. A slower route
+  with a key must not be dominated by a faster arrival without it.
+- Preserve uncollected key acquisitions while shortcutting an observed route.
+- Observe nearby switch texture changes after fresh Use presses. Some optimizer
+  variants retain those interactions and reproduce the recorded facing at the
+  switch; others try omitting optional switches. Successful re-simulation is
+  still required. The controller does not inspect line special/exit IDs.
+- Try more local shortcut distances, permit downward waypoints subject to
+  clearance, and avoid suppressing a corner detour merely because an unrelated
+  door is nearby.
+- Allow bounded combat pauses for close enemies obstructing the route, with
+  at most 140 tics per continuously selected enemy before resuming movement.
+
+The trace now includes `keys` (six-bit key/card inventory) and `used_line`
+(the observed surface index after a switch texture change, or -1). These
+surface indexes are learned during replay, not predefined destinations.
+Map selection is carried through resets, demo headers, input validation and
+checkpoint identity. V1/v2 checkpoints were incompatible with v3; their demos
+can still be imported with `--improve` and the matching `--map`.
+
+## Opportunistic equipment collection (v4)
+
+The controller takes short detours to useful, locally reachable armor, weapons
+and ammunition. Armor/ammunition must be within 128 map units; a newly acquired
+shotgun, chaingun or plasma gun may be within 192. Pickup selection checks line
+of sight, vertical reach and the player footprint. Added route distance is
+bounded (128 units for supplies, 384 for a new gun); a failed approach expires
+after 105 tics and has a 210-tic cooldown. Armor bonuses are only pursued within
+32 units. Full armor/ammunition and green armor that would replace substantial
+blue armor are ignored.
+
+Without a shotgun, a nearby visible shotgun soldier is given extra target
+priority. A bounded fighting interval can kill it; its actual dropped shotgun
+then becomes an ordinary pickup target. The engine remains responsible for
+kills, drops, pickups and ammunition consumption. Weapon choice is proactive,
+even between encounters: usable plasma gun, shotgun, chaingun, pistol, then
+chainsaw/fist. An available shotgun with shells is always preferred over the
+pistol. Pending changes are respected, and running out of shells selects an
+available fallback. Explosive weapons are not added to this local policy.
+
+Armor protection and shell-supply bands distinguish archive cells so a useful
+pickup detour is not discarded solely because arrival is slower. V4 checkpoints
+serialize these fields and reject earlier archives; existing demos remain
+importable. Some optimizer variants also preserve observed acquisitions of
+useful guns alongside keys and switch interactions. The runner still retains
+the fastest verified completion, so slower successful equipment variants can
+have different finishing inventory.
+
+Measured skill-3 E1M2 recordings:
+
+| Recording | Time | Final health | Final armor | Weapon used |
+| --- | ---: | ---: | ---: | --- |
+| Earlier milestone | 68.23 s | 10 | 0 | Pistol |
+| New fastest equipment-aware result | 69.80 s | 91 | 0 | Chaingun (68 rounds fired) |
+| New variant collecting both armor and a weapon | 91.26 s | 70 | 81 | Chaingun (31 rounds fired) |
+
+Both new runs passed fresh-start replay and external-demo playback and meet
+the 150-second milestone. The 69.80-second run was the first accepted
+improvement, on proposal 4 from `e1m2-learned.lmp`; the 91.26-second alternative
+was independently evaluated from the same source using the sixth following
+variant (proposal index 15). These variants also differ in route and combat,
+so the time difference is not a measurement of armor pickup cost alone.
+
+E1M2's shotgun soldiers in this WAD have only the hard-difficulty spawn flag,
+so they do not appear at skill 3. Neither of these routes reaches a usable
+shotgun pickup. The real-engine regression separately verifies killing a
+spawned shotgun soldier with normal inputs, collecting its drop and nearby
+armor, then firing the shotgun in a following encounter.
+
+```sh
+# Watch the variant that collects armor and the chaingun.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m2-equipped/winning.lmp"
+
+# Watch the faster chaingun run.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m2-supplies/winning.lmp"
+
+# Generate the current fastest equipment-aware result from the learned fixture.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M2 --improve src/test/resources/ai/e1m2-learned.lmp --output training/new-equipped --target-seconds 150 --attempts 4 --minutes 1"
+```
+
+Both artifact directories contain an `analysis/trace.csv` with armor/type,
+owned weapon bitmask, equipped weapon, bullets, shells and cells, alongside the
+existing movement, key and interaction data. New artifacts are generated locally
+and ignored by Git. The earlier 68.23-second milestone demo remains unchanged.
 
 ## Improve an existing learned demo
 
@@ -10,7 +133,7 @@ there are no additional runtime dependencies.
 ./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --improve training/e1m1/winning.lmp --output training/e1m1-2min --target-seconds 120 --minutes 2"
 ```
 
-The supplied demo must actually finish E1M1 on the requested difficulty and
+The supplied demo must actually finish the selected map on the requested difficulty and
 within the episode limit. Its actions are replayed to discover the trajectory;
 no manually specified route or exit coordinates are needed. Existing v1 archives
 are incompatible with the new engine build, but their `.lmp` recordings can be
@@ -44,9 +167,10 @@ is supplied. The archived routes and visit statistics constitute the learned
 memory; local movement and combat proposals use programmed heuristics.
 
 Each archive cell combines coarse position/facing, health/ammunition bands,
-weapon ownership, and local passage opening state. Up to two alternatives
+weapon ownership, key ownership, armor protection, shell supplies, and local passage opening state. Up to two alternatives
 favor shorter arrival times and higher health. Selection favors less-visited
 locations and less-selected entries; five percent of selections start fresh.
+Visit counts are separated by key ownership so returning after a pickup is useful.
 Shared prefixes, archive entries, and spatial visit counts are bounded. The
 active episode and best successful route have their own bounded storage.
 
@@ -189,8 +313,9 @@ when starting a new experiment, not together with `--resume`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--wad` | required | Doom 1 IWAD containing E1M1 |
-| `--output` | `training/e1m1` | Experiment or analysis directory |
+| `--wad` | required | Doom 1 IWAD containing the selected map |
+| `--map` | `E1M1` | Original Doom map, E1M1–E3M9; must exist in the WAD |
+| `--output` | `training/<map>` | Experiment or analysis directory; map name lowercased |
 | `--resume` | off | Load compatible progress |
 | `--improve` | unset | Start from a successful demo |
 | `--verify` / `--analyze` | unset | Alternative diagnostic modes |
@@ -219,13 +344,13 @@ separate processes because the engine's world state is static.
 
 ## Artifacts and compatibility
 
-- `archive.bin`: compressed, checksummed v2 checkpoint. Common prefixes are
+- `archive.bin`: compressed, checksummed v4 checkpoint. Common prefixes are
   serialized once, including the best successful route and optimization counters.
 - `manifest.txt`: configuration and SHA-256 WAD/compiled-engine identities.
   Resume rejects mismatches; rebuilds that change classes invalidate archives.
   Launching from a JAR versus class directories also changes engine identity.
 - `attempts.csv`: phase, outcome, prefix tics, health/kills, archive statistics,
-  elapsed wall time and movement metrics. Console updates include throughput.
+  elapsed wall time, final key bitmask and movement metrics. Console updates include throughput.
 - `latest.lmp`: selected attempts, periodically replaced to bound storage.
 - `winning.lmp`: best verified completion, preserved when later proposals fail.
 - `result.txt`: its verified time, metrics, target status and experiment identity.
@@ -237,10 +362,10 @@ cover gameplay RNG, player inventory/weapon state, actors/references, movers,
 lights, sectors and switches; they are not complete world snapshots or a proof
 of universal vanilla compatibility. Presentation RNG is excluded.
 
-The initial input-only learning fixture and WAD hash are documented in
+The input-only learning fixtures and WAD hash are documented in
 [`src/test/resources/ai/README.md`](src/test/resources/ai/README.md). The regression
-suite uses this fixture to exercise automatic optimization; normal fresh training
-does not load it. No WAD assets are distributed.
+suite uses these fixtures to exercise automatic optimization; normal fresh training
+does not load them. No WAD assets are distributed.
 
 ## Validation
 

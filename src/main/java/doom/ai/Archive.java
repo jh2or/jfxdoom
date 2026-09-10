@@ -4,9 +4,13 @@ import java.util.*;
 
 /** Bounded archive with two alternatives per coarse cell and shared, reference-counted prefixes. */
 final class Archive {
-    record Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening) {
-        long location() { return ((long) x << 32) | (y & 0xffffffffL); }
+    record Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys, int armor, int shells) {
+        Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys) {
+            this(x, y, facing, health, ammo, weapons, opening, keys, 0, 0);
+        }
+        Location location() { return new Location(x, y, keys); }
     }
+    record Location(int x, int y, int keys) {}
     static final class Entry {
         final Cell cell;
         final Route route;
@@ -19,7 +23,7 @@ final class Archive {
     }
     final int capacity, nodeCapacity, cellSize;
     final LinkedHashMap<Cell, List<Entry>> cells = new LinkedHashMap<>();
-    final LinkedHashMap<Long, Integer> visits = new LinkedHashMap<>();
+    final LinkedHashMap<Location, Integer> visits = new LinkedHashMap<>();
     private final IdentityHashMap<Route, Integer> references = new IdentityHashMap<>();
     private int size;
     long discoveries;
@@ -36,13 +40,13 @@ final class Archive {
         return result;
     }
 
-    int visits(double x, double y) {
-        long key = ((long) (int) Math.floor(x / cellSize) << 32) | ((int) Math.floor(y / cellSize) & 0xffffffffL);
+    int visits(double x, double y, int keys) {
+        Location key = new Location((int) Math.floor(x / cellSize), (int) Math.floor(y / cellSize), keys);
         return visits.getOrDefault(key, 0);
     }
 
     void visit(Cell cell) {
-        long key = cell.location();
+        Location key = cell.location();
         visits.compute(key, (k, old) -> old == null ? 1 : Math.min(1000000, old + 1));
         if (visits.size() > capacity * 4) visits.remove(visits.keySet().iterator().next());
     }

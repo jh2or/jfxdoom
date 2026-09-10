@@ -58,7 +58,7 @@ final class Explorer {
                         double tx = o.x() + reachable * Math.cos(a), ty = o.y() + reachable * Math.sin(a);
                         // Bounded novelty at the reachable endpoint can never outweigh an impassable wall.
                         double value = reachable < 16 ? -100 : 3 * reachable / 112
-                                + 1.5 / Math.sqrt(1 + archive.visits(tx, ty))
+                                + 1.5 / Math.sqrt(1 + archive.visits(tx, ty, o.keys()))
                                 + .5 * Math.cos(a - o.angle()) + random.nextDouble() * .8;
                         if (avoidUntil[i] > tic) value -= 5;
                         if (value > best) { best = value; heading = a; }

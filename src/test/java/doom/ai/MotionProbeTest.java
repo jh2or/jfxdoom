@@ -11,7 +11,7 @@ class MotionProbeTest {
     @AfterEach void restoreWorld() { PSetup.lines = original; }
 
     static Observation at(double x, double y) {
-        return new Observation(x, y, 0, 100, 50, 3, 8, null, 0, 56, 16, 0, 0, 1);
+        return new Observation(x, y, 0, 100, 50, 3, 8, null, 0, 56, 16, 0, 0, 1, 0);
     }
     static Line line(int ax, int ay, int bx, int by) {
         Line l = new Line();

@@ -7,11 +7,11 @@ import java.util.*;
 import java.util.concurrent.atomic.*;
 import java.util.function.BooleanSupplier;
 
-/** Standalone archive exploration followed by verified optimization of successful E1M1 routes. */
+/** Standalone archive exploration followed by verified optimization of successful Doom routes. */
 public final class Trainer {
     public static void main(String[] args) throws Exception {
         if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-            System.out.println("Usage: doom.ai.Trainer --wad DOOM.WAD [--output training/e1m1] [--resume]\n"
+            System.out.println("Usage: doom.ai.Trainer --wad DOOM.WAD [--map E1M1] [--output training/e1m1] [--resume]\n"
                     + "  --skill 3 --episode-tics 21000 --attempts 1000 --minutes 10 --seed 1\n"
                     + "  --archive-size 12000 --node-limit 250000 --cell-size 128 --target-seconds 120\n"
                     + "  --improve winning.lmp  Begin with a previously successful demo.\n"
@@ -22,8 +22,8 @@ public final class Trainer {
         }
         TrainingConfig config = TrainingConfig.parse(args);
         if (config.verify() != null) {
-            int tics = DemoVerifier.verify(config.wad(), config.verify(), config.skill(), config.episodeTics(), null);
-            System.out.println("VERIFIED E1M1 completion in " + tics + " tics"); return;
+            int tics = DemoVerifier.verify(config.wad(), config.verify(), config.skill(), config.episodeTics(), null, config.level());
+            System.out.println("VERIFIED " + config.level() + " completion in " + tics + " tics"); return;
         }
         if (config.analyze() != null) { analyze(config); return; }
         if (config.resume() && config.improve() != null) throw new IllegalArgumentException("Use --improve only when starting a new experiment");
@@ -36,19 +36,20 @@ public final class Trainer {
     }
 
     private static void analyze(TrainingConfig c) throws IOException {
-        Episode e = new Episode(c.wad(), c.skill(), c.episodeTics());
-        List<Action> actions = DemoInput.read(c.analyze(), c.skill(), c.episodeTics());
+        Episode e = new Episode(c.wad(), c.skill(), c.episodeTics(), c.level());
+        List<Action> actions = DemoInput.read(c.analyze(), c.skill(), c.episodeTics(), c.level());
         RunTrace run = RunTrace.play(e, actions, () -> false);
         Files.createDirectories(c.output());
         String summary = "outcome=" + run.outcome() + " " + run.metrics().description() + "\n";
         Route.atomicWrite(c.output().resolve("analysis.txt"), summary.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        StringBuilder trace = new StringBuilder("tic,x,y,z,angle,health,forward,side,turn,buttons,displacement\n");
+        StringBuilder trace = new StringBuilder("tic,x,y,z,angle,health,forward,side,turn,buttons,displacement,keys,used_line,armor,armor_type,weapons,ready_weapon,bullets,shells,cells\n");
         RunTrace.Sample previous = run.samples().getFirst();
         for (RunTrace.Sample p : run.samples()) {
             Action action = p.tic() == 0 ? Action.IDLE : actions.get(p.tic() - 1);
-            trace.append(String.format(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.6f,%d,%d,%d,%d,%d,%.3f%n",
+            trace.append(String.format(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.6f,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%d%n",
                     p.tic(), p.x(), p.y(), p.z(), p.angle(), p.health(), action.forward(), action.side(), action.turn(), action.buttons(),
-                    Math.hypot(p.x() - previous.x(), p.y() - previous.y())));
+                    Math.hypot(p.x() - previous.x(), p.y() - previous.y()), p.keys(), p.usedLine(), p.inventory().armor(), p.inventory().armorType(),
+                    p.weapons(), p.inventory().ready(), p.inventory().bullets(), p.inventory().shells(), p.inventory().cells()));
             previous = p;
         }
         Route.atomicWrite(c.output().resolve("trace.csv"), trace.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -62,14 +63,14 @@ public final class Trainer {
             throw new IOException("Output already contains training data; use --resume or another --output directory");
         }
         Checkpoint.Progress progress = config.resume() ? Checkpoint.load(checkpoint, identity, config) : new Checkpoint.Progress(config);
-        Episode episode = new Episode(config.wad(), config.skill(), config.episodeTics());
+        Episode episode = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level());
         RunTrace best = null;
         if (progress.best != null) best = RunTrace.play(episode, RunTrace.actions(progress.best), () -> false);
         else if (config.improve() != null) best = RunTrace.play(episode,
-                DemoInput.read(config.improve(), config.skill(), config.episodeTics()), () -> false);
+                DemoInput.read(config.improve(), config.skill(), config.episodeTics(), config.level()), () -> false);
         Route.atomicWrite(config.output().resolve("manifest.txt"), (identity + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         if (best != null) {
-            if (best.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Incumbent did not complete E1M1");
+            if (best.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Incumbent did not complete " + config.level());
             installBest(config, identity, best, progress.attempts);
             progress.best = best.route(); Checkpoint.save(checkpoint, identity, progress);
             if (best.route().tics <= config.targetTics()) { System.out.println("Target already reached and verified"); return; }
@@ -101,7 +102,7 @@ public final class Trainer {
         Path log = config.output().resolve("attempts.csv");
         boolean emptyLog = !Files.exists(log) || Files.size(log) == 0;
         try (BufferedWriter csv = Files.newBufferedWriter(log, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            if (emptyLog) csv.write("attempt,phase,outcome,prefix_tics,health,kills,archive_entries,route_nodes,discoveries,seconds,tics,movement_tics,blocked_tics,use_tics,turning_tics,idle_tics,revisits,distance\n");
+            if (emptyLog) csv.write("attempt,phase,outcome,prefix_tics,health,kills,archive_entries,route_nodes,discoveries,seconds,tics,movement_tics,blocked_tics,use_tics,turning_tics,idle_tics,revisits,distance,keys\n");
             for (int attempt = 0; attempt < config.attempts() && !stop.getAsBoolean(); attempt++) {
                 boolean optimize = best != null && (progress.archive.size() == 0 || progress.attempts % 8 != 7);
                 Route route; int prefixTics = 0; RunTrace proposal = null;
@@ -142,12 +143,12 @@ public final class Trainer {
                 if (episode.outcome() == Episode.Outcome.DEAD) progress.deaths++;
                 if (episode.outcome() == Episode.Outcome.TIMEOUT) progress.timeouts++;
                 if (episode.outcome() == Episode.Outcome.COMPLETED) progress.successes++;
-                csv.write(String.format(Locale.ROOT, "%d,%s,%s,%d,%d,%d,%d,%d,%d,%.3f,%s%n", progress.attempts,
+                csv.write(String.format(Locale.ROOT, "%d,%s,%s,%d,%d,%d,%d,%d,%d,%.3f,%s,%d%n", progress.attempts,
                         optimize ? "OPTIMIZE" : "EXPLORE", outcome, prefixTics, episode.player().health, episode.player().killcount,
                         progress.archive.size(), progress.archive.nodes(), progress.archive.discoveries, (System.nanoTime() - started) / 1e9,
-                        episode.metrics().csv())); csv.flush();
+                        episode.metrics().csv(), Observation.keys(episode.player()))); csv.flush();
                 if (!interrupted && route != null && (progress.attempts == 1 || progress.attempts % 25 == 0)) {
-                    Route.demo(config.output().resolve("latest.lmp"), config.skill(), route);
+                    Route.demo(config.output().resolve("latest.lmp"), config.skill(), route, config.level());
                 }
                 if (episode.outcome() == Episode.Outcome.COMPLETED && (best == null || route.tics < best.route().tics)) {
                     RunTrace candidate = proposal != null ? proposal : RunTrace.play(episode, RunTrace.actions(route), () -> false);
@@ -176,16 +177,16 @@ public final class Trainer {
     }
 
     private static void installBest(TrainingConfig config, String identity, RunTrace run, long attempt) throws IOException {
-        if (run.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Candidate did not complete E1M1");
-        Episode verification = new Episode(config.wad(), config.skill(), config.episodeTics());
+        if (run.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Candidate did not complete " + config.level());
+        Episode verification = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level());
         Route.replay(verification, run.route());
         if (verification.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Candidate did not repeat");
         Path candidate = config.output().resolve("cand.lmp");
-        Route.demo(candidate, config.skill(), run.route());
-        int tics = DemoVerifier.verify(config.wad(), candidate, config.skill(), config.episodeTics(), run.route());
-        Route.demo(config.output().resolve("winning.lmp"), config.skill(), run.route());
+        Route.demo(candidate, config.skill(), run.route(), config.level());
+        int tics = DemoVerifier.verify(config.wad(), candidate, config.skill(), config.episodeTics(), run.route(), config.level());
+        Route.demo(config.output().resolve("winning.lmp"), config.skill(), run.route(), config.level());
         Files.deleteIfExists(candidate);
-        String result = "VERIFIED E1M1 completion: attempt=" + attempt + ", tics=" + tics + ", gameSeconds=" + tics / 35.0
+        String result = "VERIFIED " + config.level() + " completion: attempt=" + attempt + ", tics=" + tics + ", gameSeconds=" + tics / 35.0
                 + ", targetReached=" + (tics <= config.targetTics()) + "\n" + run.metrics().description() + "\n";
         Route.atomicWrite(config.output().resolve("result.txt"), (result + identity + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         System.out.print(result);

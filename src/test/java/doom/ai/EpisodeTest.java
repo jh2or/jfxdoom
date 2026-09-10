@@ -29,6 +29,27 @@ class EpisodeTest {
         WWad.resetForTests();
     }
 
+    @Test void selectedMapResetsToItsOwnPistolStartAndReplaysDeterministically() throws Exception {
+        int firstX = episode.player().mo.x, firstY = episode.player().mo.y;
+        episode = new Episode(wad, 3, 21000, new Level(1, 2));
+        assertEquals(1, Doomstat.gameepisode); assertEquals(2, Doomstat.gamemap);
+        assertTrue(firstX != episode.player().mo.x || firstY != episode.player().mo.y);
+        long initial = Fingerprint.capture();
+        Action action = new Action(50, 40, 256, 0);
+        for (int i = 0; i < 12; i++) episode.step(action);
+        Route route = new Route(null, action, 12, Fingerprint.capture());
+        episode.player().cards[Doomdef.it_redcard] = true;
+        episode.reset();
+        assertEquals(2, Doomstat.gamemap);
+        assertEquals(0, Observation.keys(episode.player()));
+        assertEquals(100, episode.player().health);
+        assertEquals(50, episode.player().ammo[0]);
+        assertEquals(initial, Fingerprint.capture());
+        Route.replay(episode, route);
+        assertEquals(route.fingerprint, Fingerprint.capture());
+        assertEquals(Episode.Outcome.RUNNING, episode.outcome());
+    }
+
     @Test void resetClearsGameplayInputAndRandomContamination() {
         long initial = Fingerprint.capture();
         int x = episode.player().mo.x;

@@ -6,15 +6,23 @@ import doom.system.Doomdef;
 final class LocalController {
     static double difference(double a, double b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
+    private final PickupController pickups = new PickupController();
     private final UseController use = new UseController();
-    void reset() { use.reset(); }
+    private doom.play.Mobj combatEnemy;
+    private int combatUntil;
+    void reset() { use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
 
     Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
+        var pickup = pickups.choose(o, probe, tx, ty, tic);
+        if (pickup != null) { tx = pickup.x / 65536.0; ty = pickup.y / 65536.0; }
         double distance = Math.hypot(tx - o.x(), ty - o.y());
         double desired = Math.atan2(ty - o.y(), tx - o.x());
         double reachable = probe.distance(o.x() + Math.cos(desired) * Math.min(distance, 128),
                 o.y() + Math.sin(desired) * Math.min(distance, 128));
-        if (reachable < Math.min(24, distance * .75) && probe.door(64) == null) {
+        var obstruction = probe.useTarget(desired, java.util.Set.of());
+        boolean approachDoor = obstruction != null && obstruction.backsector != null
+                && MotionProbe.opening(obstruction) < o.height();
+        if (reachable < Math.min(24, distance * .75) && !approachDoor) {
             // A visible waypoint can require a small bend around a corner: do not idle forever facing it.
             double best = Double.NEGATIVE_INFINITY;
             for (int i = 0; i < 32; i++) {
@@ -36,17 +44,26 @@ final class LocalController {
         double along = o.momx() * Math.cos(desired) + o.momy() * Math.sin(desired);
         if (along > 4 && Math.min(distance, reachable) < along * 4) forward = -25;
         if (reachable < 4 && along < 2) forward = 0;
-        int buttons = 0;
+        int buttons = o.preferredWeapon() != o.inventory().ready() && o.preferredWeapon() != o.inventory().pending()
+                ? Doomdef.BT_CHANGE | (o.preferredWeapon() << Doomdef.BT_WEAPONSHIFT) : 0;
+        boolean engaging = false;
         if (o.enemy() != null) {
             double enemyAngle = Math.atan2(o.enemy().y / 65536.0 - o.y(), o.enemy().x / 65536.0 - o.x());
             if (Math.abs(difference(enemyAngle, o.angle())) < .22) buttons |= Doomdef.BT_ATTACK;
-            if (fight && Math.abs(difference(enemyAngle, desired)) < .8) {
-                turn = (int) Math.round(difference(enemyAngle, o.angle()) * 65536 / (2 * Math.PI) / duration / 256) * 256;
-                turn = Math.max(-2048, Math.min(2048, turn));
+            double enemyDistance = Math.hypot(o.enemy().x / 65536.0 - o.x(), o.enemy().y / 65536.0 - o.y());
+            boolean acquireShotgun = !Inventory.owns(o.weapons(), Doomdef.wp_shotgun)
+                    && o.enemy().type == doom.play.Info.MT_SHOTGUY && o.inventory().bullets() > 0;
+            if ((fight || acquireShotgun) && enemyDistance < 192
+                    && (acquireShotgun || enemyDistance < 64 || Math.abs(difference(enemyAngle, desired)) < .9)) {
+                if (combatEnemy != o.enemy()) { combatEnemy = o.enemy(); combatUntil = tic + 140; }
+                if (tic < combatUntil) {
+                    // Give a nearby obstructing enemy a bounded fighting interval before resuming the route.
+                    engaging = true; duration = 2; forward = side = 0;
+                    turn = turnTowards(enemyAngle, o.angle(), duration);
+                }
             }
-            buttons |= Doomdef.BT_CHANGE | (o.preferredWeapon() << Doomdef.BT_WEAPONSHIFT);
         }
-        if (reachable >= 80 && distance >= 96 && Math.abs(angle) < 1.4 && probe.door(96) == null) {
+        if (!engaging && reachable >= 80 && distance >= 96 && Math.abs(angle) < 1.4 && probe.door(96) == null) {
             // Offset the view from the travel direction to combine vanilla forward/run and strafe thrust.
             double diagonal = Math.atan2(40, 50);
             double facing = desired + (difference(o.angle(), desired) >= 0 ? diagonal : -diagonal);

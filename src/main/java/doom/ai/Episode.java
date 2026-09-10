@@ -13,12 +13,16 @@ import java.util.Arrays;
 public final class Episode {
     public enum Outcome { RUNNING, COMPLETED, DEAD, TIMEOUT }
     private final int skill;
+    private final Level level;
     private final int limit;
     private int tics;
     private Outcome outcome;
     private MovementMetrics movement = new MovementMetrics();
 
-    public Episode(Path wad, int skill, int limit) throws IOException {
+    public Episode(Path wad, int skill, int limit) throws IOException { this(wad, skill, limit, Level.E1M1); }
+
+    public Episode(Path wad, int skill, int limit, Level level) throws IOException {
+        this.level = java.util.Objects.requireNonNull(level);
         if (skill < 1 || skill > 5 || limit < 1 || limit > 21000) {
             throw new IllegalArgumentException("Skill must be 1..5; episode tics 1..21000");
         }
@@ -28,8 +32,8 @@ public final class Episode {
         DMain.dResetWadFiles();
         GGame.demorecording = Doomstat.demoplayback = Doomstat.singledemo = false;
         DMain.dDoomMain(new String[] {"-iwad", wad.toAbsolutePath().toString(), "-nosound"});
-        if (Doomstat.gamemode == Doomstat.GameMode.commercial || WWad.wCheckNumForName("E1M1") < 0) {
-            throw new IllegalArgumentException("Training requires a Doom 1 WAD containing E1M1");
+        if (Doomstat.gamemode == Doomstat.GameMode.commercial || WWad.wCheckNumForName(level.toString()) < 0) {
+            throw new IllegalArgumentException("Training requires a Doom 1 WAD containing " + level);
         }
         reset();
     }
@@ -56,7 +60,7 @@ public final class Episode {
         Arrays.fill(PMobj.itemrespawntime, 0);
         PTick.gametic = 0;
         RMain.validcount = 1;
-        GGame.gInitNew(skill - 1, 1, 1);
+        GGame.gInitNew(skill - 1, level.episode(), level.map());
         GGame.gDoLoadLevel();
         HuStuff.huStart();
         StStuff.stStart();
@@ -86,6 +90,7 @@ public final class Episode {
     MovementMetrics.Summary metrics() { return movement.summary(); }
     public int tics() { return tics; }
     public int limit() { return limit; }
+    public Level level() { return level; }
     public int skill() { return skill; }
     public Outcome outcome() { return outcome; }
 }

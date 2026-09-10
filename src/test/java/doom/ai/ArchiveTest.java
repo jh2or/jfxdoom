@@ -7,9 +7,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ArchiveTest {
     @TempDir Path temp;
-    private static Archive.Cell cell(int x) { return new Archive.Cell(x, 0, 0, 3, 2, 3, 8); }
+    private static Archive.Cell cell(int x) { return new Archive.Cell(x, 0, 0, 3, 2, 3, 8, 0); }
     private TrainingConfig config(int size, int nodes) {
-        return new TrainingConfig(Path.of("unused.wad"), temp, 3, 21000, 10, 1, 42, size, nodes, 128, false, null, null, null, 4200);
+        return new TrainingConfig(Path.of("unused.wad"), temp, 3, 21000, 10, 1, 42, size, nodes, 128, false, null, null, null, 4200, Level.E1M1);
     }
 
     @Test void sharesPrefixesPreservesTradeoffsAndEnforcesBothBounds() {
@@ -53,6 +53,44 @@ class ArchiveTest {
         assertThrows(java.io.IOException.class, () -> Checkpoint.load(path, "different-engine", config));
         byte[] bytes = Files.readAllBytes(path); bytes[bytes.length / 2] ^= 1; Files.write(path, bytes);
         assertThrows(java.io.IOException.class, () -> Checkpoint.load(path, "same-engine", config));
+    }
+
+    @Test void preservesKeyDetoursAndReopensExplorationAfterPickupAcrossCheckpoints() throws Exception {
+        var config = config(10, 100); var progress = new Checkpoint.Progress(config);
+        var without = cell(0);
+        var with = new Archive.Cell(0, 0, 0, 3, 2, 3, 8, 4);
+        Route fast = new Route(null, Action.IDLE, 4, 1);
+        Route detour = new Route(fast, Action.IDLE, 20, 2);
+        assertTrue(progress.archive.offer(without, fast, 100));
+        assertTrue(progress.archive.offer(with, detour, 60), "Key acquisition must survive a slower/lower-health arrival");
+        progress.archive.visit(without);
+        assertEquals(1, progress.archive.visits(0, 0, 0));
+        assertEquals(0, progress.archive.visits(0, 0, 4));
+        progress.archive.visit(with);
+        Path checkpoint = temp.resolve("keys.bin"); Checkpoint.save(checkpoint, config.identity(), progress);
+        var restored = Checkpoint.load(checkpoint, config.identity(), config);
+        assertEquals(2, restored.archive.size());
+        assertEquals(1, restored.archive.visits(0, 0, 0));
+        assertEquals(1, restored.archive.visits(0, 0, 4));
+        assertTrue(restored.archive.entries().stream().anyMatch(e -> e.cell.keys() == 4));
+        var otherMap = TrainingConfig.parse(new String[] {"--wad", "unused.wad", "--map", "E1M2"});
+        assertThrows(java.io.IOException.class, () -> Checkpoint.load(checkpoint, otherMap.identity(), otherMap));
+    }
+
+    @Test void retainsArmorAndShellSuppliesAcrossCheckpoint() throws Exception {
+        var config = config(10, 100); var p = new Checkpoint.Progress(config);
+        Route fast = new Route(null, Action.IDLE, 4, 1), supplied = new Route(fast, Action.IDLE, 12, 2);
+        var bare = new Archive.Cell(0, 0, 0, 3, 2, 7, 8, 0, 0, 0);
+        var armored = new Archive.Cell(0, 0, 0, 3, 2, 7, 8, 0, 20, 0);
+        var armed = new Archive.Cell(0, 0, 0, 3, 2, 7, 8, 0, 0, 1);
+        p.archive.offer(bare, fast, 100);
+        assertTrue(p.archive.offer(armored, supplied, 80));
+        assertTrue(p.archive.offer(armed, supplied, 80));
+        Path file = temp.resolve("equipment.bin"); Checkpoint.save(file, config.identity(), p);
+        var restored = Checkpoint.load(file, config.identity(), config).archive;
+        assertEquals(3, restored.size());
+        assertTrue(restored.entries().stream().anyMatch(e -> e.cell.armor() == 20));
+        assertTrue(restored.entries().stream().anyMatch(e -> e.cell.shells() == 1));
     }
 
     @Test void validatesInputsAndPreservesSignedDemoCommands() {

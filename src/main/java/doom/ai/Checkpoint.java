@@ -8,7 +8,7 @@ import java.util.zip.*;
 
 /** Versioned, checksummed archive. Common route prefixes are serialized once. */
 final class Checkpoint {
-    private static final int MAGIC = 0x44414932;
+    private static final int MAGIC = 0x44414934;
     static final class Progress {
         final Archive archive;
         final LearnerRandom random;
@@ -74,11 +74,11 @@ final class Checkpoint {
             for (Archive.Entry e : entries) {
                 Archive.Cell c = e.cell;
                 out.writeInt(c.x()); out.writeInt(c.y()); out.writeInt(c.facing()); out.writeInt(c.health());
-                out.writeInt(c.ammo()); out.writeInt(c.weapons()); out.writeInt(c.opening());
+                out.writeInt(c.ammo()); out.writeInt(c.weapons()); out.writeInt(c.opening()); out.writeInt(c.keys()); out.writeInt(c.armor()); out.writeInt(c.shells());
                 out.writeInt(ids.get(e.route)); out.writeInt(e.health); out.writeLong(e.discovered); out.writeInt(e.selected);
             }
             out.writeInt(a.visits.size());
-            for (var visit : a.visits.entrySet()) { out.writeLong(visit.getKey()); out.writeInt(visit.getValue()); }
+            for (var visit : a.visits.entrySet()) { out.writeInt(visit.getKey().x()); out.writeInt(visit.getKey().y()); out.writeInt(visit.getKey().keys()); out.writeInt(visit.getValue()); }
         }
         byte[] body = bytes.toByteArray();
         CRC32 crc = new CRC32(); crc.update(body);
@@ -90,7 +90,7 @@ final class Checkpoint {
     }
 
     static Progress load(Path path, String identity, TrainingConfig config) throws IOException {
-        long maxBytes = 1024L + (config.nodeLimit() + config.episodeTics()) * 20L + config.archiveSize() * 104L;
+        long maxBytes = 1024L + (config.nodeLimit() + config.episodeTics()) * 20L + config.archiveSize() * 128L;
         byte[] body;
         try (DataInputStream input = new DataInputStream(new GZIPInputStream(Files.newInputStream(path)))) {
             int length = input.readInt();
@@ -124,10 +124,10 @@ final class Checkpoint {
             int entries = count(in, config.archiveSize());
             for (int i = 0; i < entries; i++) {
                 Archive.Cell c = new Archive.Cell(in.readInt(), in.readInt(), in.readInt(), in.readInt(),
-                        in.readInt(), in.readInt(), in.readInt());
+                        in.readInt(), in.readInt(), in.readInt(), in.readInt(), in.readInt(), in.readInt());
                 int route = in.readInt(), health = in.readInt(); long discovered = nonnegative(in.readLong());
                 int selected = in.readInt();
-                if (route < 0 || route >= nodes.length || nodes[route].tics >= config.episodeTics() || health <= 0 || selected < 0
+                if (route < 0 || route >= nodes.length || nodes[route].tics >= config.episodeTics() || health <= 0 || selected < 0 || c.keys() < 0 || c.keys() > 63 || c.armor() < 0 || c.shells() < 0
                         || p.archive.cells.getOrDefault(c, List.of()).size() >= 2) throw new IOException("Invalid archive entry");
                 Archive.Entry entry = new Archive.Entry(c, nodes[route], health, discovered); entry.selected = selected;
                 p.archive.restore(entry);
@@ -135,8 +135,8 @@ final class Checkpoint {
             if (p.archive.nodes() > config.nodeLimit()) throw new IOException("Archive exceeds shared-prefix limit");
             int visits = count(in, config.archiveSize() * 4);
             for (int i = 0; i < visits; i++) {
-                long key = in.readLong(); int value = in.readInt();
-                if (value < 1 || value > 1000000 || p.archive.visits.put(key, value) != null) throw new IOException("Invalid visits");
+                Archive.Location key = new Archive.Location(in.readInt(), in.readInt(), in.readInt()); int value = in.readInt();
+                if (key.keys() < 0 || key.keys() > 63 || value < 1 || value > 1000000 || p.archive.visits.put(key, value) != null) throw new IOException("Invalid visits");
             }
             if (in.read() != -1) throw new IOException("Trailing checkpoint data");
             return p;
