@@ -47,3 +47,6 @@ reference-wads/*.wad
 !gradle/wrapper/gradle-wrapper.jar
 default.cfg
 DOOM*.png
+
+# Learner checkpoints, metrics and generated demos
+training/

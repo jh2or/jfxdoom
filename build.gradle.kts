@@ -47,3 +47,15 @@ tasks.test {
         System.getProperty(k)?.let { systemProperty(k, it) }
     }
 }
+
+// Example: ./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --minutes 10"
+tasks.register<JavaExec>("train") {
+    group = "application"
+    description = "Learn an E1M1 route without opening a window"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("doom.ai.Trainer")
+    maxHeapSize = "1g"
+    args(providers.gradleProperty("trainArgs").map {
+        org.apache.tools.ant.types.Commandline.translateCommandline(it).toList()
+    }.getOrElse(emptyList()))
+}

@@ -191,6 +191,31 @@ public final class DMain {
             }
         }
 
+        // External demos must enter the lump directory before W_Init. Built-in
+        // lump names remain valid. Playback takes priority over autostart below.
+        String playbackName = null;
+        for (String flag : new String[] {"-playdemo", "-timedemo"}) {
+            int demoArg = MArgv.checkParm(flag);
+            if (demoArg > 0 && demoArg < MArgv.myargc - 1) {
+                String requested = MArgv.myargv[demoArg + 1];
+                java.nio.file.Path path = java.nio.file.Path.of(requested);
+                if (!java.nio.file.Files.isRegularFile(path)) {
+                    path = java.nio.file.Path.of(requested + ".lmp");
+                }
+                if (java.nio.file.Files.isRegularFile(path)) {
+                    dAddFile(path.toString());
+                    String base = path.getFileName().toString();
+                    int dot = base.indexOf('.');
+                    playbackName = dot < 0 ? base : base.substring(0, dot);
+                    if (playbackName.length() > 8) {
+                        throw new IllegalArgumentException("Demo filename base must have at most 8 characters: " + base);
+                    }
+                } else {
+                    playbackName = requested;
+                }
+            }
+        }
+
         // -skill 1..5
         p = MArgv.checkParm("-skill");
         if (p > 0 && p < MArgv.myargc - 1) {
@@ -267,9 +292,11 @@ public final class DMain {
         RThings.rInitSprites(doom.play.Info.sprnames);
 
         // I_Init: audio init (tactile is a no-op).
-        ISystem.iInit();
-        doom.sound.ISound.iInitSound();
-        doom.sound.ISound.iInitMusic();
+        if (MArgv.checkParm("-nosound") == 0) {
+            ISystem.iInit();
+            doom.sound.ISound.iInitSound();
+            doom.sound.ISound.iInitMusic();
+        }
 
         // D_CheckNetGame: single-player no-op.
         DNet.dQuitNetGame();        // closes any leftover state
@@ -298,20 +325,14 @@ public final class DMain {
             autostart = true;
         }
 
-        // -playdemo <name> queues a demo replay (single-shot).
-        p = MArgv.checkParm("-playdemo");
-        if (p > 0 && p < MArgv.myargc - 1) {
+        if (playbackName != null) {
+            if (GGame.demorecording) {
+                throw new IllegalArgumentException("Cannot combine recording and demo playback");
+            }
             Doomstat.singledemo = true;
-            GGame.gDeferedPlayDemo(MArgv.myargv[p + 1]);
-        }
-
-        // -timedemo <name> is like -playdemo but bails out to a
-        // timing-info message at end (singletics + nodrawers in
-        // the C). The Java port just routes to playdemo for now.
-        p = MArgv.checkParm("-timedemo");
-        if (p > 0 && p < MArgv.myargc - 1) {
-            Doomstat.singledemo = true;
-            GGame.gDeferedPlayDemo(MArgv.myargv[p + 1]);
+            advancedemo = false;
+            GGame.gDeferedPlayDemo(playbackName);
+            return;
         }
 
         // Auto-start a level if -warp / -episode / -skill given.

@@ -93,8 +93,9 @@ exposes the same set):
 -config <path>      override `default.cfg` location
 -record <name>      start recording a .lmp demo
 -playdemo <name>    play back a demo lump (single-shot quit on end)
--timedemo <name>    same, but bail with timing info at end
+-timedemo <name>    playback alias; accelerated benchmark timing is not implemented
 -maxdemo <KB>       grow the recording buffer past the default 128 KiB
+-nosound           skip opening audio devices (used by the training runner)
 ```
 
 Port-specific flags (no C counterpart):
@@ -136,6 +137,20 @@ lighting difference is immediately visible. Design and status
 notes live in [`3D_OVERHAUL.md`](3D_OVERHAUL.md),
 [`3D_SIDEBYSIDE_PLAN.md`](3D_SIDEBYSIDE_PLAN.md) and
 [`3D_OVERHAUL_STATUS.md`](3D_OVERHAUL_STATUS.md).
+
+## Learning E1M1
+
+A dependency-free Java archive explorer can learn an E1M1 route without opening
+a window:
+
+```sh
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --output training/e1m1 --minutes 10"
+```
+
+It retains progress across attempts, supports `--resume`, and optimizes successful
+runs toward a two-minute target. Use `--improve <demo.lmp>` to improve a previously
+learned run. The original 6:56 run was shortened to a verified 22.03 seconds on
+the local WAD. See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
 
 ## Controls
 

@@ -671,7 +671,7 @@ public final class GGame {
                         java.nio.file.Paths.get(demoName),
                         java.util.Arrays.copyOf(demoBuffer, demoP));
             } catch (java.io.IOException e) {
-                // best-effort — drop the demo if write fails
+                throw new java.io.UncheckedIOException("Could not write demo " + demoName, e);
             }
             demoBuffer = null;
             demorecording = false;
@@ -972,6 +972,11 @@ public final class GGame {
     // g_game.c lines 605–748. Per-tic dispatcher with full
     // gameaction transition switch.
     public static void gTicker() {
+        gTicker(null);
+    }
+
+    /** Advance one tic with optional local input. Demo playback still takes precedence. */
+    public static void gTicker(Ticcmd supplied) {
         // Process pending game-action transitions before the tick.
         while (gameaction != ga_nothing) {
             switch (gameaction) {
@@ -1057,7 +1062,16 @@ public final class GGame {
         // skips that.
         if (playeringame[consoleplayer]) {
             Ticcmd cmd = players[consoleplayer].cmd;
-            gBuildTiccmd(cmd);
+            if (supplied == null) {
+                gBuildTiccmd(cmd);
+            } else {
+                cmd.forwardmove = supplied.forwardmove;
+                cmd.sidemove = supplied.sidemove;
+                cmd.angleturn = supplied.angleturn;
+                cmd.buttons = supplied.buttons;
+                cmd.chatchar = 0;
+                cmd.consistancy = 0;
+            }
             // Demo overlay: when replaying, the recorded ticcmd
             // overrides the live input; when recording, the live
             // ticcmd is appended to the demo buffer. Matches

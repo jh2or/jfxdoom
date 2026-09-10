@@ -1002,3 +1002,75 @@ platform, and renderer differences are not evidence of vanilla equivalence.
 - Compatibility: previous Java saves and vanilla `.dsg` files cannot be loaded; previous Java files contain no map metadata and cannot safely be migrated automatically. The original section codec and its documented vanilla omissions (including fire flicker thinkers and target/tracer references) remain unchanged. The shared `respawnparm` field and its CLI/demo initialization behavior are integrated.
 - Verification: `bash gradlew test --max-workers=2` passes with the local Doom WAD. Five new real-WAD tests cover cross-level restoration and identical re-save, repeated same-level moving ceilings, loading from a title/demo screen, malformed/truncated/semantic rejection without mutation, and the file API/long descriptions. Tests explicitly skip if no Doom WAD is installed.
 - Manual check: save in E1M1 after changing health/ammo and opening a door, start E1M2 or end the game to the title screen, then load the slot. Confirm E1M1, position, inventory and the moving world resume; repeat the load and continue playing. Truncate a *copy* of a save, place it in a spare slot, and confirm loading reports failure while the active game remains playable.
+
+## E1M1 archive learner
+
+Added the standalone Java-only `doom.ai.Trainer` and the Gradle `train` task.
+The learner observes local engine state, stores bounded shared action prefixes,
+replays selected prefixes from standard E1M1 starts, and explores continuations.
+Every attempt ends on exit activation, death, or its simulated tic limit;
+overall wall-clock interruptions are reported separately. Checkpoints include
+configuration/WAD/build identity, a checksum, counters, and the learner RNG.
+No ML runtime, world snapshots, predefined route, or WAD assets are included.
+See [LEARNING.md](LEARNING.md) for commands, architecture and limits.
+
+Engine integration: `GGame.gTicker(Ticcmd)` accepts supplied commands while
+preserving the no-argument keyboard path and demo precedence. `DMain` now loads
+external demo files before WAD initialization and preserves requested playback
+instead of overwriting it with title/autostart initialization. `-nosound` skips
+audio device initialization. Demo write failures now surface instead of falsely
+reporting a successful recording. `-timedemo` remains a playback alias, without
+accelerated benchmark timing.
+
+Validation: full JUnit suite passes with the local WAD (1,019 tests: 1,009 passed,
+10 skipped). New coverage includes input/reset isolation, substantial real-WAD
+record/replay and input handoff, terminal conditions and prefix timeout accounting,
+actual E1M1 exit activation from a learned input fixture, shared-prefix bounds,
+corrupt/incompatible checkpoint rejection, and byte-identical checkpoint output
+for uninterrupted versus resumed training. The seed-1 learner discovered a
+skill-3 E1M1 completion at attempt 68 in 14,568 game tics, and verified both the
+fresh-start route and exported demo. Fixture provenance is in
+[src/test/resources/ai/README.md](src/test/resources/ai/README.md). These checks
+establish the tested Java-port behavior, not universal vanilla demo compatibility
+or generalization to different levels/settings.
+
+## E1M1 movement and speed optimization (v2)
+
+The learner now scores reachable endpoints using a local swept player footprint,
+uses short feedback-controlled motion with braking/corner detours, and recovers
+from repeated ineffective exploratory movement. Door interaction pulses Use and
+allows opening time; rapidly repeating Use would reverse a moving door.
+
+Successful runs become verified incumbents rather than ending training
+unconditionally. `--target-seconds` defaults to 120; `--improve` can seed a new
+experiment from a successful demo. Optimizer proposals either shortcut the
+observed trajectory using current local geometry or delete input intervals.
+Every accepted improvement is re-simulated from the standard start and checked
+through the external demo loader before replacing `winning.lmp`. Failed and
+pruned proposals preserve the incumbent. V2 checkpoints retain the best route,
+optimizer counters and learner RNG. Old archives are intentionally incompatible;
+their demos remain usable as improvement inputs. `--analyze` writes per-tic
+position/input/displacement traces and separately measures blocked movement,
+turning, idle input, Use input, distance and spatial re-entry.
+
+Final-build measurements on the same skill-3 WAD/seed:
+
+- Original run: 14,568 tics (416.23 seconds), 152.23 seconds of near-zero
+  displacement during movement input.
+- Automatic shortcut of that learned route: **771 tics (22.03 seconds)**,
+  **77 health remaining**, **0.14 seconds** of near-zero movement. This is below
+  both the 120-second target and the engine's 30-second E1M1 par.
+- Fresh exploration without an input demo: **3,783 tics (108.09 seconds)** on
+  attempt **98**, with **2.09 seconds** of near-zero movement.
+
+Both successful artifacts passed fresh-start replay and engine demo playback.
+The delivered optimized demo is `training/e1m1-2min/winning.lmp`; the fresh-search
+result is `training/e1m1-newstart/winning.lmp`. These generated files are ignored
+by Git. Commands, measurement definitions and limits are in [LEARNING.md](LEARNING.md).
+
+Validation: **1,025 tests, 1,015 passed, 10 skipped, no failures** with the local
+WAD. Added regressions cover player footprint versus point rays, tangential wall
+travel, retreat from contact, doors and step heights, distinct idle/blocked
+metrics, automatic sub-two-minute optimization of the learned fixture, final
+demo playback, best-route checkpoint retention, continued optimization after
+success, and preservation of the incumbent across unsuccessful resumed trials.
