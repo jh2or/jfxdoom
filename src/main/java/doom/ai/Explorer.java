@@ -7,6 +7,7 @@ import java.util.*;
 final class Explorer {
     record Burst(Action action, int duration) {}
     private final LearnerRandom random;
+    private final LocalController controller = new LocalController();
     private final int[] avoidUntil = new int[16];
     private final IdentityHashMap<Line, Integer> doors = new IdentityHashMap<>();
     private double heading, lastX, lastY;
@@ -18,7 +19,7 @@ final class Explorer {
     Explorer(LearnerRandom random) { this.random = random; }
     void restart() {
         hold = lastTic = stuck = recoveryUntil = 0; previous = Action.IDLE; door = null;
-        Arrays.fill(avoidUntil, 0); doors.clear();
+        Arrays.fill(avoidUntil, 0); doors.clear(); controller.reset();
     }
 
     Burst choose(Observation o, Archive archive, int tic) {
@@ -39,7 +40,7 @@ final class Explorer {
         if (door != null) {
             double tx = ((long) door.v1.x + door.v2.x) / 131072.0;
             double ty = ((long) door.v1.y + door.v2.y) / 131072.0;
-            result = LocalController.towards(o, probe, tx, ty, tic, false);
+            result = controller.towards(o, probe, tx, ty, tic, false);
         } else {
             if (stuck >= 18) {
                 avoidUntil[Math.floorMod((int) Math.round(heading * 8 / Math.PI), 16)] = tic + 140;
@@ -64,7 +65,7 @@ final class Explorer {
                     }
                     hold = 3 + random.nextInt(5);
                 }
-                result = LocalController.towards(o, probe, o.x() + 112 * Math.cos(heading),
+                result = controller.towards(o, probe, o.x() + 112 * Math.cos(heading),
                         o.y() + 112 * Math.sin(heading), tic, random.nextDouble() < .3);
             }
         }

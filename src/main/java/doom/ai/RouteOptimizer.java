@@ -36,6 +36,7 @@ final class RouteOptimizer {
 
     private RunTrace follow(Episode e, RunTrace incumbent, long variant, BooleanSupplier stop) {
         e.reset();
+        LocalController controller = new LocalController();
         List<RunTrace.Sample> path = incumbent.samples();
         List<RunTrace.Sample> observed = new ArrayList<>(); observed.add(RunTrace.sample(e));
         int cursor = 0;
@@ -65,7 +66,7 @@ final class RouteOptimizer {
             }
             double d = Math.hypot(tx - o.x(), ty - o.y());
             if (d > 250) { tx = o.x() + (tx - o.x()) * 250 / d; ty = o.y() + (ty - o.y()) * 250 / d; }
-            Explorer.Burst burst = LocalController.towards(o, probe, tx, ty, e.tics(), variant % 2 == 1);
+            Explorer.Burst burst = controller.towards(o, probe, tx, ty, e.tics(), variant % 2 == 1);
             int count = 0;
             while (count < burst.duration() && e.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {
                 e.step(burst.action()); count++; observed.add(RunTrace.sample(e));

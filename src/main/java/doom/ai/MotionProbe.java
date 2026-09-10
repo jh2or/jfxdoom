@@ -58,6 +58,28 @@ final class MotionProbe {
         return best;
     }
 
+    static double opening(Line l) {
+        return l.backsector == null ? 0 : (Math.min(l.frontsector.ceilingheight, l.backsector.ceilingheight)
+                - (double) Math.max(l.frontsector.floorheight, l.backsector.floorheight)) / 65536.0;
+    }
+
+    /** First obstructing surface on the ordinary 64-unit use ray; remembered doors still intercept use when open. */
+    Line useTarget(double angle, Set<Line> remembered) {
+        double rx = 64 * Math.cos(angle), ry = 64 * Math.sin(angle), nearest = 1;
+        Line target = null;
+        for (Line l : lines) {
+            if (l.backsector != null && opening(l) >= height && !remembered.contains(l)) continue;
+            double ax = l.v1.x / 65536.0, ay = l.v1.y / 65536.0;
+            double sx = l.dx / 65536.0, sy = l.dy / 65536.0;
+            double cross = rx * sy - ry * sx;
+            if (Math.abs(cross) < 1e-9) continue;
+            double t = ((ax - x) * sy - (ay - y) * sx) / cross;
+            double u = ((ax - x) * ry - (ay - y) * rx) / cross;
+            if (t >= 0 && t <= nearest && u >= 0 && u <= 1) { nearest = t; target = l; }
+        }
+        return target;
+    }
+
     static boolean intersectsSquare(double x, double y, double radius, Line l) {
         double ax = l.v1.x / 65536.0, ay = l.v1.y / 65536.0;
         double bx = l.v2.x / 65536.0, by = l.v2.y / 65536.0;

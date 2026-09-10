@@ -6,7 +6,10 @@ import doom.system.Doomdef;
 final class LocalController {
     static double difference(double a, double b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
-    static Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
+    private final UseController use = new UseController();
+    void reset() { use.reset(); }
+
+    Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
         double distance = Math.hypot(tx - o.x(), ty - o.y());
         double desired = Math.atan2(ty - o.y(), tx - o.x());
         double reachable = probe.distance(o.x() + Math.cos(desired) * Math.min(distance, 128),
@@ -33,8 +36,7 @@ final class LocalController {
         double along = o.momx() * Math.cos(desired) + o.momy() * Math.sin(desired);
         if (along > 4 && Math.min(distance, reachable) < along * 4) forward = -25;
         if (reachable < 4 && along < 2) forward = 0;
-        // Repeated use can reverse a moving Doom door. Pulse, release, then let it open.
-        int buttons = tic % 70 < 4 ? Doomdef.BT_USE : 0;
+        int buttons = 0;
         if (o.enemy() != null) {
             double enemyAngle = Math.atan2(o.enemy().y / 65536.0 - o.y(), o.enemy().x / 65536.0 - o.x());
             if (Math.abs(difference(enemyAngle, o.angle())) < .22) buttons |= Doomdef.BT_ATTACK;
@@ -44,6 +46,44 @@ final class LocalController {
             }
             buttons |= Doomdef.BT_CHANGE | (o.preferredWeapon() << Doomdef.BT_WEAPONSHIFT);
         }
+        if (reachable >= 80 && distance >= 96 && Math.abs(angle) < 1.4 && probe.door(96) == null) {
+            // Offset the view from the travel direction to combine vanilla forward/run and strafe thrust.
+            double diagonal = Math.atan2(40, 50);
+            double facing = desired + (difference(o.angle(), desired) >= 0 ? diagonal : -diagonal);
+            int strafeTurn = fight && o.enemy() != null ? turn : turnTowards(facing, o.angle(), 2);
+            double travel = difference(desired, o.angle() + strafeTurn * (2 * Math.PI / 65536));
+            double c = Math.cos(travel), s = Math.sin(travel);
+            double thrust = Math.min(50 / Math.max(.001, Math.abs(c)), 40 / Math.max(.001, Math.abs(s)));
+            Action diagonalMove = new Action((int) Math.round(thrust * c), (int) Math.round(-thrust * s), strafeTurn, 0);
+            if (safeMotion(o, probe, diagonalMove, 2)) {
+                forward = diagonalMove.forward(); side = diagonalMove.side(); turn = strafeTurn; duration = 2;
+            }
+        }
+        // Check interaction every tic near a door or wall; use is edge-triggered in Doom.
+        if (probe.door(80) != null || reachable < 64) duration = 1;
+        if (use.press(probe, o.angle() + turn * (2 * Math.PI / 65536), tic)) {
+            buttons |= Doomdef.BT_USE;
+            duration = 1;
+        }
         return new Explorer.Burst(new Action(forward, side, turn, buttons), duration);
+    }
+
+    private static int turnTowards(double target, double facing, int duration) {
+        int turn = (int) Math.round(difference(target, facing) * 65536 / (2 * Math.PI) / duration / 256) * 256;
+        return Math.max(-2048, Math.min(2048, turn));
+    }
+
+    /** Short inertial prediction, including both thrust axes and turning, checked with the player footprint. */
+    static boolean safeMotion(Observation o, MotionProbe probe, Action action, int duration) {
+        double x = o.x(), y = o.y(), vx = o.momx(), vy = o.momy(), facing = o.angle();
+        for (int i = 0; i < duration + 2; i++) {
+            if (i < duration) facing += action.turn() * (2 * Math.PI / 65536);
+            vx += (action.forward() * Math.cos(facing) + action.side() * Math.sin(facing)) / 32;
+            vy += (action.forward() * Math.sin(facing) - action.side() * Math.cos(facing)) / 32;
+            x += vx; y += vy; vx *= .90625; vy *= .90625;
+            double d = Math.hypot(x - o.x(), y - o.y());
+            if (d > 256 || probe.distance(x, y) < d - .01) return false;
+        }
+        return true;
     }
 }

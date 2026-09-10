@@ -65,9 +65,17 @@ with optimization. There is no neural network or exact-world snapshot system.
   momentum and clearance; blocked direct paths can use a small local detour.
 - Repeated ineffective exploratory movement triggers bounded recovery and a
   temporary penalty for the failed heading.
-- Closed two-sided passages receive a bounded interaction attempt and cooldown.
-  Use is pulsed and released, allowing the door to move. Rapid repeated Use can
-  reverse a moving Doom door and prevent it from opening far enough.
+- Door interaction uses the 64-unit facing ray instead of a global two-second
+  timer. It presses Use as soon as a local obstructing surface is reachable,
+  releases it, and observes clearance changes to avoid reversing an opening
+  door. Missed/ineffective activations have an eight-tic retry interval. Opening
+  state is inferred from local geometry; line specials and exit IDs are not read.
+  An inherited held Use input is released after restarting an archived prefix.
+- In clear stretches the controller offsets its facing and combines forward
+  running (up to 50) with sideways movement (up to 40). Both strafe directions
+  are supported. A short prediction checks combined thrust, turning, existing
+  momentum and the player's footprint before accepting diagonal movement.
+  Near obstacles and doors it returns to the approach/braking controller.
 - Stationary waiting is measured separately so replacing wall pushing with idle
   time does not appear to be a successful performance improvement.
 
@@ -112,6 +120,53 @@ It is below the two-minute target and E1M1's 30-second par. The no-demo experime
 reached its target on attempt 98. These are measurements for this WAD/build/seed,
 not guarantees for other settings. The optimizer used the previously learned
 run, not an independently supplied human speedrun.
+
+## Door activation and strafing measurements
+
+The changes were implemented and measured in order: door interaction first,
+then diagonal movement. On the same skill-3 WAD and seed 1:
+
+| Stage | Completion | Blocked input | Idle input | Health | Forward + strafe tics |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous optimized demo | 22.03 s / 771 tics | 0.14 s | 5.09 s | 77 | 0 |
+| Door-aware activation, forward movement only | 16.23 s / 568 tics | 0.06 s | 1.14 s | 85 | 0 |
+| Door-aware activation plus strafing | 13.89 s / 486 tics | 0.57 s | 0.74 s | 91 | 259 |
+
+The door-only run was generated from `training/e1m1-2min/winning.lmp`; the
+strafe run was generated from that door-only result. Each succeeded on its
+first optimization proposal and passed fresh-start replay plus external-demo
+playback. Control runs of the preceding controller from each same input demo,
+with one proposal and seed 1, did not improve the incumbent. These are staged
+route-optimization measurements, not a statistical benchmark across seeds.
+Changing input timing changes steering, combat and RNG activity as well, so
+completion-time differences cannot all be assigned to button-press latency.
+
+In the door-only recording, the three doors began opening at tics 118, 444,
+and 521, respectively one, two, and one tics after first entering the facing
+use ray. The previous recording delayed those activations by up to roughly
+two seconds. Door animation still takes time: all 20 blocked-input tics in
+the strafe recording occur at the first door while it is gaining clearance.
+
+Artifacts (generated locally and ignored by Git):
+
+- `training/e1m1-doors/winning.lmp`: measured door-only run.
+- `training/e1m1-strafe/winning.lmp`: measured final run.
+- `training/comparison/doors/` and `training/comparison/strafe/`: analyses,
+  input/position traces, and replayed door-event reports.
+
+```sh
+# Reproduce the strafe improvement from the saved door-only route.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --improve training/e1m1-doors/winning.lmp --output training/new-strafe --target-seconds 14 --attempts 1 --minutes 1"
+
+# Watch either stage; replace the path with e1m1-doors/winning.lmp to compare.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m1-strafe/winning.lmp"
+```
+
+A separate final-controller search without a supplied demo completed a first
+route on attempt 2 (236.54 seconds), then shortened it on attempt 3 to 529 tics
+(15.11 seconds, 14 health). Its demo is
+`training/e1m1-strafe-newstart/winning.lmp`. This seed-specific result does not
+guarantee that another search will finish as quickly.
 
 ## Settings, resume and limits
 

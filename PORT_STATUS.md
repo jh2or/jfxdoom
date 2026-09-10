@@ -1074,3 +1074,28 @@ travel, retreat from contact, doors and step heights, distinct idle/blocked
 metrics, automatic sub-two-minute optimization of the learned fixture, final
 demo playback, best-route checkpoint retention, continued optimization after
 success, and preservation of the incumbent across unsuccessful resumed trials.
+
+## E1M1 immediate door activation and diagonal movement
+
+Implemented and measured door interaction before adding strafing. The local
+controller now uses facing/reach and observed clearance changes, releases Use
+between attempts, and avoids reversing opening doors. No line specials or exit
+IDs are consulted. Forward-plus-strafe steering uses legal running inputs and
+checks predicted momentum and player-footprint clearance; close approaches keep
+braking and ordinary forward movement. Engine gameplay code is unchanged.
+
+The staged skill-3/seed-1 demos improved from 771 tics (22.03 seconds) to
+568 tics (16.23 seconds, doors only), then 486 tics (13.89 seconds, strafing).
+Door-only activation latency was one or two tics at all three doors. The final
+run uses both movement axes on 259 tics and ends with 91 health. Its 20 blocked
+input tics are at the first opening door. Both stages passed fresh replay and
+external-demo playback. A separate no-demo search found a route on attempt 2
+and optimized it to 529 tics (15.11 seconds) on attempt 3. Exact commands,
+controls and limitations are recorded in [LEARNING.md](LEARNING.md).
+
+Validation: **1,032 tests, 1,022 passed, 10 skipped, no failures** with the local
+WAD. Added regressions cover immediate activation, inherited Use release,
+opening/closing transitions, bounded retries, reach/facing/occlusion, diagonal
+thrust in either orientation, and rejection of momentum into a side wall.
+The real-WAD optimization regression requires a faster-than-771-tic completion
+that actually uses combined forward and strafe inputs and verifies its demo.

@@ -37,7 +37,9 @@ class RouteOptimizerTest {
         assertEquals(Episode.Outcome.COMPLETED, original.outcome());
         RunTrace candidate = new RouteOptimizer(new LearnerRandom(1)).propose(e, original, 0, () -> false);
         assertEquals(Episode.Outcome.COMPLETED, candidate.outcome());
-        assertTrue(candidate.route().tics <= 4200);
+        assertTrue(candidate.route().tics < 771, "Improve on the original 22.03-second controller");
+        assertTrue(RunTrace.actions(candidate.route()).stream().anyMatch(a -> a.forward() != 0 && a.side() != 0),
+                "The verified route must actually use combined forward and strafe movement");
         assertTrue(candidate.metrics().blockedTics() < original.metrics().blockedTics() / 10);
         assertTrue(candidate.metrics().idleTics() < 350, "Do not replace wall pushing with idle waiting");
         assertEquals(0, e.player().cheats);
