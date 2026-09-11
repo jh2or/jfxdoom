@@ -80,6 +80,19 @@ class EquipmentTest {
         assertSame(medkit, new PickupController().choose(hurt, new MotionProbe(hurt), 200, 0, 0));
     }
 
+    @Test void approachesVisibleUnownedKeysAcrossARoomWithALocalProbeAndBoundedDeadline() {
+        Mobj key = item(Info.SPR_BKEY, 400, 0);
+        Observation o = at(Inventory.PISTOL_START, 3, key);
+        PickupController controller = new PickupController();
+        assertSame(key, controller.choose(o, new MotionProbe(o), -100, 0, 0));
+        assertNull(controller.choose(o, new MotionProbe(o), -100, 0, 105));
+        controller.reset();
+        PSetup.lines = new Line[] {MotionProbeTest.line(300, -100, 300, 100)};
+        assertNull(controller.choose(o, new MotionProbe(o), -100, 0, 106), "Far wall still occludes the key");
+        PSetup.lines = new Line[0]; key.x = 513 * 65536;
+        assertNull(controller.choose(o, new MotionProbe(o), -100, 0, 107));
+    }
+
     @Test void selectsShotgunWithoutAnEnemyAndFallsBackWhenShellsRunOut() {
         Inventory loaded = new Inventory(0, 0, 50, 2, 0, Doomdef.wp_pistol, Doomdef.wp_nochange);
         assertEquals(Doomdef.wp_shotgun, loaded.preferredWeapon(7));

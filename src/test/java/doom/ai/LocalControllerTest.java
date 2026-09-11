@@ -26,6 +26,18 @@ class LocalControllerTest {
         }
     }
 
+    @Test void fasterTurningUsesLegalMouseInputsWithoutIncreasingMovementLimits() {
+        Observation o = at(Math.PI, 0, 0);
+        Action normal = new LocalController().towards(o, new MotionProbe(o), 200, 0, 1, false).action();
+        Action fast = new LocalController(false, 8192).towards(o, new MotionProbe(o), 200, 0, 1, false).action();
+        assertEquals(2048, Math.abs(normal.turn()));
+        assertTrue(Math.abs(fast.turn()) > Math.abs(normal.turn()));
+        assertEquals(fast, Action.unpack(fast.packed()));
+        assertTrue(Math.abs(fast.forward()) <= 50 && Math.abs(fast.side()) <= 40);
+        assertThrows(IllegalArgumentException.class, () -> new LocalController(false, 123));
+        assertThrows(IllegalArgumentException.class, () -> new LocalController(false, 32768));
+    }
+
     @Test void approachesANearbyObstacleWithoutDiagonalAcceleration() {
         PSetup.lines = new Line[] {MotionProbeTest.line(70, -100, 70, 100)};
         Observation o = at(0, 8, 0);

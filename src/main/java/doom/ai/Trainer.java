@@ -14,6 +14,7 @@ public final class Trainer {
             System.out.println("Usage: doom.ai.Trainer --wad DOOM.WAD [--map E1M1] [--output training/e1m1] [--resume]\n"
                     + "  --skill 3 --episode-tics 21000 --attempts 1000 --minutes 10 --seed 1\n"
                     + "  --archive-size 12000 --node-limit 250000 --cell-size 128 --target-seconds 120\n"
+                    + "  --seed-demo trial.lmp  Import surviving prefixes of a previous trial.\n"
                     + "  --improve winning.lmp  Begin with a previously successful demo.\n"
                     + "  --analyze winning.lmp  Measure movement and write trace.csv / analysis.txt.\n"
                     + "  --verify winning.lmp   Verify completion instead of training.\n"
@@ -64,6 +65,10 @@ public final class Trainer {
         }
         Checkpoint.Progress progress = config.resume() ? Checkpoint.load(checkpoint, identity, config) : new Checkpoint.Progress(config);
         Episode episode = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level());
+        if (config.seedDemo() != null) {
+            importTrial(episode, config, progress);
+            Route.atomicWrite(config.output().resolve("seed.lmp"), Files.readAllBytes(config.seedDemo()));
+        }
         RunTrace best = null;
         if (progress.best != null) best = RunTrace.play(episode, RunTrace.actions(progress.best), () -> false);
         else if (config.improve() != null) best = RunTrace.play(episode,
@@ -115,13 +120,16 @@ public final class Trainer {
                     if (route != null && route.tics > 700 && progress.attempts % 4 == 0)
                         route = PrefixOptimizer.shorten(episode, route, optimizer, progress.attempts / 4, stop);
                     prefixTics = route == null ? 0 : route.tics;
-                    episode.reset();
+                    episode.reset(); explorer.restart();
                     for (Route node : Route.steps(route)) {
-                        for (int i = 0; i < node.duration && !stop.getAsBoolean(); i++) episode.step(node.action);
+                        for (int i = 0; i < node.duration && !stop.getAsBoolean(); i++) {
+                            episode.step(node.action);
+                            if (episode.tics() % 16 == 0) explorer.observe(Observation.read(episode), episode.tics());
+                        }
                         if (stop.getAsBoolean()) break;
                         if (Fingerprint.capture() != node.fingerprint) throw new IllegalStateException("Archive replay diverged at tic " + episode.tics());
                     }
-                    explorer.restart();
+                    explorer.rememberInteractions(episode.interactions());
                     while (!stop.getAsBoolean() && episode.outcome() == Episode.Outcome.RUNNING
                             && (best == null || episode.tics() < best.route().tics - 1)) {
                         Explorer.Burst burst = explorer.choose(Observation.read(episode), progress.archive, episode.tics());
@@ -130,6 +138,7 @@ public final class Trainer {
                             episode.step(burst.action()); count++;
                         }
                         if (count > 0) route = new Route(route, burst.action(), count, Fingerprint.capture());
+                        explorer.rememberInteractions(episode.interactions());
                         Observation after = Observation.read(episode);
                         if (episode.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {
                             Archive.Cell cell = after.cell(config.cellSize());
@@ -176,6 +185,25 @@ public final class Trainer {
         System.out.printf("Saved %s: attempts=%d successes=%d deaths=%d timeouts=%d pruned=%d interrupted=%d best_seconds=%.2f%n",
                 checkpoint, progress.attempts, progress.successes, progress.deaths, progress.timeouts, progress.pruned, progress.interrupted,
                 best == null ? -1 : best.route().tics / 35.0);
+    }
+
+    /** Re-simulate every imported command; never carry snapshots or dead suffixes between builds. */
+    static void importTrial(Episode episode, TrainingConfig config, Checkpoint.Progress progress) throws IOException {
+        List<Action> actions = DemoInput.read(config.seedDemo(), config.skill(), config.episodeTics(), config.level());
+        episode.reset(); Route route = null;
+        for (int i = 0; i < actions.size() && episode.outcome() == Episode.Outcome.RUNNING;) {
+            Action action = actions.get(i); int count = 0;
+            do { episode.step(action); i++; count++; }
+            while (i < actions.size() && count < 4 && actions.get(i).equals(action) && episode.outcome() == Episode.Outcome.RUNNING);
+            route = new Route(route, action, count, Fingerprint.capture());
+            if (episode.outcome() == Episode.Outcome.RUNNING) {
+                Observation o = Observation.read(episode);
+                progress.archive.offer(o.cell(config.cellSize()), route, o.health());
+            }
+        }
+        if (episode.outcome() == Episode.Outcome.COMPLETED) progress.best = route;
+        System.out.printf("Imported %d simulated tics and %d surviving cells; outcome=%s%n",
+                episode.tics(), progress.archive.size(), episode.outcome());
     }
 
     private static void installBest(TrainingConfig config, String identity, RunTrace run, long attempt) throws IOException {

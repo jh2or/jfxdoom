@@ -88,8 +88,8 @@ public final class Tables {
         if (Integer.compareUnsigned(den, 512) < 0) {
             return SLOPERANGE;
         }
-        int ans = (num << 3) / (den >>> 8);
-        return (ans <= SLOPERANGE) ? ans : SLOPERANGE;
+        int ans = Integer.divideUnsigned(num << 3, den >>> 8);
+        return Integer.compareUnsigned(ans, SLOPERANGE) <= 0 ? ans : SLOPERANGE;
     }
 
     // finecosine accessor — index into finesine with the PI/2 offset.

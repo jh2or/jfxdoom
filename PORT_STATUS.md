@@ -1196,3 +1196,108 @@ shortening an unfinished key route, and E1M3 normal-exit completion plus automat
 optimization below par and exported-demo verification. E1M1 and E1M2 regressions
 still pass. Input-only E1M3 fixtures and reproduction commands are documented in
 [LEARNING.md](LEARNING.md) and [the fixture README](src/test/resources/ai/README.md).
+
+
+## E1M4 completion with the existing learner
+
+The unchanged learning component solved E1M4 with skill 3, normal monsters and
+pistol starts. Seed 6 discovered a 6,343-tic / 181.23-second completion on attempt
+187, then shortened it automatically to **2,134 tics / 60.97 seconds** on attempt
+219. This beats E1M4's 90-second par and the initial twice-par milestone.
+It uses the normal exit to E1M5, retains both blue/yellow keys, and finishes with
+**84 health, 99 armor, a shotgun and eight shells**. Blocked movement is 0.43 s.
+An independent seed-2 search finished in 4,406 tics / 125.89 seconds on attempt
+366, with 51 health and 93 armor. Both demos pass direct route replay and the
+engine's external demo loader.
+
+No production Java code, map-specific rules or engine behavior changed.
+Added the input-only E1M4 fixture and a matching-WAD regression for completion
+below par, key retention, deterministic replay and the next-map transition.
+Generated demos, verification reports and traces remain under ignored
+`training/e1m4-milestone/` and `training/e1m4-optimized/`; reproduction and playback
+commands are in [LEARNING.md](LEARNING.md).
+
+Full regression validation: **1,059 tests, 1,049 passed, 10 skipped**, no failures.
+
+## Episode 1 engine corrections and learner expansion
+
+`P_PlayerInSpecialSector` was still an empty stub despite the earlier status
+claim. It now implements the original C's grounded-player check, periodic
+floor damage, radiation protection/leak RNG order, one-time secret counting
+and sector-11 finale exit. Focused tests cover all cases, including removal
+of god mode and the final damage clamp supplied by `P_DamageMobj`.
+
+`SlopeDiv` previously divided its shifted unsigned numerator as a signed Java
+integer. Large coordinate differences in E1M8 could produce a negative
+`tantoangle` index. Unsigned division and comparison now match the C operation,
+including wraparound before division; boundary tests cover this regression.
+
+These changes invalidate some historical demo results above. The old slow
+E1M2/E1M3 completion fixtures die with correct floor damage. Their replacements
+are verified current-engine runs; the fast historical E1M1, E1M3 and E1M4
+recordings remain valid. See [LEARNING.md](LEARNING.md) for current behavior and
+compatibility. The learner's new observed-waypoint graph, interaction memory,
+combat, visual floor-cost and seeded-trial import are separate from the engine
+translation. Rejected recovery and bonus sweeping behaviors remain removed.
+
+All **nine Episode 1 maps** now have current-engine verified, skill-3 pistol-start
+recordings. At that milestone E1M5–E1M9 remained above twice par (superseded below). The final planner uses full map
+geometry plus key positions and switch appearance, bounded grid search, tested
+door/lift hypotheses, failed-interaction memory, key-stage archive sampling and
+safe barrel clearing. It does not read exit action IDs/tags or use authored
+routes. This supersedes the local-waypoint prototype described during development.
+
+Final validation: **1,092 tests: 1,082 passed, 10 skipped, no failures**. All nine
+selected demos also passed an independent final sweep of fingerprinted route
+replay, external-demo playback, normal-exit/next-map checks and E1M8 victory.
+The small input-only fixtures cover E1M1–E1M9; the full generated bundle is under
+`training/episode1-complete/`, which remains ignored by Git.
+
+
+## Episode 1 twice-par milestone
+
+All nine skill-3 pistol-start demos now finish within twice their engine par.
+E1M5: **5:22.94**, E1M6: **3:45.60**, E1M7: **3:26.31**,
+E1M8: **0:58.37**, E1M9: **4:13.97**. E1M1–E1M4 reuse their previous fast demos.
+All nine passed fingerprinted replay, external demo loading and normal transition
+checks; E1M8 also defeats both Barons and reaches episode victory.
+
+Production changes add prefix-preserving suffix optimization, legal faster
+turning variants, accurate aiming at demonstrated switch panels, local mechanism
+motion memory, and navigation toward explicit observed landmarks. No engine rules
+were changed for this optimization. E1M8's chaingun preparation and combat beam
+search remain offline research harnesses, preserved with the generated bundle;
+they are not automatically invoked by the trainer.
+
+Validation: **1,097 tests: 1,087 passed, 10 skipped, no failures**, followed by a
+focused E1M8 regression after replacing its final fixture. Tests cover prefix
+replay/cancellation, turn limits, mechanism snapshots and destination changes.
+All E1M5–E1M9 fixture regressions enforce twice par. Demos, reports and research
+provenance: `training/episode1-faster/` (ignored by Git); input-only regression
+fixtures remain in `src/test/resources/ai/`. See [LEARNING.md](LEARNING.md).
+
+
+## E1M9 stair-target and lock-memory correction
+
+Fixed an AI perception error that classified later stair risers as doors based
+on their height relative to the player's current feet. Interaction targets now
+require an obstruction at the boundary itself. Added observed key-requirement
+memory from fresh HUD denial messages, reconstructed during prefix replay and
+respected by exploration, path caching and local Use. No engine rules changed.
+
+The revised skill-3 pistol-start demo finishes in **4:36.94**, below the **5:30**
+limit, with 59 health and the normal E1M4 transition. Against the previous fastest
+4:13.97 demo, red-door rejections fall **31 → 1**, and opposite-direction returns
+across the same stair-sector boundary within three seconds fall **291 → 62**.
+Some backtracking remains; the old demo remains the fastest and is preserved.
+
+Final validation: **1,103 tests: 1,093 passed, 10 skipped, no failures**. New tests
+cover stair/door discrimination, color-specific card/skull requirements, observed
+denial replay, controller restart, immediate path invalidation and the revised
+E1M9 demo. It also passed separate fingerprinted replay and external-demo checks.
+Artifacts and comparison: `training/e1m9-stair-fix/`.
+
+
+New `.lmp` recordings are ignored by Git. Previously tracked fixtures remain
+versioned; the eight replay cases using new local recordings skip when those
+files are unavailable. Their behavior tests remain runnable without the demos.

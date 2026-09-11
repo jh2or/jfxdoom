@@ -22,6 +22,19 @@ class MotionProbeTest {
         return l;
     }
 
+    @Test void passageTargetsCrossWideReachableOpeningsAndRespectThePlayerFootprint() {
+        Line opening = line(96, -64, 96, 64);
+        opening.backsector = new doom.render.Sector(); opening.backsector.ceilingheight = 128 * 65536;
+        PSetup.lines = new Line[] {opening};
+        var passages = new MotionProbe(at(0, 0), true).passages();
+        assertEquals(1, passages.size()); assertEquals(160, passages.getFirst().x(), .001);
+        assertEquals(32, new MotionProbe(at(192, 0), true).passages().getFirst().x(), .001);
+        PSetup.lines = new Line[] {opening, line(48, -100, 48, 100)};
+        assertTrue(new MotionProbe(at(0, 0), true).passages().isEmpty());
+        PSetup.lines = new Line[] {opening}; opening.backsector.floorheight = 64 * 65536;
+        assertTrue(new MotionProbe(at(0, 0), true).passages().isEmpty());
+    }
+
     @Test void inertialPredictionRejectsSlidingOffALedgeWhileTurning() {
         Line edge = line(48, -100, 48, 100);
         edge.backsector = new Sector();
@@ -90,6 +103,44 @@ class MotionProbeTest {
         stairs[0].backsector.floorheight = 8 * 65536;
         stairs[4].backsector.ceilingheight = 64 * 65536;
         assertTrue(new MotionProbe(at(0, 0)).distance(176, 0) < 96);
+    }
+
+    @Test void distantStairRisersAreNotDoorTargetsInEitherDirection() {
+        Line[] stairs = new Line[5];
+        for (int i = 0; i < stairs.length; i++) {
+            Line l = line(32 + 32 * i, -64, 32 + 32 * i, 64);
+            l.frontsector.floorheight = i * 16 * 65536;
+            l.backsector = new Sector(); l.backsector.floorheight = (i + 1) * 16 * 65536;
+            l.frontsector.ceilingheight = l.backsector.ceilingheight = 256 * 65536;
+            stairs[i] = l;
+        }
+        PSetup.lines = stairs;
+        MotionProbe up = new MotionProbe(at(0, 0));
+        assertTrue(up.blocks(stairs[2]), "A remote stair is above the present feet, but is reachable in stages");
+        assertEquals(192, up.distance(192, 0));
+        assertNull(up.door(224)); assertNull(up.useTarget(0, java.util.Set.of()));
+        var top = new Observation(192, 0, Math.PI, 100, 50, 3, 8, null, 80, 56, 16, 0, 0, 1, 0);
+        MotionProbe down = new MotionProbe(top);
+        assertNull(down.door(224)); assertNull(down.useTarget(Math.PI, java.util.Set.of()));
+        stairs[3].backsector.ceilingheight = stairs[3].backsector.floorheight;
+        assertSame(stairs[3], up.door(224), "A real closed door is still approached across the stairs");
+    }
+
+    @Test void descendsSuccessiveStairsUnderTheirLowerCeilings() {
+        Line[] stairs = new Line[5];
+        for (int i = 0; i < stairs.length; i++) {
+            Line l = line(32 + i * 32, -64, 32 + i * 32, 64);
+            l.frontsector.floorheight = (64 - i * 8) * 65536;
+            l.frontsector.ceilingheight = (128 - i * 8) * 65536;
+            l.backsector = new Sector(); l.backsector.floorheight = (56 - i * 8) * 65536;
+            l.backsector.ceilingheight = (120 - i * 8) * 65536;
+            stairs[i] = l;
+        }
+        PSetup.lines = stairs;
+        var o = new Observation(0, 0, 0, 100, 50, 3, 8, null, 64, 56, 16, 0, 0, 1, 0);
+        assertEquals(192, new MotionProbe(o, true).distance(192, 0));
+        stairs[3].backsector.ceilingheight -= 8 * 65536;
+        assertTrue(new MotionProbe(o, true).distance(192, 0) < 128);
     }
 
     @Test void measuresBlockedMovementSeparatelyFromTurningAndIdleWaiting() {

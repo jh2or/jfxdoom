@@ -6,22 +6,43 @@ import doom.system.Doomdef;
 final class LocalController {
     static double difference(double a, double b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
+    private final int turnLimit;
+    private final DurableCombat durableCombat;
+    private final BarrelController barrels;
+    LocalController() { this(false); }
+    LocalController(boolean explore) { this(explore, 2048); }
+    /** Faster mouse-style turning remains quantized to ordinary demo inputs. */
+    LocalController(boolean explore, int turnLimit) {
+        if (turnLimit < 256 || turnLimit > 32512 || (turnLimit & 255) != 0)
+            throw new IllegalArgumentException("Turn limit must be positive and demo-quantized");
+        this.turnLimit = turnLimit;
+        durableCombat = new DurableCombat(explore);
+        barrels = explore ? new BarrelController() : null;
+    }
     private final PickupController pickups = new PickupController();
     private final UseController use = new UseController();
     private doom.play.Mobj combatEnemy;
     private int combatUntil;
-    void reset() { use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
+    void reset() { if (barrels != null) barrels.reset(); durableCombat.reset(); use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
 
     Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
+        if (barrels != null) {
+            Action clear = barrels.choose(o, tx, ty, tic);
+            if (clear != null) return new Explorer.Burst(clear, 2);
+        }
         var pickup = pickups.choose(o, probe, tx, ty, tic);
         if (pickup != null) { tx = pickup.x / 65536.0; ty = pickup.y / 65536.0; }
+        else {
+            Action combat = durableCombat.choose(o, probe, tic);
+            if (combat != null) return new Explorer.Burst(combat, 2);
+        }
         double distance = Math.hypot(tx - o.x(), ty - o.y());
         double desired = Math.atan2(ty - o.y(), tx - o.x());
         double reachable = probe.distance(o.x() + Math.cos(desired) * Math.min(distance, 128),
                 o.y() + Math.sin(desired) * Math.min(distance, 128));
         var obstruction = probe.useTarget(desired, java.util.Set.of());
-        boolean approachDoor = obstruction != null && obstruction.backsector != null
-                && probe.blocks(obstruction);
+        boolean approachDoor = obstruction != null && (probe.switchPanel(obstruction)
+                || probe.needsUse(obstruction) && !probe.locked(obstruction));
         if (reachable < Math.min(24, distance * .75) && !approachDoor) {
             // A visible waypoint can require a small bend around a corner: do not idle forever facing it.
             double best = Double.NEGATIVE_INFINITY;
@@ -38,7 +59,7 @@ final class LocalController {
         double angle = difference(desired, o.angle());
         int duration = reachable < 40 || Math.abs(angle) > .4 ? 2 : 4;
         int turn = (int) Math.round(angle * 65536 / (2 * Math.PI) / duration / 256) * 256;
-        turn = Math.max(-2048, Math.min(2048, turn));
+        turn = Math.max(-turnLimit, Math.min(turnLimit, turn));
         int forward = Math.abs(angle) > .65 ? 0 : (reachable < 32 || distance < 40 ? 25 : 50);
         int side = 0;
         double along = o.momx() * Math.cos(desired) + o.momy() * Math.sin(desired);
@@ -92,9 +113,9 @@ final class LocalController {
         return new Explorer.Burst(new Action(forward, side, turn, buttons), duration);
     }
 
-    private static int turnTowards(double target, double facing, int duration) {
+    private int turnTowards(double target, double facing, int duration) {
         int turn = (int) Math.round(difference(target, facing) * 65536 / (2 * Math.PI) / duration / 256) * 256;
-        return Math.max(-2048, Math.min(2048, turn));
+        return Math.max(-turnLimit, Math.min(turnLimit, turn));
     }
 
     /** Short inertial prediction, including both thrust axes and turning, checked with the player footprint. */

@@ -21,7 +21,7 @@ final class UseController {
         Line target = probe.useTarget(angle, seen.keySet());
         boolean release = held;
         held = false;
-        if (target == null) return false;
+        if (target == null || probe.locked(target)) return false;
         double gap = MotionProbe.opening(target);
         Seen old = seen.computeIfAbsent(target, l -> new Seen(gap, tic));
         boolean closing = gap < old.gap;

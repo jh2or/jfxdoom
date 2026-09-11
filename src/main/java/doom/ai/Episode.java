@@ -16,6 +16,9 @@ public final class Episode {
     private final Level level;
     private final int limit;
     private int tics;
+    private final InteractionMemory interactions = new InteractionMemory();
+    private final DoorMemory doors = new DoorMemory();
+    private final MechanismMemory mechanisms = new MechanismMemory();
     private Outcome outcome;
     private MovementMetrics movement = new MovementMetrics();
 
@@ -64,7 +67,7 @@ public final class Episode {
         GGame.gDoLoadLevel();
         HuStuff.huStart();
         StStuff.stStart();
-        tics = 0;
+        tics = 0; interactions.reset(); mechanisms.reset(); doors.reset();
         movement = new MovementMetrics();
         outcome = Outcome.RUNNING;
     }
@@ -72,7 +75,12 @@ public final class Episode {
     public Outcome step(Action action) {
         if (outcome != Outcome.RUNNING) throw new IllegalStateException("Episode already ended: " + outcome);
         double x = player().mo.x / 65536.0, y = player().mo.y / 65536.0;
+        boolean freshUse = (action.buttons() & Doomdef.BT_USE) != 0 && player().usedown == 0;
+        var before = interactions.before(x, y, freshUse);
         GGame.gTicker(action.command());
+        interactions.after(before);
+        if (freshUse) doors.observe(player());
+        mechanisms.observe(player().mo.x / 65536.0, player().mo.y / 65536.0);
         movement.record(action, x, y, player().mo.x / 65536.0, player().mo.y / 65536.0);
         tics++;
         outcome = classify(GGame.gameaction == GGame.ga_completed,
@@ -88,6 +96,11 @@ public final class Episode {
 
     public Player player() { return GGame.players[0]; }
     MovementMetrics.Summary metrics() { return movement.summary(); }
+    java.util.Set<Integer> interactions() { return interactions.activated(); }
+    java.util.Set<Integer> mechanisms() { return mechanisms.observed(); }
+    java.util.Set<doom.render.Line> lockedDoors() { return doors.blocked(Observation.keys(player())); }
+    int lastUsedLine() { return interactions.lastUsed(); }
+    int progress() { return 31 * interactions.hash() + player().killcount; }
     public int tics() { return tics; }
     public int limit() { return limit; }
     public Level level() { return level; }

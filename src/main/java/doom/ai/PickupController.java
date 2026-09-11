@@ -24,7 +24,7 @@ final class PickupController {
             double x = item.x / 65536.0, y = item.y / 65536.0;
             double d = Math.hypot(x - o.x(), y - o.y());
             double detour = d + Math.hypot(tx - x, ty - y) - routeDistance;
-            if (detour > (weaponUpgrade(o, item) ? 384 : 128) || (item.sprite == Info.SPR_BON2 && d > 32)) continue;
+            if (detour > (key(item) ? 1024 : weaponUpgrade(o, item) ? 384 : 128) || (item.sprite == Info.SPR_BON2 && d > 32)) continue;
             double score = benefit / (24 + d + detour);
             if (score > best) { best = score; target = item; }
         }
@@ -35,9 +35,18 @@ final class PickupController {
     private static boolean reachable(Observation o, MotionProbe probe, Mobj item) {
         double x = item.x / 65536.0, y = item.y / 65536.0;
         double d = Math.hypot(x - o.x(), y - o.y());
-        return d <= (weaponUpgrade(o, item) ? 192 : 128) && Math.abs(item.z / 65536.0 - o.z()) <= 24
+        double local = Math.min(d, 256), scale = d < .001 ? 0 : local / d;
+        return d <= (key(item) ? 512 : weaponUpgrade(o, item) ? 192 : 128) && Math.abs(item.z / 65536.0 - o.z()) <= 24
                 && Observation.clearance(o.x(), o.y(), x, y, false) > .99
-                && probe.distance(x, y) >= d - o.radius() - item.radius / 65536.0 + 4;
+                && probe.distance(o.x() + (x - o.x()) * scale, o.y() + (y - o.y()) * scale)
+                    >= local - (d <= 256 ? o.radius() + item.radius / 65536.0 - 4 : .01);
+    }
+
+    static boolean key(Mobj item) {
+        return switch (item.sprite) {
+            case Info.SPR_BKEY, Info.SPR_YKEY, Info.SPR_RKEY, Info.SPR_BSKU, Info.SPR_YSKU, Info.SPR_RSKU -> true;
+            default -> false;
+        };
     }
 
     private static boolean weaponUpgrade(Observation o, Mobj item) {

@@ -11,6 +11,7 @@ final class PrefixOptimizer {
         BooleanSupplier reached = () -> {
             var p = episode.player();
             return episode.tics() > 0 && p.health >= goal.health()
+                    && episode.interactions().containsAll(goal.interactions())
                     && (Observation.keys(p) & goal.keys()) == goal.keys()
                     && (Observation.weapons(p) & goal.weapons()) == goal.weapons()
                     && Math.abs(p.mo.z / 65536.0 - goal.z()) <= 24

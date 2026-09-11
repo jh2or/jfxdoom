@@ -9,7 +9,7 @@ class ArchiveTest {
     @TempDir Path temp;
     private static Archive.Cell cell(int x) { return new Archive.Cell(x, 0, 0, 3, 2, 3, 8, 0); }
     private TrainingConfig config(int size, int nodes) {
-        return new TrainingConfig(Path.of("unused.wad"), temp, 3, 21000, 10, 1, 42, size, nodes, 128, false, null, null, null, 4200, Level.E1M1);
+        return new TrainingConfig(Path.of("unused.wad"), temp, 3, 21000, 10, 1, 42, size, nodes, 128, false, null, null, null, 4200, Level.E1M1, null);
     }
 
     @Test void sharesPrefixesPreservesTradeoffsAndEnforcesBothBounds() {
@@ -108,6 +108,17 @@ class ArchiveTest {
         assertTrue(restored.entries().stream().anyMatch(e -> e.cell.shells() == 1));
     }
 
+    @Test void retainsProgressAndItsVisitCountsAcrossCheckpoint() throws Exception {
+        var config = config(10, 100); var p = new Checkpoint.Progress(config);
+        var cell = new Archive.Cell(2, 3, 0, 3, 2, 7, 8, 0, 0, 0, -123456789);
+        p.archive.offer(cell, new Route(null, Action.IDLE, 4, 1), 100); p.archive.visit(cell);
+        Path file = temp.resolve("progress.bin"); Checkpoint.save(file, config.identity(), p);
+        var loaded = Checkpoint.load(file, config.identity(), config).archive;
+        assertEquals(cell, loaded.entries().getFirst().cell);
+        assertEquals(1, loaded.visits(256, 384, 0, -123456789));
+        assertEquals(0, loaded.visits(256, 384, 0, 0));
+    }
+
     @Test void validatesInputsAndPreservesSignedDemoCommands() {
         Action a = new Action(-50, -40, -1280, 3);
         assertEquals(a, Action.unpack(a.packed()));
@@ -117,5 +128,19 @@ class ArchiveTest {
         assertThrows(IllegalArgumentException.class, () -> TrainingConfig.parse(new String[] {"--wad", "a", "--minutes", "NaN"}));
         assertThrows(IllegalArgumentException.class, () -> TrainingConfig.parse(new String[] {"--wad", "a", "--unknown", "1"}));
         assertThrows(IllegalArgumentException.class, () -> TrainingConfig.parse(new String[] {"--wad", "a", "--verify", "a.lmp", "--improve", "b.lmp"}));
+    }
+    @Test void rareKeyDiscoveryIsNotDilutedByEarlierLocations() {
+        Archive archive = new Archive(1000, 10000, 128);
+        Route route = new Route(null, Action.IDLE, 1, 0);
+        for (int i = 0; i < 100; i++) archive.offer(new Archive.Cell(i, 0, 0, 4, 2, 3, 8, 0), route, 100);
+        archive.offer(new Archive.Cell(101, 0, 0, 4, 2, 3, 8, 3), route, 100);
+        LearnerRandom random = new LearnerRandom(1); int advanced = 0, fresh = 0;
+        for (int i = 0; i < 500; i++) {
+            var entry = archive.select(random);
+            if (entry == null) fresh++;
+            else if (entry.cell.keys() == 3) advanced++;
+        }
+        assertTrue(advanced > 350, "Spend most retries continuing the rare two-key discovery");
+        assertTrue(fresh > 0, "Retain unseeded restarts");
     }
 }

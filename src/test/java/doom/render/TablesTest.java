@@ -90,4 +90,13 @@ class TablesTest {
         // num very large → quotient well above SLOPERANGE → clamp.
         assertEquals(Tables.SLOPERANGE, Tables.slopeDiv(1 << 20, 512));
     }
+    @Test
+    void slopeDivPreservesUnsignedShiftedNumeratorAndWraparound() {
+        // 0x10000000 << 3 = unsigned 2147483648; denominator >> 8 = 2097152.
+        assertEquals(1024, Tables.slopeDiv(0x10000000, 0x20000000));
+        assertEquals(2048, Tables.slopeDiv(0x1fffffff, 512));
+        // C unsigned arithmetic wraps before dividing, not after widening.
+        assertEquals(0, Tables.slopeDiv(0x20000000, 0x20000000));
+        assertEquals(128, Tables.slopeDiv(0x10000000, 0xffffffff));
+    }
 }

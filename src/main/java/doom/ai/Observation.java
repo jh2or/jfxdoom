@@ -6,7 +6,20 @@ import doom.render.*;
 /** Read-only local observations. No line specials, exit coordinates, or global route are exposed. */
 record Observation(double x, double y, double angle, int health, int ammo, int weapons,
                    int localOpening, Mobj enemy, double z, double height, double radius,
-                   double momx, double momy, int preferredWeapon, int keys, Inventory inventory, java.util.List<Mobj> pickups) {
+                   double momx, double momy, int preferredWeapon, int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress, java.util.Set<Line> lockedDoors) {
+    Observation { lockedDoors = java.util.Set.copyOf(lockedDoors); }
+    Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
+                Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon,
+                int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress) {
+        this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
+                preferredWeapon, keys, inventory, pickups, progress, java.util.Set.of());
+    }
+    Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
+                Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon,
+                int keys, Inventory inventory, java.util.List<Mobj> pickups) {
+        this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
+                preferredWeapon, keys, inventory, pickups, 0);
+    }
     Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
                 Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon, int keys) {
         this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
@@ -36,7 +49,7 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
             if (!(t instanceof Mobj other) || other == mo) continue;
             double ox = other.x / 65536.0, oy = other.y / 65536.0;
             double distance = Math.hypot(ox - x, oy - y);
-            if (distance <= 192 && (other.flags & Mobj.MF_SPECIAL) != 0) pickups.add(other);
+            if (distance <= (PickupController.key(other) ? 512 : 192) && (other.flags & Mobj.MF_SPECIAL) != 0) pickups.add(other);
             if (other.health <= 0 || (other.flags & Mobj.MF_COUNTKILL) == 0 || distance >= 512) continue;
             boolean shotgunner = other.type == Info.MT_SHOTGUY && !p.weaponowned[doom.system.Doomdef.wp_shotgun]
                     && inventory.bullets() > 0 && distance < 192 && Math.abs(other.z - (double) mo.z) <= 24 * 65536;
@@ -48,7 +61,7 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
         int preferred = inventory.preferredWeapon(weapons);
         return new Observation(x, y, Integer.toUnsignedLong(mo.angle) * (Math.PI * 2 / 4294967296.0),
                 p.health, ammo, weapons, opening, enemy, mo.z / 65536.0, mo.height / 65536.0,
-                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred, keys, inventory, java.util.List.copyOf(pickups));
+                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred, keys, inventory, java.util.List.copyOf(pickups), episode.progress(), episode.lockedDoors());
     }
 
     static int weapons(Player p) {
@@ -66,7 +79,7 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
     Archive.Cell cell(int size) {
         return new Archive.Cell((int) Math.floor(x / size), (int) Math.floor(y / size),
                 ((int) Math.floor(angle / (Math.PI / 4))) & 7,
-                health / 25, ammo / 20, weapons, localOpening, keys, inventory.armorBand(), inventory.shellBand());
+                health / 25, ammo / 20, weapons, localOpening, keys, inventory.armorBand(), inventory.shellBand(), progress);
     }
 
     static double distanceToLine(double x, double y, Line l) {

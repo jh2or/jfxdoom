@@ -1,12 +1,6 @@
-// Port of linuxdoom-1.10/p_spec.c — partial.
-//
-// p_spec.c is the 1300-line "sector specials" module: it handles
-// animated textures, line-triggered events (teleport, lights, doors,
-// floors, ...), button timers, and per-tic special updates. The full
-// body lands incrementally alongside its companion files (p_doors,
-// p_floor, p_plats, ...). For now this carries only the tiny
-// sector-graph walkers other ported modules need — p_lights.c spawn
-// helpers in particular.
+// Port of linuxdoom-1.10/p_spec.c.
+// Sector geometry helpers, animated surfaces, line-triggered events,
+// button timers, and grounded-player damage, secrets and finale handling.
 package doom.play;
 
 import doom.fixed.Fixed;
@@ -16,6 +10,8 @@ import doom.render.Sector;
 import doom.sound.SSound;
 import doom.sound.Sounds;
 import doom.system.Doomstat;
+import doom.system.Doomdef;
+import doom.system.GGame;
 import doom.system.ISystem;
 import doom.system.MArgv;
 import doom.wad.WWad;
@@ -1168,17 +1164,70 @@ public final class PSpec {
     //
     // P_PlayerInSpecialSector
     //
-    // p_spec.c lines 273–377. Stub: the full body damages the player
-    // for slime / lava / hurt-on-contact / 20% damage / etc. (each
-    // gated on Player.powers[pw_ironfeet] or armor) and counts
-    // secrets. Needs P_DamageMobj from p_inter (deferred) plus the
-    // tic-modulo + radsuit-checks.
-    //
-    // p_user.c P_PlayerThink calls this every tic the player stands
-    // in a sector with sector.special != 0; the no-op stub keeps
-    // the call site live without altering player health/secret state.
+    // Called every tic frame
+    //  that the player origin is in a special sector
     public static void pPlayerInSpecialSector(Player player) {
-        // Intentionally empty until p_inter ports P_DamageMobj.
+        Sector sector;
+
+        sector = player.mo.subsector.sector;
+
+        // Falling, not all the way down yet?
+        if (player.mo.z != sector.floorheight) {
+            return;
+        }
+
+        // Has hitten ground.
+        switch (sector.special) {
+            case 5:
+                // HELLSLIME DAMAGE
+                if (player.powers[Doomdef.pw_ironfeet] == 0) {
+                    if ((PTick.leveltime & 0x1f) == 0) {
+                        PInter.pDamageMobj(player.mo, null, null, 10);
+                    }
+                }
+                break;
+
+            case 7:
+                // NUKAGE DAMAGE
+                if (player.powers[Doomdef.pw_ironfeet] == 0) {
+                    if ((PTick.leveltime & 0x1f) == 0) {
+                        PInter.pDamageMobj(player.mo, null, null, 5);
+                    }
+                }
+                break;
+
+            case 16:
+                // SUPER HELLSLIME DAMAGE
+            case 4:
+                // STROBE HURT
+                if (player.powers[Doomdef.pw_ironfeet] == 0 || MRandom.pRandom() < 5) {
+                    if ((PTick.leveltime & 0x1f) == 0) {
+                        PInter.pDamageMobj(player.mo, null, null, 20);
+                    }
+                }
+                break;
+
+            case 9:
+                // SECRET SECTOR
+                player.secretcount++;
+                sector.special = 0;
+                break;
+
+            case 11:
+                // EXIT SUPER DAMAGE! (for E1M8 finale)
+                player.cheats &= ~Player.CF_GODMODE;
+                if ((PTick.leveltime & 0x1f) == 0) {
+                    PInter.pDamageMobj(player.mo, null, null, 20);
+                }
+                if (player.health <= 10) {
+                    GGame.gExitLevel();
+                }
+                break;
+
+            default:
+                ISystem.iError("P_PlayerInSpecialSector: unknown special %d", sector.special);
+                break;
+        }
     }
 
     private PSpec() {

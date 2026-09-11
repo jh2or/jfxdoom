@@ -4,13 +4,18 @@ import java.util.*;
 
 /** Bounded archive with two alternatives per coarse cell and shared, reference-counted prefixes. */
 final class Archive {
-    record Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys, int armor, int shells) {
+    record Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys, int armor, int shells, int progress) {
+        Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys, int armor, int shells) {
+            this(x, y, facing, health, ammo, weapons, opening, keys, armor, shells, 0);
+        }
         Cell(int x, int y, int facing, int health, int ammo, int weapons, int opening, int keys) {
             this(x, y, facing, health, ammo, weapons, opening, keys, 0, 0);
         }
-        Location location() { return new Location(x, y, keys); }
+        Location location() { return new Location(x, y, keys, progress); }
     }
-    record Location(int x, int y, int keys) {}
+    record Location(int x, int y, int keys, int progress) {
+        Location(int x, int y, int keys) { this(x, y, keys, 0); }
+    }
     static final class Entry {
         final Cell cell;
         final Route route;
@@ -41,8 +46,9 @@ final class Archive {
         return result;
     }
 
-    int visits(double x, double y, int keys) {
-        Location key = new Location((int) Math.floor(x / cellSize), (int) Math.floor(y / cellSize), keys);
+    int visits(double x, double y, int keys) { return visits(x, y, keys, 0); }
+    int visits(double x, double y, int keys, int progress) {
+        Location key = new Location((int) Math.floor(x / cellSize), (int) Math.floor(y / cellSize), keys, progress);
         return visits.getOrDefault(key, 0);
     }
 
@@ -121,11 +127,16 @@ final class Archive {
     Entry select(LearnerRandom random) {
         if (size == 0 || random.nextDouble() < .05) return null;
         List<Entry> entries = entries();
+        Map<Integer, Double> phases = new HashMap<>();
+        for (Entry e : entries) phases.merge(e.cell.keys(), weight(e) / populations.get(e.cell.location()), Double::sum);
         double total = 0;
-        for (Entry e : entries) total += weight(e) / populations.get(e.cell.location());
+        for (int keys : phases.keySet()) total += Math.scalb(1.0, 2 * Integer.bitCount(keys));
         double choice = random.nextDouble() * total;
         for (Entry e : entries) {
-            choice -= weight(e) / populations.get(e.cell.location());
+            // First sample inventory progress, then spatial novelty within it. A rare key discovery
+            // must not compete directly with hundreds of locations from before that acquisition.
+            choice -= weight(e) / populations.get(e.cell.location()) / phases.get(e.cell.keys())
+                    * Math.scalb(1.0, 2 * Integer.bitCount(e.cell.keys()));
             if (choice <= 0) { e.selected++; return e; }
         }
         Entry last = entries.getLast(); last.selected++; return last;

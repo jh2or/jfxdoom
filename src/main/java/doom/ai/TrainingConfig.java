@@ -5,11 +5,11 @@ import java.util.*;
 
 public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, int attempts,
                              double minutes, long seed, int archiveSize, int nodeLimit, int cellSize,
-                             boolean resume, Path verify, Path improve, Path analyze, int targetTics, Level level) {
+                             boolean resume, Path verify, Path improve, Path analyze, int targetTics, Level level, Path seedDemo) {
     public TrainingConfig {
         Objects.requireNonNull(level, "level");
-        int modes = (verify == null ? 0 : 1) + (improve == null ? 0 : 1) + (analyze == null ? 0 : 1);
-        if (modes > 1 || (resume && modes > 0)) throw new IllegalArgumentException("Choose training, --improve, --analyze, or --verify; resume uses its saved incumbent");
+        int modes = (verify == null ? 0 : 1) + (improve == null ? 0 : 1) + (analyze == null ? 0 : 1) + (seedDemo == null ? 0 : 1);
+        if (modes > 1 || (resume && modes > 0)) throw new IllegalArgumentException("Choose training, --seed-demo, --improve, --analyze, or --verify; resume uses its saved incumbent");
         if (skill < 1 || skill > 5 || episodeTics < 1 || episodeTics > 21000 || attempts < 1
                 || !Double.isFinite(minutes) || minutes <= 0 || minutes > 10080
                 || archiveSize < 2 || archiveSize > 100000 || nodeLimit < 32 || nodeLimit > 2000000
@@ -19,7 +19,7 @@ public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, 
     static TrainingConfig parse(String[] args) {
         Map<String, String> options = new HashMap<>();
         Set<String> allowed = Set.of("map", "wad", "output", "skill", "episode-tics", "attempts", "minutes",
-                "seed", "archive-size", "node-limit", "cell-size", "resume", "verify", "improve", "analyze", "target-seconds");
+                "seed", "archive-size", "node-limit", "cell-size", "resume", "verify", "improve", "analyze", "seed-demo", "target-seconds");
         for (int i = 0; i < args.length; i++) {
             if (!args[i].startsWith("--")) throw new IllegalArgumentException("Expected --option: " + args[i]);
             String key = args[i].substring(2);
@@ -40,11 +40,11 @@ public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, 
                 options.containsKey("resume"), options.containsKey("verify") ? Path.of(options.get("verify")) : null,
                 options.containsKey("improve") ? Path.of(options.get("improve")) : null,
                 options.containsKey("analyze") ? Path.of(options.get("analyze")) : null,
-                Math.multiplyExact(Integer.parseInt(options.getOrDefault("target-seconds", "120")), 35), level);
+                Math.multiplyExact(Integer.parseInt(options.getOrDefault("target-seconds", "120")), 35), level, options.containsKey("seed-demo") ? Path.of(options.get("seed-demo")) : null);
     }
 
     String identity() {
-        return "archive-explorer-v4;" + level + ";skill=" + skill + ";tics=" + episodeTics + ";seed=" + seed
+        return "archive-explorer-v5;" + level + ";skill=" + skill + ";tics=" + episodeTics + ";seed=" + seed
                 + ";cells=" + cellSize + ";entries=" + archiveSize + ";nodes=" + nodeLimit + ";standard-flags";
     }
 }

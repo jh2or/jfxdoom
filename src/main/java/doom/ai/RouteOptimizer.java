@@ -10,6 +10,13 @@ final class RouteOptimizer {
 
     RunTrace propose(Episode episode, RunTrace incumbent, long attempt, BooleanSupplier stop) {
         if (attempt % 3 == 0) return follow(episode, incumbent, attempt / 3, stop);
+        if (attempt % 3 == 1 && incumbent.route().tics > 2100) {
+            int start = random.nextInt(incumbent.samples().size() - 64);
+            int variant = random.nextInt(288);
+            // Mix ordinary, mechanism-preserving and faster-turning suffix proposals.
+            if (variant >= 144) variant += 48;
+            return followFrom(episode, incumbent, variant, start, stop);
+        }
         List<Action> original = RunTrace.actions(incumbent.route());
         List<RunTrace.Sample> points = incumbent.samples();
         int from = -1, to = -1;
@@ -58,35 +65,65 @@ final class RouteOptimizer {
     }
 
     private RunTrace follow(Episode e, RunTrace incumbent, long variant, BooleanSupplier stop) {
+        return followFrom(e, incumbent, variant, 0, stop);
+    }
+
+    RunTrace followFrom(Episode e, RunTrace incumbent, long variant, int start, BooleanSupplier stop) {
+        return followFrom(e, incumbent, variant, start, RunTrace.actions(incumbent.route()).subList(0, start), stop);
+    }
+
+    RunTrace followFrom(Episode e, RunTrace incumbent, long variant, int start, List<Action> prefix, BooleanSupplier stop) {
         e.reset();
-        LocalController controller = new LocalController();
+        int turnLimit = variant >= 192 ? 1 << (12 + (int) (variant / 48) % 3) : 2048;
+        LocalController controller = new LocalController(variant % 4 >= 2, turnLimit);
         List<RunTrace.Sample> path = incumbent.samples();
         List<RunTrace.Sample> observed = new ArrayList<>(); observed.add(RunTrace.sample(e));
-        int cursor = 0;
+        int cursor = start;
         Set<Integer> activated = new HashSet<>();
         Route route = null;
+        if (!prefix.isEmpty()) {
+            // Re-simulate the preserved inputs; never restore an unverified world snapshot.
+            for (int i = 0; i < prefix.size() && e.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean();) {
+                Action action = prefix.get(i); int count = 0;
+                do {
+                    observed.add(RunTrace.step(e, action)); i++; count++;
+                } while (i < prefix.size() && count < 32 && prefix.get(i).equals(action)
+                        && e.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean());
+                route = new Route(route, action, count, Fingerprint.capture());
+            }
+            activated.addAll(e.interactions());
+        }
         int[] horizons = {256, 192, 128, 224, 160, 96, 240, 208, 176, 144, 112, 80};
         int horizon = horizons[(int) (variant % horizons.length)];
         boolean fight = (variant % 2 == 1) ^ ((variant / horizons.length) % 2 == 1);
-        int lastProgress = 0, lastKills = 0;
+        int lastProgress = e.tics(), lastKills = e.player().killcount;
+        doom.play.Mobj lastEnemy = null; int enemyHealth = 0;
         while (e.outcome() == Episode.Outcome.RUNNING && e.tics() < incumbent.route().tics - 1 && !stop.getAsBoolean()) {
             Observation o = Observation.read(e);
+            if (o.enemy() != null) {
+                if (o.enemy() == lastEnemy && o.enemy().health < enemyHealth) lastProgress = e.tics();
+                lastEnemy = o.enemy(); enemyHealth = lastEnemy.health;
+            }
             MotionProbe probe = new MotionProbe(o);
+            MotionProbe cautious = new MotionProbe(o, true);
             // Never erase the demonstrated acquisition of a key we do not yet own.
             // Some demonstrated switches are optional. Alternate retaining their interactions and trying to omit them.
             int frontier = variant % 2 == 1 ? equipmentFrontier(path, cursor, o.keys(), o.weapons(), activated)
                     : keyFrontier(path, cursor, o.keys());
+            if (variant >= 48 && variant < 144) {
+                for (int i = cursor; i <= frontier; i++) if (!e.mechanisms().containsAll(path.get(i).mechanisms())) { frontier = i; break; }
+            }
             int next = cursor;
             // Loop erasure and shortcutting use only this demonstrated path and current local geometry.
             for (int i = cursor + 1; i <= frontier; i = Math.min(frontier, i + 4)) {
                 RunTrace.Sample p = path.get(i);
                 double d = Math.hypot(p.x() - o.x(), p.y() - o.y());
-                if (d <= horizon && p.z() <= o.z() + 24 && probe.distance(p.x(), p.y()) >= d - .01) next = i;
+                if (d <= horizon && p.z() <= o.z() + 24 && (variant >= 96 && variant < 144 && p.z() >= o.z() - 24 ? cautious : probe).distance(p.x(), p.y()) >= d - .01) next = i;
                 if (i == frontier) break;
             }
             if (next > cursor) { cursor = next; lastProgress = e.tics(); }
             RunTrace.Sample target = path.get(cursor);
-            if (Math.hypot(target.x() - o.x(), target.y() - o.y()) < 20 && cursor < path.size() - 1) {
+            if (Math.hypot(target.x() - o.x(), target.y() - o.y()) < (variant >= 96 ? 40 : 20) && cursor < path.size() - 1) {
                 cursor = Math.min(frontier, cursor + 4); target = path.get(cursor);
             }
             double tx = target.x(), ty = target.y();
@@ -94,10 +131,23 @@ final class RouteOptimizer {
             if ((switchTarget || cursor >= path.size() - 5) && Math.hypot(tx - o.x(), ty - o.y()) < 28) {
                 // At the learned endpoint, reproduce its facing and try the ordinary use action.
                 var end = switchTarget ? target : path.getLast();
-                tx = o.x() + 48 * Math.cos(end.angle()); ty = o.y() + 48 * Math.sin(end.angle());
+                if (switchTarget) {
+                    var line = doom.play.PSetup.lines[end.usedLine()];
+                    tx = ((long) line.v1.x + line.v2.x) / 131072.;
+                    ty = ((long) line.v1.y + line.v2.y) / 131072.;
+                } else {
+                    tx = o.x() + 48 * Math.cos(end.angle()); ty = o.y() + 48 * Math.sin(end.angle());
+                }
             }
             double d = Math.hypot(tx - o.x(), ty - o.y());
             if (d > 250) { tx = o.x() + (tx - o.x()) * 250 / d; ty = o.y() + (ty - o.y()) * 250 / d; }
+            if (variant >= 96 && variant < 144 && target.z() >= o.z() - 24) probe = cautious;
+            if (variant >= 48 && variant < 144 && !e.mechanisms().containsAll(target.mechanisms())
+                    && Math.hypot(tx - o.x(), ty - o.y()) < 48 && target.usedLine() < 0) {
+                var ahead = path.get(Math.min(path.size() - 1, cursor + 8));
+                double dx = ahead.x() - target.x(), dy = ahead.y() - target.y(), length = Math.hypot(dx, dy);
+                if (length > 1) { tx = target.x() + dx * 48 / length; ty = target.y() + dy * 48 / length; }
+            }
             Explorer.Burst burst = controller.towards(o, probe, tx, ty, e.tics(), fight);
             int count = 0;
             while (count < burst.duration() && e.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {

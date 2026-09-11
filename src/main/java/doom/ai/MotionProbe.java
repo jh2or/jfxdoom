@@ -10,11 +10,13 @@ final class MotionProbe {
     private final double x, y, z, height, radius;
 
     private final boolean avoidDrops;
+    private final Set<Line> lockedDoors;
 
     MotionProbe(Observation o) { this(o, false); }
 
     MotionProbe(Observation o, boolean avoidDrops) {
         this.avoidDrops = avoidDrops;
+        lockedDoors = o.lockedDoors();
         x = o.x(); y = o.y(); z = o.z(); height = o.height(); radius = o.radius();
         for (Line l : PSetup.lines) {
             if (Math.max(l.v1.x, l.v2.x) / 65536.0 < x - 300 || Math.min(l.v1.x, l.v2.x) / 65536.0 > x + 300
@@ -30,6 +32,14 @@ final class MotionProbe {
         double floor = Math.max(l.frontsector.floorheight, l.backsector.floorheight) / 65536.0;
         double ceiling = Math.min(l.frontsector.ceilingheight, l.backsector.ceilingheight) / 65536.0;
         return ceiling - floor < height || ceiling - z < height || floor - z > 24;
+    }
+
+    boolean locked(Line line) { return lockedDoors.contains(line); }
+
+    /** A barrier at this boundary, rather than a distant stair above/below the player. */
+    boolean needsUse(Line line) {
+        return line.backsector != null && (opening(line) < height
+                || Math.abs((long) line.frontsector.floorheight - line.backsector.floorheight) > 24L * 65536);
     }
 
     /** Reachable distance along a ray, capped at a local 256 units. Contact can be escaped. */
@@ -57,25 +67,29 @@ final class MotionProbe {
                 floor = Math.max(floor, Math.max(l.frontsector.floorheight, l.backsector.floorheight) / 65536.0);
                 ceiling = Math.min(ceiling, Math.min(l.frontsector.ceilingheight, l.backsector.ceilingheight) / 65536.0);
             }
-            if (floor - feet > 24 || ceiling - Math.max(feet, floor) < height) return length * (i - 1) / steps;
-            // Successive legal risers raise the predicted feet; do not compare every stair to the starting floor.
-            feet = Math.max(feet, floor);
+            if (floor - feet > 24 || ceiling - (Double.isFinite(floor) ? floor : feet) < height) return length * (i - 1) / steps;
+            // Follow successive stair heights in either direction, including descending under a lower ceiling.
+            if (Double.isFinite(floor)) feet = floor;
         }
         return length;
     }
 
     /** Blocked local two-sided passage (door or raised lift), without examining special/exit identifiers. */
-    Line door(double maxDistance) {
+    Line door(double maxDistance) { return door(maxDistance, Set.of()); }
+
+    Line door(double maxDistance, Set<Line> ignored) {
         Line best = null; double nearest = maxDistance;
         for (Line l : lines) {
-            if (l.backsector == null || (l.flags & Line.ML_BLOCKING) != 0) continue;
-            double d = Observation.distanceToLine(x, y, l);
-            if (blocks(l) && d < nearest) { nearest = d; best = l; }
+            if (locked(l) || ignored.contains(l) || l.backsector == null || (l.flags & Line.ML_BLOCKING) != 0) continue;
+            double tx = ((long) l.v1.x + l.v2.x) / 131072.0;
+            double ty = ((long) l.v1.y + l.v2.y) / 131072.0;
+            double d = Math.hypot(tx - x, ty - y);
+            if (needsUse(l) && blocks(l) && d < nearest && Observation.clearance(x, y, tx, ty, false) >= .999) { nearest = d; best = l; }
         }
         return best;
     }
 
-    /** Recognize the visible unpressed switch texture, never its action/tag/exit identifier. */
+    /** Recognize a visible switch texture in either initial state, never its action/tag/exit identifier. */
     boolean switchPanel(Line line) {
         int face = side(x, y, line) <= 0 ? 0 : 1;
         if (face == 1 && line.backsector == null) return false;
@@ -88,19 +102,42 @@ final class MotionProbe {
     private static boolean switchTexture(int index) {
         var textures = doom.render.RData.textures;
         return textures != null && index >= 0 && index < textures.length && textures[index] != null
-                && textures[index].name != null && textures[index].name.startsWith("SW1");
+                && textures[index].name != null && (textures[index].name.startsWith("SW1") || textures[index].name.startsWith("SW2"));
     }
 
-    Line switchPanel(double range) {
+    Line switchPanel(double range) { return switchPanel(range, Set.of()); }
+
+    Line switchPanel(double range, Set<Line> used) {
         Line best = null;
-        for (Line line : lines) {
-            if (!switchPanel(line)) continue;
+        // Visual range may exceed the short collision-probe cache. Still require a visible local surface.
+        for (Line line : PSetup.lines) {
             double tx = ((long) line.v1.x + line.v2.x) / 131072.0;
             double ty = ((long) line.v1.y + line.v2.y) / 131072.0;
             double d = Math.hypot(tx - x, ty - y);
-            if (d < range && Observation.clearance(x, y, tx, ty, false) >= .999) { best = line; range = d; }
+            if (d < range && !locked(line) && !used.contains(line) && switchPanel(line) && Observation.clearance(x, y, tx, ty, false) >= .999) { best = line; range = d; }
         }
         return best;
+    }
+
+    record Passage(double x, double y) {}
+
+    /** Aim through local openings that a fixed set of compass headings can otherwise miss. */
+    List<Passage> passages() {
+        List<Passage> result = new ArrayList<>();
+        for (Line line : lines) {
+            if (line.backsector == null || line.frontsector == line.backsector || (line.flags & Line.ML_BLOCKING) != 0
+                    || opening(line) < height) continue;
+            double dx = line.dx / 65536.0, dy = line.dy / 65536.0, width = Math.hypot(dx, dy);
+            if (width < 2 * radius + 8) continue;
+            double mx = ((long) line.v1.x + line.v2.x) / 131072.0;
+            double my = ((long) line.v1.y + line.v2.y) / 131072.0;
+            if (Math.hypot(mx - x, my - y) > 224) continue;
+            double direction = side(x, y, line) > 0 ? -1 : 1;
+            double tx = mx - direction * dy / width * 64, ty = my + direction * dx / width * 64;
+            double d = Math.hypot(tx - x, ty - y);
+            if (d >= 24 && d <= 256 && distance(tx, ty) >= d - .01) result.add(new Passage(tx, ty));
+        }
+        return result;
     }
 
     static double opening(Line l) {
@@ -113,7 +150,7 @@ final class MotionProbe {
         double rx = 64 * Math.cos(angle), ry = 64 * Math.sin(angle), nearest = 1;
         Line target = null;
         for (Line l : lines) {
-            if (l.backsector != null && !blocks(l) && !switchPanel(l) && !remembered.contains(l)) continue;
+            if (l.backsector != null && !needsUse(l) && !switchPanel(l) && !remembered.contains(l)) continue;
             double ax = l.v1.x / 65536.0, ay = l.v1.y / 65536.0;
             double sx = l.dx / 65536.0, sy = l.dy / 65536.0;
             double cross = rx * sy - ry * sx;

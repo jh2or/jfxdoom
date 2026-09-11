@@ -50,3 +50,6 @@ DOOM*.png
 
 # Learner checkpoints, metrics and generated demos
 training/
+
+# Local demo recordings; already-tracked fixtures remain versioned
+*.lmp

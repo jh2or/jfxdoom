@@ -4,6 +4,209 @@ The Java-only `doom.ai` component discovers routes, remembers useful input
 prefixes, and optimizes successful runs. It needs Java 21 and a Doom 1 WAD;
 there are no additional runtime dependencies.
 
+New `.lmp` files are local artifacts ignored by Git. Existing tracked E1M1–E1M3
+fixtures remain versioned; tests using the newer recordings skip when those files
+are absent. The linked demo bundles are available in the generating workspace.
+
+## All nine Episode 1 maps within twice par
+
+Every map, including secret level **E1M9**, now has a replay-verified completion
+within **2× its engine par time**. These are independent **skill-3 pistol starts**
+with normal monsters and ordinary player inputs. E1M8 defeats both Barons and
+reaches episode victory; E1M9 returns normally to E1M4.
+
+| Map | Previous time | Current time | 2×par limit |
+|---|---:|---:|---:|
+| [E1M1](training/episode1-faster/m1win.lmp) | 0:13.89 | 0:13.89 | 1:00 |
+| [E1M2](training/episode1-faster/m2win.lmp) | 0:54.09 | 0:54.09 | 2:30 |
+| [E1M3](training/episode1-faster/m3win.lmp) | 1:02.43 | 1:02.43 | 4:00 |
+| [E1M4](training/episode1-faster/m4win.lmp) | 1:00.97 | 1:00.97 | 3:00 |
+| [E1M5](training/episode1-faster/m5win.lmp) | 9:40.51 | **5:22.94** | 5:30 |
+| [E1M6](training/episode1-faster/m6win.lmp) | 7:46.03 | **3:45.60** | 6:00 |
+| [E1M7](training/episode1-faster/m7win.lmp) | 8:59.31 | **3:26.31** | 6:00 |
+| [E1M8](training/episode1-faster/m8win.lmp) | 4:09.63 | **0:58.37** | 1:00 |
+| [E1M9](training/episode1-faster/m9win.lmp) | 7:38.29 | **4:13.97** | 5:30 |
+
+The [demo bundle and report](training/episode1-faster/README.md) contains all
+nine recordings, per-map verification JSON, movement traces, hashes and research
+provenance. The [ZIP](training/episode1-faster/demos.zip) includes no WAD data.
+The earlier `training/episode1-complete/` bundle is retained for comparison.
+
+```sh
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/episode1-faster/m8win.lmp"
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M8 --verify training/episode1-faster/m8win.lmp"
+```
+
+E1M5 uses partial-route optimization: replay a known prefix, then try faster
+feedback-controlled suffixes. Turning variants use ordinary quantized mouse-style
+inputs; running and strafe limits remain unchanged. E1M6 benefited from facing
+the actual demonstrated switch panel rather than extrapolating the old viewing
+angle. E1M7 and E1M9 continue faster key-acquisition prefixes discovered in earlier
+trials, using the existing archive explorer.
+
+E1M8 needed additional offline experiments. A route through the chaingun and
+nearby ammunition was generated from live item positions and learned interaction
+landmarks. Prefix shortening reduced its preparation from 704 to 612 tics while
+retaining ammunition, equipment and observed mechanism activations. A bounded
+beam search then replayed alternative movement/firing sequences against the two
+Barons. The selected fight clears them at 1,268 tics; geometry-based navigation
+through the learned switch and teleport entrance finishes at 2,043 tics.
+The research harness uses enemy positions/health from the simulation and is
+saved with the bundle; it is **not yet part of the normal `train` command**.
+
+The production optimizer now supports preserved-prefix suffix trials and faster
+turning. Local floor/ceiling-motion memory allows experiments to retain observed
+walk-triggered mechanisms without reading line specials or tags. Rejected
+experiments were not retained in the controller. These are best-of-search
+recordings, not a guarantee that a fresh search will achieve these times within
+a particular training budget. All candidates are re-simulated from player inputs;
+no saved inventory, actor state or RNG state is injected.
+
+## E1M9 staircase and locked-door corrections
+
+A separate [revised E1M9 demo](training/e1m9-stair-fix/m9clean.lmp) addresses the
+staircase reversals and repeated red-door attempts observed in the fastest demo.
+The [comparison report](training/e1m9-stair-fix/README.md) retains both recordings.
+
+| Measure | Previous fastest | Revised behavior |
+|---|---:|---:|
+| Completion | 4:13.97 | 4:36.94 |
+| Red-door rejections | 31 | 1 |
+| Rapid returns across a stair boundary | 291 | 62 |
+| Final health | 20 | 59 |
+
+Both runs are skill-3 pistol starts and meet E1M9's 5:30 twice-par limit. The
+fastest-demo bundle above is unchanged. The new behavior is substantially less
+repetitive but does not eliminate every backtrack, and this selected run is
+22.97 seconds slower. The recrossing metric counts an opposite-direction return
+across the same pair of stair sectors within 105 tics; it is not a count of whole
+staircase laps and can include useful combat movement.
+
+The cause was in `MotionProbe.door`: it compared a distant boundary's height
+with the player's current feet, so later 16-unit risers looked like blocked
+doors. `Explorer` interrupted navigation to pursue them. Door selection and Use
+rays now distinguish actual boundary obstructions from traversable stair steps.
+A genuine closed door or raised lift is still approached and tested normally.
+
+`DoorMemory` learns a door's required key color from the first fresh, displayed
+engine denial. The requirement survives kills, unrelated key pickups and
+controller restarts, and releases when the matching card or skull is acquired.
+Replay reconstructs this memory from the prefix's actual inputs. The navigator
+immediately invalidates a cached path through a newly denied door; local Use
+suppression also respects the lock. Neither mechanism reads line special IDs.
+
+Three controlled same-prefix/same-seed trials reduced time pursuing false stair
+doors from 576/1261/802 tics to zero and red denials from 48/43/35 to 1/2/1.
+The two denials in the second revised trial are at different doors. All six
+controlled trials died, so this is evidence about the targeted behaviors, not
+an improved completion probability. A separate bounded archive search found the
+new completion at attempt 111, then 1,000 optimization proposals shortened it.
+
+Future pistol-start searches should defer a level after several thousand
+unsuccessful attempts at twice par, retaining its best demo and useful prefixes.
+This fix used 680 archive attempts, 1,000 optimization proposals, 1,008 direct
+follow/splice proposals and six controlled trials (2,694 total candidates).
+
+## Current planning and engine compatibility
+
+The final controller uses **full level geometry, key positions and switch
+appearance**. This is more information than the earlier local-only controller
+had. `GeometryNavigator` plans on a 16-unit grid bounded to 300,000 cells. It
+checks the player's footprint along edges, respects stairs and ceilings, and
+plans detours around solid decorations. Closed doors and possible raised lifts
+are hypotheses: ordinary Use inputs must make them traversable. Failed barriers
+are remembered until keys, observed progress or their geometry changes. The
+controller never reads exit specials/tags or follows a human-authored route.
+
+The archive samples key states before spatial novelty within them, so a rare
+new key is not diluted by hundreds of earlier locations. Switch texture changes
+and kill progress distinguish archived states; shortened prefixes must preserve
+observed interactions. The planner receives switch updates during play and replay,
+recognizes both initial switch states, and faces an intended switch instead of
+steering around its wall.
+
+Planning prefers dry routes over visible `NUKAGE`/`LAVA` floors and does not choose
+such floors merely as exploration destinations. Necessary crossings and drops
+remain possible. Combat uses bounded moving engagements; explosive barrels in
+the route are shot from outside the blast radius, with a retreat attempt when
+needed. The existing nearby equipment policy remains; the rejected low-health
+recovery and bonus-sweeping behaviors are absent. All control remains Java-only.
+
+This work uncovered two engine translation errors. `PSpec.pPlayerInSpecialSector`
+was an empty stub: floor damage, secret-sector counting and E1M8's ending were
+missing. Its implementation now follows the original C, including radiation-suit
+random-number consumption and the finale's normal exit condition. `Tables.slopeDiv`
+now uses unsigned division and comparison, preventing negative angle-table indexes
+on large maps. These restore engine behavior rather than change the rules for
+the learner.
+
+**Historical results below describe their original engine builds.** Restoring floor
+damage changes some old recordings. The fast E1M1, E1M3 and E1M4 recordings still
+complete. The old slow E1M2/E1M3 regression recordings do not; they have been
+replaced with verified current-engine fixtures. E1M2's new fixture completes in
+1,893 tics / 54.09 seconds. E1M3's replacement is the previously optimized
+2,185-tic / 62.43-second recording. Their completion tests now verify these
+recordings; the separate E1M1 and unfinished-prefix tests exercise shortening.
+
+Version-5 checkpoints are incompatible with older checkpoint formats and reject
+mismatching engine builds. To reuse an algorithm-recorded trial across builds,
+`--seed-demo` re-simulates its legal inputs and imports only surviving prefixes:
+
+```sh
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M7 --seed-demo training/prior/short.lmp --output training/continued --target-seconds 600 --minutes 12"
+```
+
+A seed may be unfinished, end in death/timeout, or complete the map. It never
+imports snapshots, grants equipment or revives the player. The output preserves
+`seed.lmp`; a supplied seed is part of the experiment's provenance. `--improve`
+continues to require an already successful recording. Neither mode is a fresh
+unseeded search. Independent trainer processes may run concurrently with separate
+output directories; their static engines and archives are isolated.
+
+## E1M4 milestone
+
+The **existing controller solved E1M4 without algorithm changes**. A fresh
+seed-6 search found a first completion on attempt 187 at 6,343 tics
+(**181.23 seconds**), then automatically optimized it on attempt 219 to
+**2,134 tics / 60.97 seconds**. This is below both E1M4's **90-second par** and
+the initial **180-second** target. The final run finishes through the normal
+exit to **E1M5**, with **84 health, 99 armor, a shotgun, eight shells and 12 kills**.
+It collects both the blue and yellow keys. Blocked movement totals **0.43 seconds**.
+
+This experiment used skill 3, normal monsters and a standard pistol start, with
+no supplied demo, human route or map-specific controller rules. Learning includes
+automatic shortening of discovered prefixes and optimization after completion.
+The seed-6 process found its first completion about **54 wall-clock seconds**
+into training and the final run at about **59 seconds**. Eight independent searches
+were started in two batches; these timings describe that process, not total CPU
+cost or a guarantee across seeds. Remaining searches were stopped after success.
+
+A separate fresh seed-2 search completed on attempt 366 in
+**4,406 tics / 125.89 seconds**, with **51 health, 93 armor and 15 kills**.
+That recording is saved as `training/e1m4-milestone/winning.lmp`.
+The recommended faster recording is `training/e1m4-optimized/winning.lmp`;
+it came from the seed-6 search, **not** from optimizing the seed-2 recording.
+Both pass fresh route replay and the engine's external demo loader.
+
+```sh
+# Watch the recommended run.
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m4-optimized/winning.lmp"
+
+# Independently verify its completion.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M4 --verify training/e1m4-optimized/winning.lmp"
+
+# Repeat the successful fresh search with no supplied demo.
+./gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M4 --seed 6 --target-seconds 180 --attempts 1000 --minutes 4 --output training/new-e1m4"
+```
+
+Per-attempt logs and manifests are under `training/e1m4-search/seed*/`.
+`training/e1m4-search/summary.json` records the experiment outcomes and demo
+hashes. Both selected artifact directories include `verification.json` and
+`analysis/trace.csv`. Generated training archives remain ignored by Git.
+The input-only `e1m4-learned.lmp` regression fixture preserves the faster result;
+its matching-WAD test checks completion below par, both keys, deterministic replay
+and the normal next-level transition. It is not loaded by fresh training.
+
 ## E1M3 milestone
 
 The final fresh seed-2 search reached the **normal exit to E1M4** in

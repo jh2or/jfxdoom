@@ -58,6 +58,69 @@ class PSpecTest {
         PMap.changeSectorResult = false;
     }
 
+    private Player playerInSector(int special) {
+        Player p = new Player(); Mobj mo = new Mobj();
+        Sector sector = new Sector(); sector.special = special;
+        mo.subsector = new doom.render.Subsector(); mo.subsector.sector = sector;
+        mo.info = new MobjInfo(0,0,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,100,0,0,0,0); mo.health = p.health = 100;
+        mo.flags = Mobj.MF_SHOOTABLE; mo.player = p; p.mo = mo;
+        GGame.players[0] = p; GGame.consoleplayer = 0;
+        Doomstat.gameskill = Doomstat.sk_medium; MRandom.mClearRandom();
+        return p;
+    }
+
+    @Test void specialFloorsDamageOnlyOnTheGroundAndEvery32Tics() {
+        int[] specials = {5, 7, 16, 4}, damage = {10, 5, 20, 20};
+        for (int i = 0; i < specials.length; i++) {
+            Player p = playerInSector(specials[i]);
+            p.mo.z = 1; PTick.leveltime = 0; PSpec.pPlayerInSpecialSector(p);
+            assertEquals(100, p.health);
+            p.mo.z = 0; PTick.leveltime = 31; PSpec.pPlayerInSpecialSector(p);
+            assertEquals(100, p.health);
+            PTick.leveltime = 32; PSpec.pPlayerInSpecialSector(p);
+            assertEquals(100 - damage[i], p.health); assertEquals(p.health, p.mo.health);
+        }
+    }
+
+    @Test void radiationSuitProtectionAndRandomLeaksMatchTheOriginalOrder() {
+        for (int special : new int[] {5, 7}) {
+            Player p = playerInSector(special); p.powers[doom.system.Doomdef.pw_ironfeet] = 1;
+            PTick.leveltime = 0; PSpec.pPlayerInSpecialSector(p);
+            assertEquals(100, p.health); assertEquals(0, MRandom.prndindex);
+        }
+        Player p = playerInSector(16); p.powers[doom.system.Doomdef.pw_ironfeet] = 1;
+        PTick.leveltime = 1; PSpec.pPlayerInSpecialSector(p);
+        assertEquals(100, p.health); assertEquals(1, MRandom.prndindex, "Leak RNG is consumed even off a damage tic");
+        int leak = 1;
+        while (MRandom.rndtable[leak] >= 5) leak++;
+        MRandom.prndindex = leak - 1; PTick.leveltime = 32; PSpec.pPlayerInSpecialSector(p);
+        assertEquals(80, p.health); assertEquals((leak + 1) & 255, MRandom.prndindex, "Damage also consumes pain RNG");
+    }
+
+    @Test void secretSectorCountsOnceWhenThePlayerLands() {
+        Player p = playerInSector(9); p.mo.z = 1; PSpec.pPlayerInSpecialSector(p);
+        assertEquals(0, p.secretcount); assertEquals(9, p.mo.subsector.sector.special);
+        p.mo.z = 0; PSpec.pPlayerInSpecialSector(p);
+        assertEquals(1, p.secretcount); assertEquals(0, p.mo.subsector.sector.special);
+    }
+
+    @Test void episodeOneFinaleRemovesGodModeAndExitsAtTenHealthOrLess() {
+        Player p = playerInSector(11); p.health = p.mo.health = 11; p.cheats = Player.CF_GODMODE;
+        PTick.leveltime = 0; PSpec.pPlayerInSpecialSector(p);
+        assertEquals(0, p.cheats & Player.CF_GODMODE);
+        assertEquals(1, p.health, "The existing final-sector damage clamp prevents ordinary death");
+        assertEquals(GGame.ga_completed, GGame.gameaction); assertEquals(0, GGame.secretexit);
+        GGame.gameaction = GGame.ga_nothing;
+        p = playerInSector(11); p.health = p.mo.health = 10; PTick.leveltime = 1;
+        PSpec.pPlayerInSpecialSector(p); assertEquals(GGame.ga_completed, GGame.gameaction);
+    }
+
+    @Test void unknownPlayerSectorSpecialFailsExplicitly() {
+        Player p = playerInSector(123);
+        org.junit.jupiter.api.Assertions.assertThrows(doom.system.ISystem.DoomError.class,
+                () -> PSpec.pPlayerInSpecialSector(p));
+    }
+
     // getNextSector: one-sided line (ML_TWOSIDED not set) returns null.
     @Test
     void getNextSectorReturnsNullForOneSided() {
