@@ -52,6 +52,14 @@ class SwitchPanelTest {
         assertNotEquals(0, press.buttons() & doom.system.Doomdef.BT_USE);
     }
 
+    @Test void interactionRequiresRangeTheUsableFaceAndAnUnobstructedUseRay() {
+        assertFalse(new MotionProbe(MotionProbeTest.at(0,0)).canUse(panel,96,0));
+        assertTrue(new MotionProbe(MotionProbeTest.at(64,0)).canUse(panel,96,0));
+        assertFalse(new MotionProbe(MotionProbeTest.at(128,0)).canUse(panel,96,0));
+        PSetup.lines = new Line[]{panel,MotionProbeTest.line(80,-100,80,100)};
+        assertFalse(new MotionProbe(MotionProbeTest.at(64,0)).canUse(panel,96,0));
+    }
+
     @Test void canUseAPanelOnATraversableTwoSidedSurface() {
         panel.backsector = new Sector(); panel.backsector.ceilingheight = 128 * 65536;
         MotionProbe probe = new MotionProbe(MotionProbeTest.at(48, 0));

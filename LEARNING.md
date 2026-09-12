@@ -350,6 +350,89 @@ unsuccessful attempts at twice par, retaining its best demo and useful prefixes.
 This fix used 680 archive attempts, 1,000 optimization proposals, 1,008 direct
 follow/splice proposals and six controlled trials (2,694 total candidates).
 
+## E1M1 navigation approaches: staged measurement
+
+Switches are approached through reachable standing positions on their usable
+face. Nearby switch detection takes over only within a clear 64-unit Use ray;
+it cannot replace a path around a pillar with a direct movement toward the wall.
+
+Walking edges with increasing floor height must pass the swept-footprint stair
+probe. A raised passage is explored as a separate, bounded interaction from its
+lower side after reachable objectives are exhausted. It is not an ordinary
+walking connection until its geometry changes. Closed doors retain immediate
+interaction. Nearby staircase sides do not interrupt navigation as speculative
+doors, and waypoint lookahead cannot skip an unreachable stair entrance.
+
+We measured 50 independent fresh E1M1 learning runs per cumulative stage, using
+speed strategy, skill 3, pistol starts and seeds 1–50. Each stopped at its first
+verified completion, with a cap of 100 attempts, 600 simulated seconds per
+attempt and 600 wall seconds per seed. No routes were imported. Three separate
+JVM workers were used consistently.
+
+| Stage | First-attempt successes | Mean successful demo | Deaths | Timeouts |
+|---|---:|---:|---:|---:|
+| Original baseline | 49/50 | 203.33 s | 0 | 1 |
+| + Switch approaches | 50/50 | 197.96 s | 0 | 0 |
+| + Stair reachability — retained | 50/50 | 60.69 s | 0 | 0 |
+| + Failed-approach recovery — rejected | 50/50 | 67.91 s | 0 | 0 |
+| + Refined recovery — rejected | 50/50 | 63.09 s | 0 | 0 |
+
+All 250 learning runs ultimately succeeded, using 251 attempts. Baseline mean
+attempts to first success was 1.02; all later stages used 1.00. These are first
+completions, not speed-optimized routes. The retained build reduced mean game
+time by 70.2%, and mean wall time per learning run from 4.57 to 3.50 seconds.
+Zero observed deaths in this easy-map cohort does not establish a safety gain.
+
+The proposed two-second failed-approach recovery was implemented and measured,
+then revised to require little actual displacement and consistent edge avoidance.
+Both variants produced longer tails without better reliability, so neither is
+retained. Their frozen source/classes, logs and demos remain in the experiment.
+The existing bounded door/interaction and stuck-movement recovery remain active.
+
+[Full report, graph, raw metrics and demos](training/e1m1-navigation-stages/REPORT.md).
+The retained build's seed-1 first attempt completes in 59.49 seconds:
+
+```sh
+bash gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/e1m1-navigation-stages/stairs/seed-01/first.lmp"
+```
+
+The reproducible stage runner is `scripts/e1m1-navigation-benchmark.py`; build
+with `bash gradlew classes` before freezing each stage. It preserves each seed's
+first demo, runs retries to first verified completion, and replays the first
+attempt for positional diagnostics. `scripts/e1m1-navigation-report.py` plots
+all five stages using NumPy/Matplotlib, which are optional analysis dependencies
+and are not needed by the Java learner. The lingering proxy counts two-second
+windows with less than 16 units net displacement, including idle/turning and
+combat; it is not a direct measurement of unreachable objectives.
+
+### Follow-up: preserve the recovery objective
+
+An isolated follow-up changed only objective retention during refined recovery.
+The original objective remains selected while alternative paths or standing
+positions are tried; existing progress invalidation, unavailable-target handling
+and the three-retry limit still release it. Both controls were rerun immediately
+before the candidate using the same 50 seeds, skill, strategy and budgets.
+All 100 control first-attempt recordings reproduced the previous demos exactly.
+
+| Build | Mean demo | Median demo | Worst demo | Mean wall |
+|---|---:|---:|---:|---:|
+| Retained switch + stair fixes | 60.69 s | 60.37 s | 69.29 s | 3.48 s |
+| Refined recovery control | 63.09 s | 58.59 s | 187.97 s | 4.06 s |
+| Recovery preserving its objective | 61.51 s | 59.51 s | 139.91 s | 4.06 s |
+
+All 150 runs completed on the first attempt; no deaths or timeouts occurred.
+Against refined recovery, 5 seeds improved, 6 worsened, and 39 were unchanged.
+The mean improvement was 1.59 seconds (2.5%), with a paired-seed bootstrap 95%
+interval for the change of [-7.68, +2.19] seconds. The experiment therefore does
+not demonstrate a consistent gain. Seed 19 improved from 187.97 to 53.26 seconds,
+but seed 41 worsened from 116.37 to 139.91 seconds.
+
+The candidate remains experimental; the retained AI was unchanged. Its exact
+patch, source snapshot, targeted checks, measurements, graph and demos are in
+[the objective-retention report](training/e1m1-recovery-objective/REPORT.md).
+The stage runner now accepts `--snapshot PATH` to measure a frozen `classes/`
+and `source/` pair without changing the working implementation.
+
 ## Current planning and engine compatibility
 
 The final controller uses **full level geometry, key positions and switch

@@ -87,6 +87,18 @@ class MotionProbeTest {
         assertTrue(probe.distance(128, 0) < 64, "Cannot climb a step taller than 24 units");
     }
 
+    @Test void raisedStairSideIsNotAnOpportunisticDoorButCanBeTestedAsAMechanism() {
+        Line raised = line(48,-64,48,64); raised.backsector = new Sector();
+        raised.backsector.floorheight = 64 * 65536;
+        raised.frontsector.ceilingheight = raised.backsector.ceilingheight = 192 * 65536;
+        PSetup.lines = new Line[]{raised};
+        MotionProbe probe = new MotionProbe(at(0,0));
+        assertNull(probe.door(192,java.util.Set.of(),false));
+        assertTrue(probe.canInteract(raised,48,0),"A deliberately selected mechanism can still be used");
+        raised.backsector.ceilingheight = raised.backsector.floorheight;
+        assertSame(raised,probe.door(192,java.util.Set.of(),false),"Closed doors retain immediate interaction");
+    }
+
     @Test void climbsSuccessiveLegalRisersButRejectsASingleTallStepAndLowCeiling() {
         Line[] stairs = new Line[8];
         for (int i = 0; i < stairs.length; i++) {

@@ -143,7 +143,9 @@ final class GeometryNavigator {
             if (d < closest - 24) { closest = d; lastProgress = tic; }
             if (d < 24 && target.id instanceof Integer) { postponed.put(target.id, tic + 3500); target = null; }
             else if (tic - lastProgress > 350) { postponed.put(target.id, tic + 1400); target = null; }
-            else if (d < 48) return new Point(target.aimX, target.aimY);
+            else if (d < 48 && (!(target.id instanceof Line line)
+                    || new MotionProbe(o).canInteract(line, target.aimX, target.aimY)))
+                return new Point(target.aimX, target.aimY);
         }
         if (target != null && !route.isEmpty() && tic - planned < 70) return waypoint(o);
         planned = tic; update(failed);
@@ -169,11 +171,13 @@ final class GeometryNavigator {
                 int b = a + dx + dy * width;
                 double rise = floor[b] - floor[a];
                 if (blocked[b] || rise > 256) continue;
-                boolean possibleLift = rise > 24 && !stairs(a, b);
+                // Walking cannot speculate that a tall riser will become a lift.
+                // Test the swept player footprint across changing floor heights.
+                if (rise > 0 && !stairs(a, b)) continue;
                 if (dx != 0 && dy != 0 && (blocked[a + dx] || blocked[a + dy * width]
                         || floor[a + dx] - floor[a] > 24 || floor[a + dy * width] - floor[a] > 24)) continue;
                 double cost = step.cost + (dx == 0 || dy == 0 ? GRID : GRID * Math.sqrt(2))
-                        * (hazard(x(b), y(b)) ? 8 : 1) + (possibleLift ? 256 + 2 * rise : 0);
+                        * (hazard(x(b), y(b)) ? 8 : 1);
                 if (cost < distance[b]) { distance[b] = cost; parent[b] = a; queue.add(new Step(b, cost)); }
             }
         }
@@ -191,15 +195,21 @@ final class GeometryNavigator {
                         item.z / 65536., 8, item, distance);
             }
         for (Line line : PSetup.lines) if (!used.contains(line) && !failed.contains(line) && panel(line)) {
-            double length = Math.hypot(line.dx, line.dy), mx = ((long) line.v1.x + line.v2.x) / 131072., my = ((long) line.v1.y + line.v2.y) / 131072.;
-            goal(goals, mx + 32 * line.dy / length, my - 32 * line.dx / length, mx, my,
-                    line.frontsector.floorheight / 65536., 4, line, distance);
+            switchGoals(goals, line, distance);
         }
         for (int gy = 2; gy < height; gy += 12) for (int gx = 2; gx < width; gx += 12) {
             int i = gy * width + gx;
             if (!blocked[i] && Double.isFinite(distance[i]) && visits[i] == 0 && !hazard(x(i), y(i)))
                 goals.add(new Goal(x(i), y(i), x(i), y(i), i, .5, i));
         }
+        }
+        if (destination == null && goals.stream().noneMatch(g -> postponed.getOrDefault(g.id, 0) <= tic)) {
+            // Only after reachable objectives are exhausted, test a raised passage
+            // from its lower side. A successful Use changes geometry before walking.
+            for (Line line : PSetup.lines) if (line.backsector != null && !failed.contains(line)
+                    && MotionProbe.opening(line) >= 56
+                    && Math.abs((long) line.frontsector.floorheight - line.backsector.floorheight) > 24L * 65536)
+                interactionGoals(goals, line, distance, false);
         }
         Goal best = null; double score = Double.POSITIVE_INFINITY;
         for (Goal goal : goals) {
@@ -221,7 +231,13 @@ final class GeometryNavigator {
 
     private Point waypoint(Observation o) {
         MotionProbe probe = new MotionProbe(o);
-        while (cursor < route.size() - 1 && Math.hypot(x(route.get(cursor)) - o.x(), y(route.get(cursor)) - o.y()) < 40) cursor++;
+        // Proximity alone cannot skip a stair entrance or cut an obstacle corner.
+        while (cursor < route.size() - 1 && Math.hypot(x(route.get(cursor)) - o.x(), y(route.get(cursor)) - o.y()) < 40) {
+            int following = route.get(cursor + 1);
+            double d = Math.hypot(x(following) - o.x(), y(following) - o.y());
+            if (d > 256 || probe.distance(x(following), y(following)) < d - .01) break;
+            cursor++;
+        }
         int selected = route.get(cursor);
         for (int j = cursor; j < route.size(); j++) {
             int i = route.get(j); double d = Math.hypot(x(i) - o.x(), y(i) - o.y());
@@ -238,6 +254,37 @@ final class GeometryNavigator {
                 floor[from], 56, 16, 0, 0, 1, 0);
         double length = Math.hypot(x(to) - x(from), y(to) - y(from));
         return new MotionProbe(virtual).distance(x(to), y(to)) >= length - .01;
+    }
+
+    Line interactionTarget() { return target != null && target.id instanceof Line line ? line : null; }
+
+    /** Standing positions on the usable face, rather than a point inside its wall. */
+    private void switchGoals(List<Goal> goals, Line line, double[] distances) {
+        interactionGoals(goals, line, distances, true);
+    }
+
+    private void interactionGoals(List<Goal> goals, Line line, double[] distances, boolean panel) {
+        double dx = line.dx / 65536., dy = line.dy / 65536., length = Math.hypot(dx, dy);
+        if (length == 0) return;
+        int face = !panel && line.backsector.floorheight < line.frontsector.floorheight ? -1 : 1;
+        double standingFloor = (face == 1 ? line.frontsector : line.backsector).floorheight / 65536.;
+        for (double fraction : new double[]{.25, .5, .75}) {
+            double aimX = line.v1.x / 65536. + fraction * dx;
+            double aimY = line.v1.y / 65536. + fraction * dy;
+            int center = node(aimX + face * 32 * dy / length, aimY - face * 32 * dx / length);
+            if (center < 0) continue;
+            for (int gy = Math.max(0, center / width - 2); gy <= Math.min(height - 1, center / width + 2); gy++)
+                for (int gx = Math.max(0, center % width - 2); gx <= Math.min(width - 1, center % width + 2); gx++) {
+                    int i = gy * width + gx;
+                    if (blocked[i] || !Double.isFinite(distances[i])
+                            || Math.abs(floor[i] - standingFloor) > 24) continue;
+                    Observation standing = new Observation(x(i), y(i), 0, 100, 50, 3, 8, null,
+                            floor[i], 56, 16, 0, 0, 1, 0);
+                    MotionProbe probe = new MotionProbe(standing);
+                    if (panel ? probe.canUse(line, aimX, aimY) : probe.canInteract(line, aimX, aimY))
+                        goals.add(new Goal(x(i), y(i), aimX, aimY, i, panel ? 4 : .25, line));
+                }
+        }
     }
 
     private void goal(List<Goal> goals, double x, double y, double aimX, double aimY, double z, double priority, Object id, double[] distances) {

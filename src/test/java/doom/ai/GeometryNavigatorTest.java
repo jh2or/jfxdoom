@@ -13,7 +13,9 @@ class GeometryNavigatorTest {
     private int nodes;
     private Thinker first, last;
     private Line[] corridor;
+    private RData.Texture[] textures;
     @BeforeEach void setup() {
+        textures = RData.textures;
         lines = PSetup.lines; sides = PSetup.sides; subsectors = PSetup.subsectors; nodes = PSetup.numnodes;
         first = PTick.thinkercap.next; last = PTick.thinkercap.prev; PTick.pInitThinkers();
         Sector sector = new Sector(); sector.ceilingheight = 128 * 65536;
@@ -26,9 +28,37 @@ class GeometryNavigatorTest {
         key.x = 32 * 65536; key.y = 480 * 65536; PTick.pAddThinker(key);
     }
     @AfterEach void restore() {
+        RData.textures = textures;
         PSetup.lines = lines; PSetup.sides = sides; PSetup.subsectors = subsectors; PSetup.numnodes = nodes;
         PTick.thinkercap.next = first; PTick.thinkercap.prev = last;
     }
+    @Test void walksAroundAPillarBeforeAimingAtItsSwitch() {
+        PTick.pInitThinkers();
+        RData.Texture texture = new RData.Texture(); texture.name = "SW1TEST";
+        RData.textures = new RData.Texture[]{texture};
+        Side side = new Side(); PSetup.sides = new Side[]{side};
+        Line panel = MotionProbeTest.line(256,192,256,320); panel.sidenum[0] = 0;
+        PSetup.lines = new Line[]{MotionProbeTest.line(0,0,512,0), MotionProbeTest.line(512,0,512,512),
+                MotionProbeTest.line(512,512,0,512), MotionProbeTest.line(0,512,0,0),
+                MotionProbeTest.line(192,192,256,192), panel,
+                MotionProbeTest.line(256,320,192,320), MotionProbeTest.line(192,320,192,192)};
+        GeometryNavigator navigator = new GeometryNavigator();
+        Observation o = MotionProbeTest.at(128,256);
+        boolean detoured = false, usable = false;
+        for (int tic = 0; tic < 350; tic += 8) {
+            var point = navigator.choose(o,tic,Set.of(),Set.of());
+            assertNotNull(point);
+            MotionProbe probe = new MotionProbe(o);
+            if (probe.canUse(panel,point.x(),point.y())) { usable = true; break; }
+            double distance = Math.hypot(point.x()-o.x(),point.y()-o.y());
+            assertEquals(distance,probe.distance(point.x(),point.y()),.01,"Every approach waypoint must be walkable");
+            if (point.y() < 176 || point.y() > 336) detoured = true;
+            o = MotionProbeTest.at(point.x(),point.y());
+        }
+        assertTrue(detoured,"Approach the other face by going around the pillar");
+        assertTrue(usable,"Finish at a position that can use the switch");
+    }
+
     private Line barrier() {
         Line wall = MotionProbeTest.line(0,256,64,256);
         PSetup.lines = Arrays.copyOf(corridor,5); PSetup.lines[4] = wall; return wall;
@@ -73,6 +103,18 @@ class GeometryNavigatorTest {
                 Inventory.PISTOL_START,List.of(),0,Set.of(door));
         assertNull(navigator.towards(denied, 1, destination, 0), "Do not follow the stale route through the denied door");
         assertNotNull(navigator.towards(o, 2, destination, 0), "Reconsider the route when the lock is satisfied");
+    }
+
+    @Test void tallRiserRequiresGeometryToChangeBeforeTheRouteCanCrossIt() {
+        Line lift = barrier(); lift.backsector = new Sector();
+        lift.frontsector.ceilingheight = lift.backsector.ceilingheight = 128 * 65536;
+        lift.backsector.floorheight = 64 * 65536;
+        var o = MotionProbeTest.at(32,32);
+        var destination = new GeometryNavigator.Point(32,480);
+        GeometryNavigator navigator = new GeometryNavigator();
+        assertNull(navigator.towards(o,0,destination,0),"A possible lift is not a walkable step");
+        lift.backsector.floorheight = 0;
+        assertNotNull(navigator.towards(o,71,destination,0),"After the lift lowers, walking may proceed");
     }
 
     @Test void cannotCrossAWallExactlyAlignedWithTheGrid() {

@@ -82,9 +82,25 @@ final class Explorer {
         if (door == null) {
             Set<Line> unavailable = Collections.newSetFromMap(new IdentityHashMap<>());
             unavailable.addAll(usedPanels); unavailable.addAll(blocked);
-            Line candidate = probe.switchPanel(512.0, unavailable);
+            // The planner owns the approach. Only take over when the panel can
+            // actually be used from here; visibility alone does not imply reachability.
+            Line candidate = probe.switchPanel(geometryMode ? 64.0 : 512.0, unavailable);
+            if (geometryMode && candidate != null && !probe.canUse(candidate,
+                    ((long) candidate.v1.x + candidate.v2.x) / 131072.0,
+                    ((long) candidate.v1.y + candidate.v2.y) / 131072.0)) candidate = null;
             boolean panel = candidate != null && doors.getOrDefault(candidate, 0) <= tic;
-            if (!panel) candidate = probe.door(192, blocked);
+            if (!panel) {
+                // A staircase side is not an opportunistic door. Raised mechanisms
+                // are approached only when the planner explicitly selects one.
+                candidate = probe.door(192, blocked, !geometryMode);
+                Line mechanism = geometryMode ? geometry.interactionTarget() : null;
+                if (candidate == null && mechanism != null && !blocked.contains(mechanism)
+                        && probe.canInteract(mechanism,
+                        ((long) mechanism.v1.x + mechanism.v2.x) / 131072.0,
+                        ((long) mechanism.v1.y + mechanism.v2.y) / 131072.0)) {
+                    candidate = mechanism; panel = probe.switchPanel(mechanism);
+                }
+            }
             if (candidate != null && doors.getOrDefault(candidate, 0) <= tic) {
                 door = candidate; switchTarget = panel; switchAppearance = appearance(candidate); doorDeadline = tic + (panel ? 140 : 105);
             }

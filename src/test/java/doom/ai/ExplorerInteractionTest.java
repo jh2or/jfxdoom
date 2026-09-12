@@ -6,15 +6,17 @@ import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ExplorerInteractionTest {
+    private doom.play.Thinker first, last;
     private Line[] lines;
     private Side[] sides;
     private Subsector[] subsectors;
     @BeforeEach void setup() {
+        first = doom.play.PTick.thinkercap.next; last = doom.play.PTick.thinkercap.prev; doom.play.PTick.pInitThinkers();
         lines = PSetup.lines; sides = PSetup.sides; subsectors = PSetup.subsectors;
         Line door = MotionProbeTest.line(96, -200, 96, 200); door.backsector = new Sector();
         PSetup.lines = new Line[]{door}; PSetup.sides = new Side[0]; PSetup.subsectors = null;
     }
-    @AfterEach void restore() { PSetup.lines = lines; PSetup.sides = sides; PSetup.subsectors = subsectors; }
+    @AfterEach void restore() { doom.play.PTick.thinkercap.next = first; doom.play.PTick.thinkercap.prev = last; PSetup.lines = lines; PSetup.sides = sides; PSetup.subsectors = subsectors; }
 
     @Test void doesNotRepeatedlyPursueAFailedBarrierUntilKeysChange() {
         Explorer explorer = new Explorer(new LearnerRandom(1), false);

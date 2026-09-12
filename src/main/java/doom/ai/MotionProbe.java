@@ -77,13 +77,16 @@ final class MotionProbe {
     /** Blocked local two-sided passage (door or raised lift), without examining special/exit identifiers. */
     Line door(double maxDistance) { return door(maxDistance, Set.of()); }
 
-    Line door(double maxDistance, Set<Line> ignored) {
+    Line door(double maxDistance, Set<Line> ignored) { return door(maxDistance, ignored, true); }
+
+    Line door(double maxDistance, Set<Line> ignored, boolean includeRaised) {
         Line best = null; double nearest = maxDistance;
         for (Line l : lines) {
             if (locked(l) || ignored.contains(l) || l.backsector == null || (l.flags & Line.ML_BLOCKING) != 0) continue;
             double tx = ((long) l.v1.x + l.v2.x) / 131072.0;
             double ty = ((long) l.v1.y + l.v2.y) / 131072.0;
             double d = Math.hypot(tx - x, ty - y);
+            if ((!includeRaised && opening(l) >= height)) continue;
             if (needsUse(l) && blocks(l) && d < nearest && Observation.clearance(x, y, tx, ty, false) >= .999) { nearest = d; best = l; }
         }
         return best;
@@ -117,6 +120,16 @@ final class MotionProbe {
             if (d < range && !locked(line) && !used.contains(line) && switchPanel(line) && Observation.clearance(x, y, tx, ty, false) >= .999) { best = line; range = d; }
         }
         return best;
+    }
+
+    /** A usable face within the ordinary use range, with no intervening surface. */
+    boolean canUse(Line line, double tx, double ty) {
+        return switchPanel(line) && canInteract(line, tx, ty);
+    }
+
+    boolean canInteract(Line line, double tx, double ty) {
+        return !locked(line) && (switchPanel(line) || needsUse(line)) && Math.hypot(tx - x, ty - y) <= 64
+                && useTarget(Math.atan2(ty - y, tx - x), Set.of()) == line;
     }
 
     record Passage(double x, double y) {}
