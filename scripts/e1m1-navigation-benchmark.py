@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze one build and measure independent, paired E1M1 learning seeds.
+"""Freeze one build and measure independent, paired learning seeds (E1M1 by default).
 
 Run `bash gradlew classes` first, then invoke this script once per cumulative
 implementation stage. Each seed starts with an empty archive. Generated files
@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--snapshot", type=Path, help="Use frozen classes/source from a previous stage instead of the working build")
     parser.add_argument("--seeds", type=int, default=50)
     parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--map", default="E1M1", help="Map to measure with the same fresh learner seeds")
     args = parser.parse_args()
     root = args.root.resolve() / args.stage
     root.mkdir(parents=True, exist_ok=False)
@@ -38,9 +39,9 @@ def main():
     jars = sorted(Path("/tmp/jfxdoom-gradle/caches/modules-2/files-2.1/org.openjfx").glob("**/*-linux.jar"))
     cp = os.pathsep.join(map(str, [root / "classes", REPO / "build/resources/main", *jars]))
     base = ["java", "-XX:ActiveProcessorCount=1", "-Xmx768m", "-cp", cp, "doom.ai.Trainer",
-            "--wad", str(REPO / "reference-wads/DOOM.WAD"), "--map", "E1M1", "--skill", "3",
+            "--wad", str(REPO / "reference-wads/DOOM.WAD"), "--map", args.map, "--skill", "3",
             "--strategy", "speed", "--episode-tics", "21000"]
-    metadata = dict(stage=args.stage, seeds=args.seeds, workers=args.workers, attempt_limit=100,
+    metadata = dict(stage=args.stage, map=args.map, seeds=args.seeds, workers=args.workers, attempt_limit=100,
                     wall_limit_seconds=600, episode_limit_seconds=600, strategy="speed", skill=3,
                     commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                     wad_sha256=hashlib.sha256((REPO / "reference-wads/DOOM.WAD").read_bytes()).hexdigest())

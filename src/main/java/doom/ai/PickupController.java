@@ -52,7 +52,8 @@ final class PickupController {
         return d <= (key(item) ? 512 : weaponUpgrade(o, item) || survival && usefulReserve(o, item) ? 192 : 128) && Math.abs(item.z / 65536.0 - o.z()) <= 24
                 && Observation.clearance(o.x(), o.y(), x, y, false) > .99
                 && probe.distance(o.x() + (x - o.x()) * scale, o.y() + (y - o.y()) * scale)
-                    >= local - (d <= 256 ? o.radius() + item.radius / 65536.0 - 4 : .01);
+                    >= local - (d <= 256 ? o.radius() + item.radius / 65536.0 - 4 : .01)
+                && FloorSafety.exposure(o.x(), o.y(), x, y) == 0;
     }
 
     private boolean usefulReserve(Observation o, Mobj item) {

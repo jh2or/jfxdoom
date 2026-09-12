@@ -117,6 +117,71 @@ class GeometryNavigatorTest {
         assertNotNull(navigator.towards(o,71,destination,0),"After the lift lowers, walking may proceed");
     }
 
+    @Test void cachedEdgesFollowMovingFloorsAndCeilingsInBothDirections() {
+        Line lift = barrier(); lift.backsector = new Sector();
+        lift.frontsector.ceilingheight = lift.backsector.ceilingheight = 128 * 65536;
+        lift.backsector.floorheight = 16 * 65536;
+        var o = MotionProbeTest.at(32,32);
+        var destination = new GeometryNavigator.Point(32,480);
+        GeometryNavigator navigator = new GeometryNavigator();
+        assertNotNull(navigator.towards(o,0,destination,0));
+        assertNotNull(navigator.towards(o,71,destination,0), "An unchanged graph can be searched again");
+        lift.backsector.floorheight = 64 * 65536;
+        assertNull(navigator.towards(o,142,destination,0), "Do not reuse a climbable edge after the lift rises");
+        lift.backsector.floorheight = 16 * 65536;
+        assertNotNull(navigator.towards(o,213,destination,0), "Do not retain an invalid edge after the lift lowers");
+        lift.backsector.ceilingheight = 48 * 65536;
+        assertNull(navigator.towards(o,284,destination,0), "A lowered ceiling blocks the cached passage");
+        lift.backsector.ceilingheight = 128 * 65536;
+        assertNotNull(navigator.towards(o,355,destination,0));
+    }
+
+    @Test void solidObjectsAreALiveOverlayOnCachedConnections() {
+        GeometryNavigator navigator = new GeometryNavigator();
+        var o = MotionProbeTest.at(32,32);
+        var destination = new GeometryNavigator.Point(32,480);
+        assertNotNull(navigator.towards(o,0,destination,0));
+        Mobj obstacle = new Mobj(); obstacle.flags = Mobj.MF_SOLID;
+        obstacle.x = 32 * 65536; obstacle.y = 256 * 65536; obstacle.radius = 16 * 65536;
+        PTick.pAddThinker(obstacle);
+        assertNull(navigator.towards(o,71,destination,0));
+        obstacle.flags = 0;
+        assertNotNull(navigator.towards(o,142,destination,0));
+    }
+
+    @Test void objectiveConnectionsFollowMovedAndReplacedPickups() {
+        GeometryNavigator navigator = new GeometryNavigator();
+        var o = MotionProbeTest.at(32,272);
+        Mobj key = (Mobj) PTick.thinkercap.next;
+        assertTrue(navigator.choose(o,0,Set.of(),Set.of()).y() > o.y());
+        key.y = 48 * 65536;
+        assertTrue(navigator.choose(o,71,Set.of(),Set.of()).y() < o.y(), "Reattach a moved pickup");
+        key.flags = 0;
+        Mobj replacement = new Mobj(); replacement.flags = Mobj.MF_SPECIAL; replacement.sprite = Info.SPR_RKEY;
+        replacement.x = 32 * 65536; replacement.y = 480 * 65536; PTick.pAddThinker(replacement);
+        assertTrue(navigator.choose(o,142,Set.of(),Set.of()).y() > o.y(), "New items get their own connections");
+    }
+
+    @Test void cachedSwitchApproachesRespectTemporaryObstacles() {
+        PTick.pInitThinkers();
+        RData.Texture texture = new RData.Texture(); texture.name = "SW1TEST";
+        RData.textures = new RData.Texture[]{texture}; PSetup.sides = new Side[]{new Side()};
+        Line panel = MotionProbeTest.line(0,512,64,512); panel.sidenum[0] = 0;
+        corridor[2] = panel;
+        GeometryNavigator navigator = new GeometryNavigator();
+        var o = MotionProbeTest.at(32,304);
+        assertNotNull(navigator.choose(o,0,Set.of(),Set.of()));
+        assertSame(panel,navigator.interactionTarget());
+        Mobj obstacle = new Mobj(); obstacle.flags = Mobj.MF_SOLID;
+        obstacle.x = 32 * 65536; obstacle.y = 472 * 65536; obstacle.radius = 24 * 65536;
+        PTick.pAddThinker(obstacle);
+        navigator.choose(o,71,Set.of(),Set.of());
+        assertNotSame(panel,navigator.interactionTarget(), "Blocked standing positions cannot remain eligible");
+        obstacle.flags = 0;
+        navigator.choose(o,142,Set.of(),Set.of());
+        assertSame(panel,navigator.interactionTarget(), "Temporary blockage must not erase valid connections");
+    }
+
     @Test void cannotCrossAWallExactlyAlignedWithTheGrid() {
         barrier();
         GeometryNavigator navigator = new GeometryNavigator();

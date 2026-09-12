@@ -433,6 +433,229 @@ patch, source snapshot, targeted checks, measurements, graph and demos are in
 The stage runner now accepts `--snapshot PATH` to measure a frozen `classes/`
 and `source/` pair without changing the working implementation.
 
+## Cached navigation graph: staged measurement
+
+The navigator retains its implicit 16-unit, eight-neighbor graph. It now caches
+line-to-cell overlaps, directional stair reachability and per-node terrain costs.
+Expensive stair checks are evaluated on demand and reused while geometry is
+unchanged. This avoids an all-pairs path table and keeps existing search order,
+route costs and objective priorities intact.
+
+Switches and raised mechanisms have cached connections to usable standing
+positions. Keys and explicit trajectory destinations have cached connections to
+nearby grid nodes. Other pickups still use the existing local pickup controller;
+this change does not make every item a global objective. A search filters cached
+approaches against current reachability and blocked nodes.
+
+Floor or ceiling movement invalidates stair and objective connections. Floor
+appearance changes refresh terrain costs; switch texture changes invalidate
+interaction connections. Moved pickups get new connections. Locks and solid
+nonshootable actors remain live overlays. Caches reset on every attempt/map;
+map wall topology is treated as fixed. No recovery behavior was reintroduced,
+and the Java AI requires no additional libraries.
+
+Measured on E1M1, skill 3, speed strategy, pistol start: 50 fresh matched seeds
+per cumulative stage, stopping at first verified completion, with three JVM
+workers and a 600-second game-time cap per attempt.
+
+| Stage | First-attempt successes | Mean demo | Mean processing wall time | Deaths / timeouts |
+|---|---:|---:|---:|---:|
+| Retained switch + stair fixes | 50/50 | 60.69 s | 3.49 s | 0 / 0 |
+| + Connectivity cache | 50/50 | 60.69 s | 3.03 s | 0 / 0 |
+| + Objective connections | 50/50 | 60.69 s | 3.06 s | 0 / 0 |
+
+Every matched first demo is byte-identical across all three stages. Mean blocked
+input remains 0.114 seconds and the low-displacement dwell proxy remains 0.40
+seconds. The final implementation reduced observed mean processing time by
+12.1%; it did not change game completion time or movement behavior. The extra
+objective cache had no demonstrated timing benefit on E1M1: its incremental
+mean change was +0.031 seconds, with a paired-seed bootstrap 95% interval of
+[-0.021, +0.084] seconds. Wall timings include startup and successful-demo
+verification and depend on host load; the intervals do not account for host
+drift between cohorts.
+
+[Report and graph](training/e1m1-graph-cache/REPORT.md),
+[raw seed metrics](training/e1m1-graph-cache/measurements.csv), and frozen
+source/class snapshots with commands, logs and demos are retained locally.
+The full suite passed 1,143 tests with 10 skipped. Additional seed-1 E1M2/E1M3
+checks with speed and survival produced byte-identical baseline/final demos:
+both E1M2 strategies completed; both E1M3 strategies died at the same tic as
+their controls. These establish sampled behavioral equivalence, not a claim of
+improved survival on those maps.
+
+Collect stages with `scripts/e1m1-navigation-benchmark.py`; reproduce the graph
+with `scripts/e1m1-graph-cache-report.py` (NumPy/Matplotlib, analysis only).
+
+## Wall-clearance preference: measured and rejected as the default
+
+A single candidate added a soft cost near fixed walls: up to 25% extra normal
+floor travel cost, tapering quadratically to zero at 48 map units from the
+player center. It preserved passability, switch/stair checks, controller logic
+and objective weights. The candidate passed the full suite, including new
+open-space preference and narrow-passage tests.
+
+We compared 50 matched fresh seeds per map and version on E1M1 and E1M3: speed
+strategy, skill 3, pistol starts, first verified completion, capped at 100
+attempts / 600 wall seconds per seed and 600 game seconds per attempt. Three
+JVM workers ran each cohort separately. All 200 sessions eventually completed,
+using 897 total attempts.
+
+| Map / version | First-attempt wins | Mean winning demo | Mean attempts | Deaths / timeouts | Mean simulated work | Mean wall |
+|---|---:|---:|---:|---:|---:|---:|
+| E1M1 baseline | 50/50 | 60.69 s | 1.00 | 0 / 0 | 60.69 s | 3.12 s |
+| E1M1 clearance | 50/50 | 50.22 s | 1.00 | 0 / 0 | 50.22 s | 3.11 s |
+| E1M3 baseline | 8/50 | 319.07 s | 5.70 | 234 / 1 | 879.12 s | 9.43 s |
+| E1M3 clearance | 0/50 | 317.50 s | 10.24 | 461 / 1 | 1059.00 s | 10.12 s |
+
+E1M1 improved by 17.3% in mean demo time. Mean blocked input fell from 0.114 to
+0.036 seconds and dwell from 0.40 to 0.16 seconds. Sampled movement within 32
+units of a fixed wall fell from 14.82% to 12.88%. These were already small
+blocked/dwell durations, so they do not explain the entire completion-time gain.
+
+E1M3 regressed severely: every candidate first demo was byte-identical and died
+at tic 353 (10.09 seconds). The trace records five 20-health losses, spaced 32
+tics apart, while on sector 66's NUKAGE3 floor. Offline WAD inspection identifies
+special 16, whose engine behavior is 20 damage every 32 tics. This diagnostic
+used sector specials only to explain the recording; that experiment did not
+change the AI to read them. The short deaths make the low first-attempt blocked/dwell metrics
+misleading. Even among winning demos, mean blocked input rose from 2.98 to
+3.40 seconds.
+
+**The wall-clearance candidate was not adopted globally.** Production retains
+the previous graph caches and switch/stair fixes. The exact candidate patch,
+source/classes, candidate tests, commands, logs and demos remain under
+`training/wall-clearance/`. No turn-cost change or additional recovery behavior
+was introduced.
+
+[Full report and graphs](training/wall-clearance/REPORT.md),
+[raw metrics](training/wall-clearance/measurements.csv), and
+[representative demo selections](training/wall-clearance/demos.json).
+The report includes before/after playback commands. The shared benchmark now
+accepts `--map`; `scripts/wall-clearance-report.py` reproduces this analysis.
+
+## Harmful-floor safety
+
+`FloorSafety` now recognizes the engine's damaging sector types (4, 5, 7, 11,
+16), with the existing visible NUKAGE/LAVA fallback. This deliberately adds a
+bounded floor-damage property to the AI's geometry knowledge; it does not use
+sector or line action identifiers to choose exits or switches.
+
+Hazards retain a finite eightfold graph cost. Seed connections and waypoint
+shortcuts account for hazardous distance, so smoothing cannot casually cut
+across a pool avoided by the grid route. Hazardous exploration goals remain
+available after safer objectives and usable mechanisms are exhausted, including
+final areas where damage is part of progression. Changes in sector damage
+properties invalidate cached terrain costs.
+
+Every proposed local action, including combat and recovery inputs, receives a
+short inertial check. When it predicts an unplanned entry into a hazard, the
+controller brakes both movement axes. Planned crossings remain allowed. While
+crossing or already on dangerous ground, both speed and survival prioritize
+movement over optional pickups and ordinary combat pauses/spacing; necessary
+obstruction handling and firing remain available. Pickup detours and fallback
+exploration also account for floor risk. This is an approximate safety check,
+not a guarantee of zero damage. Radiation protection does not currently reduce
+the conservative floor cost.
+
+The original E1M3 wall-clearance failure was caused by combat backpedaling and
+strafing away from a dry planned route. The same seed and wall-clearance
+configuration with floor safety completed its first attempt in 288.57 seconds,
+instead of dying at 10.09 seconds. That isolated stress demo is
+`training/floor-safety/clearance-stress/winning.lmp`; wall clearance remains
+disabled in production.
+
+Fresh matched comparisons used speed, skill 3, pistol starts, 100 attempts /
+600 wall seconds per seed, and 600 game seconds per attempt. Three JVM workers
+ran each cohort separately. E1M1/E1M3 use 50 seeds each; E1M2 is a supplemental
+10-seed check after its former first-attempt campaign-test assumption failed.
+
+| Map / version | First wins | Mean winning demo | Mean attempts | Deaths / timeouts | Mean simulated work | Mean wall |
+|---|---:|---:|---:|---:|---:|---:|
+| E1M1 before | 50/50 | 60.69 s | 1.00 | 0 / 0 | 60.69 s | 3.11 s |
+| E1M1 floor safety | 50/50 | 63.08 s | 1.00 | 0 / 0 | 63.08 s | 3.29 s |
+| E1M3 before | 8/50 | 319.07 s | 5.70 | 234 / 1 | 879.12 s | 9.44 s |
+| E1M3 floor safety | 26/50 | 301.70 s | 2.00 | 47 / 3 | 494.49 s | 7.69 s |
+| E1M2 before | 10/10 | 175.34 s | 1.00 | 0 / 0 | 175.34 s | 5.17 s |
+| E1M2 floor safety | 9/10 | 183.55 s | 1.20 | 2 / 0 | 245.66 s | 6.28 s |
+
+All 220 sessions eventually completed. Mean first-attempt damaging-floor
+exposure fell from 1.47 to 0.00 seconds on E1M1, 6.45 to 1.26 on E1M3, and
+2.60 to 0.23 on E1M2. This offline exposure proxy uses recorded positions and
+original map damage/height data; dynamic changes and differing survival times
+limit direct comparisons. The E1M3 reduction in deaths and attempts is strong,
+but E1M1 and the small E1M2 sample have slower successful runs. No general
+speed improvement is claimed.
+
+The implementation is retained. The full suite passed 1,153 enabled tests
+with 10 skipped. Tests cover dry detours, hidden damage, braking, optional
+pickup detours, required crossings, changing floor damage and damaging final
+areas. The campaign snapshot test now uses its existing verified E1M2 demo to
+check transition/replay fidelity independently of first-attempt trial luck;
+the fresh E1M2 measurements above preserve the actual learning regression.
+
+[Report and graph](training/floor-safety/REPORT.md),
+[raw metrics](training/floor-safety/measurements.csv), and
+[representative before/after demos](training/floor-safety/demos.json).
+Reproduce the analysis with `scripts/floor-safety-report.py`. Frozen source,
+classes, commands, logs and recordings are retained per cohort. The engine and
+native demo format are unchanged; no Java dependencies were added.
+
+## Timed crossings of damaging floors
+
+A short crossing can now bypass the dry-route preference when the engine's
+current level clock leaves a safe window. Doom checks grounded sector damage
+before XY movement whenever `(PTick.leveltime & 31) == 0`; entry does not reset
+this timer. At 35 tics/second the pulses are 32 tics, about 0.91 seconds, apart.
+The predictor uses **leveltime**, including campaign-entry offsets, rather than
+learner attempt time or real elapsed time.
+
+`TimedCrossing` forecasts at most the remainder of the current 32-tic window,
+minus a four-tic safety margin. It uses ordinary forward/run and strafe thrust,
+the engine's fixed-point trig tables, movement cap, split-move rounding and
+friction and gravity. It accepts clear crossings within 192 map units on level
+ground or through basins at most 24 units deep, returning to the starting height,
+with a dry landing (16-unit terrain margin) and room to brake afterward. Visible
+enemies, nearby missiles, blocking objects, substantial lateral/backward
+momentum, deeper drops or raised terrain, uncertain texture-only hazards and damaging finale
+sectors disqualify the exception. Radiation suits do not extend the window.
+
+The navigator may use an accepted crossing to smooth an otherwise dry route.
+The controller commits to the predicted inputs one tic at a time and checks
+position, momentum, height, angle and clock before continuing. During that
+short sequence it does not stop for ordinary combat, pickups or a changed
+waypoint. An interruption invalidates the forecast; the navigator replans on
+dry ground, and existing floor safety keeps the player moving when already
+on hazardous ground. There is no deliberate waiting for a favorable pulse.
+Required hazardous routes retain their finite cost and remain available when
+the timed exception is unavailable. This remains a prediction with a margin,
+not a promise against new enemies or other unexpected interference.
+
+Measurements and native-verifiable demos live in
+[`training/timed-crossing/REPORT.md`](training/timed-crossing/REPORT.md).
+The matched experiment uses the previous floor-safety build as its baseline.
+`scripts/timed-crossing-damage.py` measures actual floor-attributed health and
+armor loss during first/winning demo replays via an analysis-only engine overlay;
+each full trace must match ordinary replay. Production engine sources and demo
+format are unchanged. `scripts/timed-crossing-audit.py` independently logs
+accepted sequences and interruptions while requiring identical demo bytes.
+`scripts/timed-crossing-report.py` generates the comparison table and graph.
+
+Matched measurements (50 seeds each for E1M1/E1M3, 10 for E1M2, speed/skill 3):
+E1M1 mean winning time changed from 63.08 to 62.95 seconds; all 50 first attempts
+completed and neither version took floor damage. E1M3 first-attempt completions
+increased from 26 to 28, deaths across training fell from 47 to 46, and timeouts
+remained three; mean winning time increased from 301.70 to 305.36 seconds.
+E1M3 first-attempt floor-attributed health loss averaged 9.54 before and 6.30
+after. E1M2's demos and outcomes were unchanged. Paired time intervals include
+zero, so these runs do not establish a consistent speed improvement.
+
+A separate diagnostic audit of 50 first attempts observed 12 timed crossings;
+all reached dry ground, none were interrupted, and none incurred floor damage
+within their planned windows. Diagnostic demo bytes matched production runs.
+The full suite passed 1,159 tests with 10 skipped. An E1M1 example is
+`training/timed-crossing/demos/E1M1/timed.lmp` (seed 16, 62.34 seconds), with its
+timed crossing near 53 seconds; `before.lmp` contains the matched baseline.
+
 ## Current planning and engine compatibility
 
 The final controller uses **full level geometry, key positions and switch
@@ -442,7 +665,9 @@ checks the player's footprint along edges, respects stairs and ceilings, and
 plans detours around solid decorations. Closed doors and possible raised lifts
 are hypotheses: ordinary Use inputs must make them traversable. Failed barriers
 are remembered until keys, observed progress or their geometry changes. The
-controller never reads exit specials/tags or follows a human-authored route.
+controller does not infer objectives from exit specials/tags or follow a
+human-authored route. A bounded floor-safety classifier reads damaging sector
+types solely to estimate terrain risk, including damaging finale floors.
 
 The archive samples key states before spatial novelty within them, so a rare
 new key is not diluted by hundreds of earlier locations. Switch texture changes
@@ -451,9 +676,13 @@ observed interactions. The planner receives switch updates during play and repla
 recognizes both initial switch states, and faces an intended switch instead of
 steering around its wall.
 
-Planning prefers dry routes over visible `NUKAGE`/`LAVA` floors and does not choose
-such floors merely as exploration destinations. Necessary crossings and drops
-remain possible. Combat uses bounded moving engagements; explosive barrels in
+Planning prefers dry routes over damaging floors and visible `NUKAGE`/`LAVA`.
+Hazardous exploration destinations are considered after safer objectives and
+usable mechanisms are exhausted. Necessary crossings and drops remain possible;
+waypoint shortcuts cannot add hazard exposure beyond the underlying grid path.
+The local controller also checks predicted combat/navigation momentum and brakes
+before unplanned entries. During a planned crossing it prioritizes movement over
+optional pickups and ordinary combat pauses. Combat uses bounded moving engagements; explosive barrels in
 the route are shot from outside the blast radius, with a retreat attempt when
 needed. The existing nearby equipment policy remains; the rejected low-health
 recovery and bonus-sweeping behaviors are absent. All control remains Java-only.

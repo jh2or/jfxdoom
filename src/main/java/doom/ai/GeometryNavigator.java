@@ -10,10 +10,24 @@ final class GeometryNavigator {
     private static final int GRID = 16;
     private record Goal(double x, double y, double aimX, double aimY, int node, double priority, Object id) {}
     private record Step(int node, double cost) {}
+    private record Interaction(Line line, boolean panel) {}
+    private record Attachment(int node, double distance) {}
+    private record Connections(double x, double y, double z, List<Attachment> approaches) {}
     private int left, bottom, width, height, count, planned = -100;
     private Sector[] sectors;
     private boolean[] solid, blocked;
     private int[] staticEdges, edges;
+    // Grid topology is implicit (eight neighbors); cache the expensive edge tests.
+    private int[] stairKnown, stairPass;
+    private double[] terrainCost;
+    private Sector[] terrainSectors;
+    private int[] terrainFloors, terrainCeilings, terrainFlats, terrainSpecials;
+    private boolean terrainReady;
+    private int[] sideTextures;
+    private final Map<Interaction, List<Goal>> interactions = new HashMap<>();
+    private final Map<Mobj, Connections> pickups = new IdentityHashMap<>();
+    private Connections destinationConnections;
+    private final Map<Line, int[]> touchingNodes = new IdentityHashMap<>();
     private static final int[] DX = {-1,0,1,-1,1,-1,0,1}, DY = {-1,-1,-1,0,0,1,1,1};
     private double[] floor, ceiling;
     private int[] visits;
@@ -22,11 +36,18 @@ final class GeometryNavigator {
     private List<Integer> route = List.of();
     private int cursor;
     private Point next;
+    private TimedCrossing.Plan timedShortcut;
+    private Point timedLanding;
     private Set<Line> blockedLastPlan = Set.of();
     private int lastProgress, progress, keys;
     private double closest;
 
-    void reset() { sectors = null; target = null; next = null; planned = -100; postponed.clear(); blockedLastPlan = Set.of(); }
+    void reset() {
+        timedShortcut = null; timedLanding = null;
+        sectors = null; target = null; next = null; planned = -100; postponed.clear(); blockedLastPlan = Set.of();
+        touchingNodes.clear(); terrainReady = false;
+        interactions.clear(); pickups.clear(); destinationConnections = null;
+    }
 
     private double x(int node) { return left + (node % width) * GRID + GRID / 2.; }
     private double y(int node) { return bottom + (node / width) * GRID + GRID / 2.; }
@@ -52,13 +73,33 @@ final class GeometryNavigator {
         if (count > 300000) throw new IllegalArgumentException("Navigation grid exceeds 300000 cells");
         sectors = new Sector[count]; solid = new boolean[count]; blocked = new boolean[count];
         floor = new double[count]; ceiling = new double[count]; visits = new int[count]; staticEdges = new int[count]; edges = new int[count];
+        sideTextures = new int[PSetup.sides.length * 3]; Arrays.fill(sideTextures, Integer.MIN_VALUE);
+        stairKnown = new int[count]; stairPass = new int[count]; terrainCost = new double[count];
         for (int i = 0; i < count; i++) sectors[i] = RMain.rPointInSubsector((int) (x(i) * 65536), (int) (y(i) * 65536)).sector;
+        Set<Sector> unique = Collections.newSetFromMap(new IdentityHashMap<>());
+        Collections.addAll(unique, sectors);
+        for (Line line : PSetup.lines) {
+            unique.add(line.frontsector);
+            if (line.backsector != null) unique.add(line.backsector);
+        }
+        terrainSectors = unique.toArray(Sector[]::new);
+        terrainFloors = new int[terrainSectors.length]; terrainCeilings = new int[terrainSectors.length];
+        terrainFlats = new int[terrainSectors.length]; terrainSpecials = new int[terrainSectors.length];
         for (Line line : PSetup.lines) if (line.backsector == null || (line.flags & Line.ML_BLOCKING) != 0) {
             touching(line, i -> solid[i] = true); barrier(line, staticEdges);
         }
     }
 
     private void touching(Line line, java.util.function.IntConsumer action) {
+        int[] nodes = touchingNodes.computeIfAbsent(line, l -> {
+            var builder = java.util.stream.IntStream.builder();
+            findTouching(l, builder::add);
+            return builder.build().toArray();
+        });
+        for (int i : nodes) action.accept(i);
+    }
+
+    private void findTouching(Line line, java.util.function.IntConsumer action) {
         int x0 = Math.max(0, (int) Math.floor((Math.min(line.v1.x, line.v2.x) / 65536. - 16 - left) / GRID));
         int x1 = Math.min(width - 1, (int) Math.floor((Math.max(line.v1.x, line.v2.x) / 65536. + 16 - left) / GRID));
         int y0 = Math.max(0, (int) Math.floor((Math.min(line.v1.y, line.v2.y) / 65536. - 16 - bottom) / GRID));
@@ -92,7 +133,35 @@ final class GeometryNavigator {
         return (s.ceilingheight == s.floorheight ? s.floorheight / 65536. + 128 : s.ceilingheight / 65536.);
     }
 
+    /** Door/lift motion invalidates height-dependent edges; objects and locks stay live overlays. */
+    private boolean refreshTerrain() {
+        boolean geometryChanged = !terrainReady, flatsChanged = !terrainReady;
+        for (int i = 0; i < terrainSectors.length; i++) {
+            Sector sector = terrainSectors[i];
+            geometryChanged |= terrainFloors[i] != sector.floorheight || terrainCeilings[i] != sector.ceilingheight;
+            flatsChanged |= terrainFlats[i] != sector.floorpic || terrainSpecials[i] != sector.special;
+            terrainFloors[i] = sector.floorheight; terrainCeilings[i] = sector.ceilingheight;
+            terrainFlats[i] = sector.floorpic; terrainSpecials[i] = sector.special;
+        }
+        if (geometryChanged) { Arrays.fill(stairKnown, 0); Arrays.fill(stairPass, 0); }
+        if (flatsChanged) for (int i = 0; i < count; i++) terrainCost[i] = hazard(x(i), y(i)) ? 8 : 1;
+        terrainReady = true;
+        return geometryChanged;
+    }
+
     private void update(Set<Line> failed) {
+        if (refreshTerrain()) {
+            interactions.clear(); pickups.clear(); destinationConnections = null;
+        }
+        // Texture changes can turn a neighboring face into an intervening use target.
+        for (int i = 0; i < PSetup.sides.length; i++) {
+            Side side = PSetup.sides[i];
+            if (sideTextures[3*i] != side.toptexture || sideTextures[3*i+1] != side.midtexture
+                    || sideTextures[3*i+2] != side.bottomtexture) interactions.clear();
+            sideTextures[3*i] = side.toptexture; sideTextures[3*i+1] = side.midtexture;
+            sideTextures[3*i+2] = side.bottomtexture;
+        }
+        pickups.keySet().removeIf(item -> item.removed || (item.flags & Mobj.MF_SPECIAL) == 0);
         System.arraycopy(solid, 0, blocked, 0, count);
         System.arraycopy(staticEdges, 0, edges, 0, count);
         for (int i = 0; i < count; i++) { floor[i] = sectors[i].floorheight / 65536.; ceiling[i] = potentialCeiling(sectors[i]); }
@@ -126,6 +195,16 @@ final class GeometryNavigator {
 
     private Point choose(Observation o, int tic, Set<Line> used, Set<Line> failed, Point destination, double destinationZ) {
         observe(o);
+        if (timedShortcut != null) {
+            int frame = PTick.leveltime - timedShortcut.frames().getFirst().tic();
+            if (frame >= 0 && frame < timedShortcut.frames().size()
+                    && timedShortcut.frames().get(frame).matches(o, PTick.leveltime)) return timedLanding;
+            // An interrupted shortcut must not become an unrestricted hazardous route.
+            boolean finished = frame == timedShortcut.frames().size()
+                    && Math.hypot(o.x() - timedLanding.x, o.y() - timedLanding.y) < 24;
+            if (!finished && !FloorSafety.hazardous(o.x(), o.y())) { target = null; route = List.of(); planned = -100; }
+            timedShortcut = null; timedLanding = null;
+        }
         if (!o.lockedDoors().isEmpty()) {
             Set<Line> combined = new HashSet<>(failed); combined.addAll(o.lockedDoors()); failed = combined;
         }
@@ -143,7 +222,8 @@ final class GeometryNavigator {
             if (d < closest - 24) { closest = d; lastProgress = tic; }
             if (d < 24 && target.id instanceof Integer) { postponed.put(target.id, tic + 3500); target = null; }
             else if (tic - lastProgress > 350) { postponed.put(target.id, tic + 1400); target = null; }
-            else if (d < 48 && (!(target.id instanceof Line line)
+            else if (d < 48 && (hazard(target.x, target.y) || FloorSafety.exposure(o.x(), o.y(), target.x, target.y) == 0)
+                    && (!(target.id instanceof Line line)
                     || new MotionProbe(o).canInteract(line, target.aimX, target.aimY)))
                 return new Point(target.aimX, target.aimY);
         }
@@ -158,7 +238,8 @@ final class GeometryNavigator {
             for (int gx = Math.max(0, baseX - 2); gx <= Math.min(width - 1, baseX + 2); gx++) {
                 int i = gy * width + gx; double d = Math.hypot(x(i) - o.x(), y(i) - o.y());
                 if (!blocked[i] && floor[i] <= o.z() + 24 && local.distance(x(i), y(i)) >= d - .01) {
-                    distance[i] = d; queue.add(new Step(i, d));
+                    distance[i] = d + 7 * FloorSafety.exposure(o.x(), o.y(), x(i), y(i));
+                    queue.add(new Step(i, distance[i]));
                 }
             }
         while (!queue.isEmpty()) {
@@ -173,15 +254,15 @@ final class GeometryNavigator {
                 if (blocked[b] || rise > 256) continue;
                 // Walking cannot speculate that a tall riser will become a lift.
                 // Test the swept player footprint across changing floor heights.
-                if (rise > 0 && !stairs(a, b)) continue;
+                if (rise > 0 && !cachedStairs(a, b, direction)) continue;
                 if (dx != 0 && dy != 0 && (blocked[a + dx] || blocked[a + dy * width]
                         || floor[a + dx] - floor[a] > 24 || floor[a + dy * width] - floor[a] > 24)) continue;
                 double cost = step.cost + (dx == 0 || dy == 0 ? GRID : GRID * Math.sqrt(2))
-                        * (hazard(x(b), y(b)) ? 8 : 1);
+                        * terrainCost[b];
                 if (cost < distance[b]) { distance[b] = cost; parent[b] = a; queue.add(new Step(b, cost)); }
             }
         }
-        List<Goal> goals = new ArrayList<>();
+        List<Goal> goals = new ArrayList<>(), riskyGoals = new ArrayList<>();
         if (destination != null) {
             goal(goals, destination.x, destination.y, destination.x, destination.y, destinationZ, 1, destination, distance);
         } else {
@@ -199,8 +280,8 @@ final class GeometryNavigator {
         }
         for (int gy = 2; gy < height; gy += 12) for (int gx = 2; gx < width; gx += 12) {
             int i = gy * width + gx;
-            if (!blocked[i] && Double.isFinite(distance[i]) && visits[i] == 0 && !hazard(x(i), y(i)))
-                goals.add(new Goal(x(i), y(i), x(i), y(i), i, .5, i));
+            if (!blocked[i] && Double.isFinite(distance[i]) && visits[i] == 0)
+                (terrainCost[i] == 1 ? goals : riskyGoals).add(new Goal(x(i), y(i), x(i), y(i), i, .5, i));
         }
         }
         if (destination == null && goals.stream().noneMatch(g -> postponed.getOrDefault(g.id, 0) <= tic)) {
@@ -211,6 +292,9 @@ final class GeometryNavigator {
                     && Math.abs((long) line.frontsector.floorheight - line.backsector.floorheight) > 24L * 65536)
                 interactionGoals(goals, line, distance, false);
         }
+        // A damaging destination may be necessary (including a final room). Explore it last, never forbid it.
+        if (destination == null && goals.stream().noneMatch(g -> postponed.getOrDefault(g.id, 0) <= tic))
+            goals.addAll(riskyGoals);
         Goal best = null; double score = Double.POSITIVE_INFINITY;
         for (Goal goal : goals) {
             if (postponed.getOrDefault(goal.id, 0) > tic) continue;
@@ -235,17 +319,40 @@ final class GeometryNavigator {
         while (cursor < route.size() - 1 && Math.hypot(x(route.get(cursor)) - o.x(), y(route.get(cursor)) - o.y()) < 40) {
             int following = route.get(cursor + 1);
             double d = Math.hypot(x(following) - o.x(), y(following) - o.y());
-            if (d > 256 || probe.distance(x(following), y(following)) < d - .01) break;
+            int current = route.get(cursor);
+            double budget = FloorSafety.exposure(o.x(), o.y(), x(current), y(current))
+                    + FloorSafety.exposure(x(current), y(current), x(following), y(following));
+            if (d > 256 || probe.distance(x(following), y(following)) < d - .01
+                    || FloorSafety.exposure(o.x(), o.y(), x(following), y(following)) > budget + .01) break;
             cursor++;
         }
         int selected = route.get(cursor);
+        double budget = 0, previousX = o.x(), previousY = o.y();
         for (int j = cursor; j < route.size(); j++) {
             int i = route.get(j); double d = Math.hypot(x(i) - o.x(), y(i) - o.y());
             if (d > 192 || probe.distance(x(i), y(i)) < d - .01) break;
+            budget += FloorSafety.exposure(previousX, previousY, x(i), y(i));
+            previousX = x(i); previousY = y(i);
+            TimedCrossing.Plan shortcut = null;
+            if (FloorSafety.exposure(o.x(), o.y(), x(i), y(i)) > budget + .01) {
+                shortcut = TimedCrossing.plan(o, probe, x(i), y(i), PTick.leveltime);
+                if (shortcut == null) continue;
+            }
             selected = i; cursor = j;
+            timedShortcut = shortcut;
+            timedLanding = shortcut == null ? null : new Point(x(i), y(i));
         }
         next = new Point(x(selected), y(selected));
         return next;
+    }
+
+    private boolean cachedStairs(int from, int to, int direction) {
+        int bit = 1 << direction;
+        if ((stairKnown[from] & bit) == 0) {
+            stairKnown[from] |= bit;
+            if (stairs(from, to)) stairPass[from] |= bit;
+        }
+        return (stairPass[from] & bit) != 0;
     }
 
     private boolean stairs(int from, int to) {
@@ -264,6 +371,17 @@ final class GeometryNavigator {
     }
 
     private void interactionGoals(List<Goal> goals, Line line, double[] distances, boolean panel) {
+        List<Goal> approaches = interactions.computeIfAbsent(new Interaction(line, panel), ignored -> {
+            List<Goal> result = new ArrayList<>();
+            connectInteraction(result, line, panel);
+            return List.copyOf(result);
+        });
+        // Reachability, temporary obstacles, failed doors and keys are search-time conditions.
+        for (Goal approach : approaches)
+            if (!blocked[approach.node] && Double.isFinite(distances[approach.node])) goals.add(approach);
+    }
+
+    private void connectInteraction(List<Goal> goals, Line line, boolean panel) {
         double dx = line.dx / 65536., dy = line.dy / 65536., length = Math.hypot(dx, dy);
         if (length == 0) return;
         int face = !panel && line.backsector.floorheight < line.frontsector.floorheight ? -1 : 1;
@@ -276,8 +394,7 @@ final class GeometryNavigator {
             for (int gy = Math.max(0, center / width - 2); gy <= Math.min(height - 1, center / width + 2); gy++)
                 for (int gx = Math.max(0, center % width - 2); gx <= Math.min(width - 1, center % width + 2); gx++) {
                     int i = gy * width + gx;
-                    if (blocked[i] || !Double.isFinite(distances[i])
-                            || Math.abs(floor[i] - standingFloor) > 24) continue;
+                    if (solid[i] || Math.abs(floor[i] - standingFloor) > 24) continue;
                     Observation standing = new Observation(x(i), y(i), 0, 100, 50, 3, 8, null,
                             floor[i], 56, 16, 0, 0, 1, 0);
                     MotionProbe probe = new MotionProbe(standing);
@@ -288,27 +405,38 @@ final class GeometryNavigator {
     }
 
     private void goal(List<Goal> goals, double x, double y, double aimX, double aimY, double z, double priority, Object id, double[] distances) {
-        int center = node(x, y); if (center < 0) return;
+        Connections connection = id instanceof Mobj item ? pickups.get(item) : destinationConnections;
+        if (connection == null || connection.x != x || connection.y != y || connection.z != z) {
+            connection = connectPoint(x, y, z);
+            if (id instanceof Mobj item) pickups.put(item, connection);
+            else destinationConnections = connection;
+        }
         int best = -1; double nearest = 80;
-        for (int gy = Math.max(0, center / width - 5); gy <= Math.min(height - 1, center / width + 5); gy++)
-            for (int gx = Math.max(0, center % width - 5); gx <= Math.min(width - 1, center % width + 5); gx++) {
-                int i = gy * width + gx; double d = Math.hypot(x(i) - x, y(i) - y);
-                if (d < nearest && !blocked[i] && Math.abs(floor[i] - z) <= 24 && Double.isFinite(distances[i])
-                        && Observation.clearance(x(i), y(i), x, y, false) >= .999) { nearest = d; best = i; }
+        for (Attachment approach : connection.approaches) {
+            int i = approach.node;
+            if (approach.distance < nearest && !blocked[i] && Double.isFinite(distances[i])) {
+                nearest = approach.distance; best = i;
             }
+        }
         if (best >= 0) goals.add(new Goal(x, y, aimX, aimY, best, priority, id));
     }
 
-    /** Visible toxic floor textures are a cost, not an impassable barrier. No sector specials are read. */
-    static boolean hazard(double x, double y) {
-        if (doom.play.PSetup.subsectors == null || doom.play.PSetup.subsectors.length == 0) return false;
-        var sector = doom.render.RMain.rPointInSubsector((int) (x * 65536), (int) (y * 65536)).sector;
-        int index = doom.render.RData.firstflat + sector.floorpic;
-        var lumps = doom.wad.WWad.lumpinfo;
-        if (index < 0 || index >= lumps.length) return false;
-        String name = lumps[index].name;
-        return name != null && (name.startsWith("NUKAGE") || name.startsWith("LAVA"));
+    /** Explicit connections from an objective to nearby standing nodes, in the original tie order. */
+    private Connections connectPoint(double x, double y, double z) {
+        List<Attachment> approaches = new ArrayList<>();
+        int center = node(x, y);
+        if (center >= 0) for (int gy = Math.max(0, center / width - 5); gy <= Math.min(height - 1, center / width + 5); gy++)
+            for (int gx = Math.max(0, center % width - 5); gx <= Math.min(width - 1, center % width + 5); gx++) {
+                int i = gy * width + gx; double d = Math.hypot(x(i) - x, y(i) - y);
+                if (d < 80 && !solid[i] && Math.abs(floor[i] - z) <= 24
+                        && Observation.clearance(x(i), y(i), x, y, false) >= .999)
+                    approaches.add(new Attachment(i, d));
+            }
+        return new Connections(x, y, z, List.copyOf(approaches));
     }
+
+    /** Damaging floor mechanics and visible toxic textures are finite route costs. */
+    static boolean hazard(double x, double y) { return FloorSafety.hazardous(x, y); }
 
     private static boolean panel(Line line) {
         int side = line.sidenum[0]; if (side < 0 || side >= PSetup.sides.length) return false;

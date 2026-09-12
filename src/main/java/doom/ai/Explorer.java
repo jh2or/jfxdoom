@@ -133,6 +133,7 @@ final class Explorer {
                         double value = reachable < 16 ? -100 : 3 * Math.min(1, reachable / 32)
                                 + -1.5 * Math.log1p(archive.visits(tx, ty, o.keys(), o.progress()))
                                 + .5 * Math.cos(a - o.angle()) + random.nextDouble() * .8;
+                        value -= 7 * FloorSafety.exposure(o.x(), o.y(), tx, ty) / Math.max(16, reachable);
                         if (avoidUntil[i] > tic) value -= 5;
                         if (value > best) { best = value; heading = a; }
                     }
@@ -141,6 +142,8 @@ final class Explorer {
                         if (visits > 0 && visits >= archive.visits(o.x(), o.y(), o.keys(), o.progress())) continue;
                         double a = Math.atan2(opening.y() - o.y(), opening.x() - o.x());
                         double value = 3.8 - 1.5 * Math.log1p(visits) + .5 * Math.cos(a - o.angle());
+                        value -= 7 * FloorSafety.exposure(o.x(), o.y(), opening.x(), opening.y())
+                                / Math.max(16, Math.hypot(opening.x() - o.x(), opening.y() - o.y()));
                         if (avoidUntil[Math.floorMod((int) Math.round(a * 8 / Math.PI), 16)] > tic) value -= 5;
                         if (value > best) {
                             best = value; heading = a; passage = true; passageX = opening.x(); passageY = opening.y();

@@ -32,6 +32,8 @@ final class LocalController {
     private int combatUntil;
     private int quietSince = -1;
     private boolean waypointPriority;
+    private TimedCrossing.Plan timedCrossing;
+    private int timedFrame;
 
     private void observeQuiet(Observation o, int tic) {
         if (o.enemy() != null || o.threats().stream().anyMatch(e -> e.health > 0)) {
@@ -45,18 +47,47 @@ final class LocalController {
             }
         }
     }
-    void reset() { quietSince = -1; waypointPriority = false; rockets.reset(); if (survivalCombat != null) survivalCombat.reset(); if (barrels != null) barrels.reset(); durableCombat.reset(); use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
+    void reset() { timedCrossing = null; timedFrame = 0; quietSince = -1; waypointPriority = false; rockets.reset(); if (survivalCombat != null) survivalCombat.reset(); if (barrels != null) barrels.reset(); durableCombat.reset(); use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
 
     Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
         if (strategy == LearningStrategy.SURVIVAL) {
             observeQuiet(o, tic);
             o = o.withPreferredWeapon(RocketSafety.preferredWeapon(o));
         }
-        return protect(o, propose(o, probe, tx, ty, tic, fight), tic);
+        boolean crossing = FloorSafety.crossing(o, tx, ty);
+        Explorer.Burst timed = timedMotion(o, probe, tx, ty, crossing);
+        if (timed != null) return timed;
+        return protect(o, propose(o, probe, tx, ty, tic, fight, crossing), tic, crossing, tx, ty);
+    }
+
+    private Explorer.Burst timedMotion(Observation o, MotionProbe probe, double tx, double ty, boolean crossing) {
+        int now = doom.play.PTick.leveltime;
+        if (timedCrossing != null && (timedFrame >= timedCrossing.frames().size()
+                || !timedCrossing.frames().get(timedFrame).matches(o, now))) {
+            // A collision, knockback, teleport or intervening input invalidates the forecast.
+            // Ordinary floor safety then brakes on dry ground or keeps escaping a hazard.
+            timedCrossing = null;
+        }
+        if (timedCrossing == null && !crossing) return null;
+        if (timedCrossing == null) {
+            timedCrossing = TimedCrossing.plan(o, probe, tx, ty, now);
+            timedFrame = 0;
+        }
+        if (timedCrossing == null) return null;
+        Action move = timedCrossing.frames().get(timedFrame++).action();
+        int buttons = o.preferredWeapon() != o.inventory().ready() && o.preferredWeapon() != o.inventory().pending()
+                ? Doomdef.BT_CHANGE | (o.preferredWeapon() << Doomdef.BT_WEAPONSHIFT) : 0;
+        // One ordinary input at a time, checked against the forecast on the next observation.
+        // Keep the committed crossing moving even if navigation selects another nearby waypoint.
+        return new Explorer.Burst(new Action(move.forward(), move.side(), move.turn(), buttons), 1);
     }
 
     Explorer.Burst protect(Observation o, Explorer.Burst proposed, int tic) {
-        if (strategy == LearningStrategy.SURVIVAL) proposed = CombatSpacing.protect(o, proposed);
+        return protect(o, proposed, tic, false, o.x(), o.y());
+    }
+
+    private Explorer.Burst protect(Observation o, Explorer.Burst proposed, int tic, boolean crossing, double tx, double ty) {
+        if (strategy == LearningStrategy.SURVIVAL && !crossing) proposed = CombatSpacing.protect(o, proposed);
         proposed = rockets.protect(o, proposed, tic);
         // Covers navigation, recovery, and automatic weapon switches.
         // Never authorize punching/chainsaw attacks while waiting for a loaded gun to equip.
@@ -66,12 +97,12 @@ final class LocalController {
             proposed = new Explorer.Burst(new Action(action.forward(), action.side(), action.turn(),
                     action.buttons() & ~Doomdef.BT_ATTACK), proposed.duration());
         }
-        return proposed;
+        return FloorSafety.protect(o, proposed, crossing, tx, ty);
     }
 
-    private Explorer.Burst propose(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
+    private Explorer.Burst propose(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight, boolean crossing) {
         boolean canEngage = o.inventory().loadedRangedWeapon(o.weapons(), o.preferredWeapon());
-        if (survivalCombat != null) {
+        if (!crossing && survivalCombat != null) {
             Action combat = survivalCombat.choose(o, probe, tic);
             if (combat != null) return new Explorer.Burst(combat, 2);
         }
@@ -79,10 +110,10 @@ final class LocalController {
             Action clear = barrels.choose(o, tx, ty, tic);
             if (clear != null) return new Explorer.Burst(clear, 2);
         }
-        var pickup = pickups.choose(o, probe, tx, ty, tic);
+        var pickup = crossing ? null : pickups.choose(o, probe, tx, ty, tic);
         if (pickup != null) { tx = pickup.x / 65536.0; ty = pickup.y / 65536.0; }
         else {
-            Action combat = strategy == LearningStrategy.SPEED && canEngage ? durableCombat.choose(o, probe, tic) : null;
+            Action combat = !crossing && strategy == LearningStrategy.SPEED && canEngage ? durableCombat.choose(o, probe, tic) : null;
             if (combat != null) return new Explorer.Burst(combat, 2);
         }
         double distance = Math.hypot(tx - o.x(), ty - o.y());
@@ -123,7 +154,7 @@ final class LocalController {
             double enemyDistance = Math.hypot(o.enemy().x / 65536.0 - o.x(), o.enemy().y / 65536.0 - o.y());
             boolean acquireShotgun = !Inventory.owns(o.weapons(), Doomdef.wp_shotgun)
                     && o.enemy().type == doom.play.Info.MT_SHOTGUY && o.inventory().bullets() > 0;
-            if ((fight || acquireShotgun) && enemyDistance < 192
+            if (!crossing && (fight || acquireShotgun) && enemyDistance < 192
                     && (acquireShotgun || enemyDistance < 64 || Math.abs(difference(enemyAngle, desired)) < .9)) {
                 if (combatEnemy != o.enemy()) { combatEnemy = o.enemy(); combatUntil = tic + 140; }
                 if (tic < combatUntil) {

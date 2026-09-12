@@ -25,6 +25,14 @@ final class MotionProbe {
         }
     }
 
+    /** Effective support height under the swept player footprint, including a nearby step edge. */
+    double supportFloor(double px, double py) {
+        double floor = doom.render.RMain.rPointInSubsector((int) (px * 65536), (int) (py * 65536)).sector.floorheight / 65536.;
+        for (Line line : lines) if (line.backsector != null && intersectsSquare(px, py, radius, line))
+            floor = Math.max(floor, Math.max(line.frontsector.floorheight, line.backsector.floorheight) / 65536.);
+        return floor;
+    }
+
     boolean avoidsDrops() { return avoidDrops; }
 
     boolean blocks(Line l) {
