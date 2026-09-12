@@ -8,6 +8,100 @@ New `.lmp` files are local artifacts ignored by Git. Existing tracked E1M1–E1M
 fixtures remain versioned; tests using the newer recordings skip when those files
 are absent. The linked demo bundles are available in the generating workspace.
 
+## Branching campaign learning with inventory carryover
+
+`doom.ai.CampaignTrainer` starts at `--from` (default E1M1). For **each earned
+entrance**, it learns until it has `--branches` distinct successful recordings
+(default three) **strictly below twice that map's engine par time**. All of those
+successes become separate entrances for the next map. There is no global pruning
+to three routes: E1M1 → E1M3 with three alternatives per parent produces
+**3 E1M1, 9 E1M2, and 27 E1M3 qualifying demos**, across 13 training nodes.
+
+```sh
+bash gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --from E1M1 --through E1M3 --branches 3 --strategy speed --workers 3 --output training/campaign-tree --attempts 3000 --minutes 10 --rounds 10 --seed 1"
+```
+
+The E1M1/E1M2/E1M3 limits are **60 / 150 / 240 seconds**. Equality does not
+qualify. Demos must complete with a living player and pass native continuous
+playback verification. SHA-256 of the input recording prevents counting an
+identical replay twice. Successful alternatives do not have to beat the current
+record; similar paths or identical ending inventories may still qualify if the
+recorded actions differ. This is input diversity, not a guarantee of three
+geometrically different routes or loadouts.
+
+`speed` is the default and is suited to this time-constrained search. `survival`
+retains its existing safety ranking and behavior, but its branch admissions must
+meet the same strict time threshold. No supplied demos are needed. The first
+map starts with a pistol; all later maps carry the equipment actually earned.
+
+Attempts and wall-time budgets apply **per training node per round**, with a
+10-minute game limit per trial by default. `--rounds` repeats unfinished searches
+with their saved archives and learner RNG; it does not start them over. After
+all rounds are exhausted, any missing parent quota leaves the campaign
+`INCOMPLETE`. Repeat the command with `--resume` to continue. No parent is
+silently dropped and no missing branch is replaced by a pistol start. The
+coordinator waits for the whole current frontier to qualify before training the
+next one. Round/worker budgets can change on resume; campaign identity,
+branch count, start/end maps, strategy, learner seed, WAD and engine must match.
+
+`--workers` runs independent training nodes in separate JVMs (the static engine
+must not be shared by concurrent threads). Each worker uses one active processor
+and at most 768 MiB heap. Exit handling and branch validation run in the parent.
+The engine's normal/secret exits determine the next map. A repeated map or an
+unreachable requested endpoint is reported as an error instead of warping.
+
+On transition, weapons, all four ammunition types, health, armor type/points,
+and backpack capacity carry over. Keys and temporary powers are cleared by the
+original `G_PlayerFinishLevel` rules. Every trial restores **the same earned
+entrance for its parent**. Its durable checkpoint is `entrance.lmp`: the complete
+history from the campaign start through the first tic of the current map.
+Within an invocation the trainer caches a save snapshot plus the references and
+simulation clock required for deterministic replay. Entrance restores check a
+fingerprint and reset map-local AI memories. The entrance's first tic counts
+against the level's game-time limit. Attempt CSV tics describe the subsequently
+learned suffix; `successes.csv` and `result.txt` include that entrance tic.
+
+Each archive's identity includes its entrance recording hash. Upstream successes
+are immutable once admitted, so downstream searches cannot accidentally inherit
+a different random state or inventory. This implementation grows the full tree;
+it does not optimize a global campaign score or select only the best loadouts.
+
+Outputs:
+
+- `status.txt`: verified full tree, incomplete quotas, or an execution error.
+- `tree.csv`: every success, its parent, map, attempt, full map time and demo hash.
+- `nodes/r/`: the root search. `nodes/r-1/` trains from its first success, etc.
+- Each node has `attempts.csv`, `archive.bin`, `trainer.log`, `successes.csv`, and
+  `s001.lmp` / `s002.lmp` / `s003.lmp`. Later nodes also have `entrance.lmp` and
+  `entrance.txt` describing inherited health, armor, weapons and ammunition.
+- `demos/c0001.lmp` …: continuous recordings through the requested end map.
+
+Every exported demo starts at the campaign's `--from` map. Playback uses ordinary
+intermission input and requires no save files, injected inventory or retries:
+
+```sh
+bash gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --from E1M1 --through E1M3 --verify training/campaign-tree/demos/c0001.lmp"
+bash gradlew run --args="-iwad reference-wads/DOOM.WAD -playdemo training/campaign-tree/demos/c0001.lmp"
+```
+
+`--verify` checks uninterrupted completion; branch admission additionally checks
+the 2×PAR limit. For single-map experiments, `train --successes 3
+--target-seconds 60` enables the same success collection. Ordinary `train` still
+supports `--first-completion` and its existing optimization behavior. Campaign
+entrances support training, resume and verification; single-map `--improve`,
+`--analyze`, `--evaluate`, and `--seed-demo` do not accept them.
+
+The fresh E1M1 → E1M3 branching milestone completed all 13 training nodes in
+793 logged attempts. Qualified times were **12.34–13.63s** (3 E1M1 demos),
+**48.00–70.37s** (9 E1M2 demos), and **108.06–232.60s** (27 E1M3 demos).
+All 27 final recordings passed an independent native playback audit of all
+81 constituent map completions. The fastest totals **2:52.37 gameplay**, plus
+intermissions. See the local [full report and demos](training/campaign-tree-e1m1-e1m3/REPORT.md).
+
+The earlier fixed-entrance E1M1 → E1M2 milestone remains documented in its local
+[comparison report](training/campaign-first-milestone/REPORT.md). It measured
+first completions rather than the new branching/2×PAR criterion.
+
 ## Survival strategy
 
 `--strategy survival` is an opt-in alternative to the default `speed` strategy.
@@ -719,8 +813,8 @@ guarantee that another search will finish as quickly.
 
 ## Settings, resume and limits
 
-Defaults are skill 3 (Hurt Me Plenty), monsters enabled, seed 1, and a standard
-pistol start. Episodes end on exit activation, death, or 21,000 game tics
+Standalone `train` defaults are skill 3 (Hurt Me Plenty), monsters enabled,
+seed 1, and a standard pistol start; campaign entrances are described above. Episodes end on exit activation, death, or 21,000 game tics
 (ten simulated minutes). Prefix replay counts toward the same episode limit.
 Optimization proposals can additionally be pruned when they end without success,
 stall, or can no longer improve the incumbent; this is logged as `PRUNED`,

@@ -877,13 +877,25 @@ public final class GGame {
     // each player's stats into wminfo, work out `last` / `next` map
     // (with secret-level routing for both Doom 1 and Doom 2), latch
     // gamestate=GS_INTERMISSION, call WI_Start.
+    /** G_PlayerFinishLevel — g_game.c lines 779–792. */
+    public static void gPlayerFinishLevel(int player) {
+        Player p = players[player];
+        java.util.Arrays.fill(p.powers, 0);
+        java.util.Arrays.fill(p.cards, false);
+        p.mo.flags &= ~doom.play.Mobj.MF_SHADOW; // cancel invisibility
+        p.extralight = 0;                       // cancel gun flashes
+        p.fixedcolormap = 0;                    // cancel ir goggles
+        p.damagecount = 0;                      // no palette changes
+        p.bonuscount = 0;
+    }
+
     public static void gDoCompleted() {
         int i;
         gameaction = ga_nothing;
 
-        // G_PlayerFinishLevel: take away cards / powers / message.
-        // Deferred — needs the full G_PlayerFinishLevel port. The
-        // intermission doesn't read those fields, so skip for now.
+        for (i = 0; i < Doomdef.MAXPLAYERS; i++) {
+            if (playeringame[i]) gPlayerFinishLevel(i); // take away cards and stuff
+        }
 
         if (doom.ui.AmMap.automapactive) {
             doom.ui.AmMap.amStop();

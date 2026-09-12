@@ -59,3 +59,15 @@ tasks.register<JavaExec>("train") {
         org.apache.tools.ant.types.Commandline.translateCommandline(it).toList()
     }.getOrElse(emptyList()))
 }
+
+// Example: ./gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --through E1M2"
+tasks.register<JavaExec>("campaign") {
+    group = "application"
+    description = "Learn consecutive Doom maps with earned inventory carryover"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("doom.ai.CampaignTrainer")
+    maxHeapSize = "1g"
+    args(providers.gradleProperty("campaignArgs").map {
+        org.apache.tools.ant.types.Commandline.translateCommandline(it).toList()
+    }.getOrElse(emptyList()))
+}

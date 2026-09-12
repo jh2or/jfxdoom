@@ -59,6 +59,30 @@ class GGameFidelityTest {
         }
     }
 
+    @Test
+    void finishLevelClearsTemporaryEffectsButKeepsEarnedEquipment() {
+        doom.play.Player previous = GGame.players[0];
+        doom.play.Player p = new doom.play.Player();
+        GGame.players[0] = p;
+        try {
+            p.mo = new doom.play.Mobj(); p.mo.flags = doom.play.Mobj.MF_SHADOW | doom.play.Mobj.MF_SOLID;
+            java.util.Arrays.fill(p.cards, true); java.util.Arrays.fill(p.powers, 99);
+            p.extralight = 2; p.fixedcolormap = 32; p.damagecount = 4; p.bonuscount = 6;
+            p.health = 73; p.armorpoints = 91; p.armortype = 2; p.backpack = true;
+            p.weaponowned[Doomdef.wp_shotgun] = true; p.readyweapon = Doomdef.wp_shotgun;
+            p.ammo[Doomdef.am_shell] = 42; p.maxammo[Doomdef.am_shell] = 100;
+            GGame.gPlayerFinishLevel(0);
+            assertArrayEquals(new boolean[Doomdef.NUMCARDS], p.cards);
+            assertArrayEquals(new int[Doomdef.NUMPOWERS], p.powers);
+            assertEquals(doom.play.Mobj.MF_SOLID, p.mo.flags);
+            assertEquals(0, p.extralight | p.fixedcolormap | p.damagecount | p.bonuscount);
+            assertEquals(73, p.health); assertEquals(91, p.armorpoints); assertEquals(2, p.armortype);
+            assertTrue(p.backpack); assertTrue(p.weaponowned[Doomdef.wp_shotgun]);
+            assertEquals(Doomdef.wp_shotgun, p.readyweapon);
+            assertEquals(42, p.ammo[Doomdef.am_shell]); assertEquals(100, p.maxammo[Doomdef.am_shell]);
+        } finally { GGame.players[0] = previous; }
+    }
+
     private void assertSpeeds(int baron, int caco, int imp) {
         assertEquals(baron * Fixed.FRACUNIT, Info.mobjinfo[Info.MT_BRUISERSHOT].speed);
         assertEquals(caco * Fixed.FRACUNIT, Info.mobjinfo[Info.MT_HEADSHOT].speed);

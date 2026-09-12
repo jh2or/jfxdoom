@@ -14,6 +14,9 @@ public final class Trainer {
             System.out.println("Usage: doom.ai.Trainer --wad DOOM.WAD [--map E1M1] [--output training/e1m1] [--resume]\n"
                     + "  --skill 3 --episode-tics 21000 --attempts 1000 --minutes 10 --seed 1\n"
                     + "  --archive-size 12000 --node-limit 250000 --cell-size 128 --target-seconds 120\n"
+                    + "  --successes 3  Collect distinct verified demos strictly below --target-seconds.\n"
+                    + "  --first-completion  Stop after the first verified success for either strategy.\n"
+                    + "  --entrance entrance.lmp  Retry an earned campaign entrance (full E1M1 prefix).\n"
                     + "  --strategy speed|survival  Survival ranks safety before time and ignores the time target.\n"
                     + "  --evaluate route.lmp  Evaluate a frozen route with controlled input perturbations.\n"
                     + "  --seed-demo trial.lmp  Import surviving prefixes of a previous trial.\n"
@@ -25,7 +28,10 @@ public final class Trainer {
         }
         TrainingConfig config = TrainingConfig.parse(args);
         if (config.verify() != null) {
-            int tics = DemoVerifier.verify(config.wad(), config.verify(), config.skill(), config.episodeTics(), null, config.level());
+            int tics = config.entrance() == null
+                    ? DemoVerifier.verify(config.wad(), config.verify(), config.skill(), config.episodeTics(), null, config.level())
+                    : CampaignDemo.play(config.wad(), config.verify(), config.skill(), config.level(), true,
+                            Entrance.load(config.wad(), config.skill(), config.entrance(), config.level()), null);
             System.out.println("VERIFIED " + config.level() + " completion in " + tics + " tics"); return;
         }
         if (config.evaluate() != null) { StrategyEvaluation.run(config); return; }
@@ -63,15 +69,18 @@ public final class Trainer {
     private static void train(TrainingConfig config) throws Exception {
         String identity = Checkpoint.identity(config);
         Path checkpoint = config.output().resolve("archive.bin");
-        if (!config.resume() && (Files.exists(checkpoint) || Files.exists(config.output().resolve("attempts.csv")))) {
+        if (!config.resume() && (Files.exists(checkpoint) || Files.exists(config.output().resolve("attempts.csv")) || Files.exists(config.output().resolve("successes.csv")))) {
             throw new IOException("Output already contains training data; use --resume or another --output directory");
         }
         Checkpoint.Progress progress = config.resume() ? Checkpoint.load(checkpoint, identity, config) : new Checkpoint.Progress(config);
-        Episode episode = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level());
+        Entrance entrance = config.entrance() == null ? null : Entrance.load(config.wad(), config.skill(), config.entrance(), config.level());
+        Episode episode = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level(), entrance);
+        if (entrance != null) Route.atomicWrite(config.output().resolve("entrance.txt"), entrance.description().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         if (config.seedDemo() != null) {
             importTrial(episode, config, progress);
             Route.atomicWrite(config.output().resolve("seed.lmp"), Files.readAllBytes(config.seedDemo()));
         }
+        SuccessPool pool = config.successCount() == 0 ? null : new SuccessPool(config);
         RunTrace best = null;
         if (progress.best != null) best = RunTrace.play(episode, RunTrace.actions(progress.best), () -> false);
         else if (config.improve() != null) best = RunTrace.play(episode,
@@ -79,9 +88,10 @@ public final class Trainer {
         Route.atomicWrite(config.output().resolve("manifest.txt"), (identity + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         if (best != null) {
             if (best.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Incumbent did not complete " + config.level());
-            installBest(config, identity, best, progress.attempts);
+            installBest(config, identity, best, progress.attempts, episode);
             progress.best = best.route(); Checkpoint.save(checkpoint, identity, progress);
-            if (config.strategy() == LearningStrategy.SPEED && best.route().tics <= config.targetTics()) { System.out.println("Target already reached and verified"); return; }
+            if (pool != null) pool.offer(episode, best, progress.attempts);
+            if (finished(config, best, pool)) { System.out.println("Target already reached and verified"); return; }
         }
         Explorer explorer = new Explorer(progress.random, true, config.strategy());
         RouteOptimizer optimizer = new RouteOptimizer(progress.random, config.strategy());
@@ -171,16 +181,17 @@ public final class Trainer {
                         progress.archive.size(), progress.archive.nodes(), progress.archive.discoveries, (System.nanoTime() - started) / 1e9,
                         episode.metrics().csv(), Observation.keys(episode.player()), episode.safety().csv())); csv.flush();
                 if (!interrupted && route != null && (progress.attempts == 1 || progress.attempts % 25 == 0)) {
-                    Route.demo(config.output().resolve("latest.lmp"), config.skill(), route, config.level());
+                    writeDemo(config, episode, config.output().resolve("latest.lmp"), route);
                 }
                 if (episode.outcome() == Episode.Outcome.COMPLETED) {
                     RunTrace candidate = proposal != null ? proposal : RunTrace.play(episode, RunTrace.actions(route), () -> false);
+                    if (pool != null) pool.offer(episode, candidate, progress.attempts);
                     if (config.strategy().better(candidate, best)) {
-                        installBest(config, identity, candidate, progress.attempts);
+                        installBest(config, identity, candidate, progress.attempts, episode);
                         best = candidate; progress.best = candidate.route();
                         Checkpoint.save(checkpoint, identity, progress);
-                        if (config.strategy() == LearningStrategy.SPEED && best.route().tics <= config.targetTics()) break;
                     }
+                    if (finished(config, best, pool)) break;
                 }
                 if (progress.attempts % 10 == 0) Checkpoint.save(checkpoint, identity, progress);
                 long now = System.nanoTime();
@@ -220,15 +231,31 @@ public final class Trainer {
                 episode.tics(), progress.archive.size(), episode.outcome());
     }
 
-    private static void installBest(TrainingConfig config, String identity, RunTrace run, long attempt) throws IOException {
+    private static boolean finished(TrainingConfig config, RunTrace best, SuccessPool pool) {
+        return pool != null ? pool.full() : best != null && (config.firstCompletion()
+                || (config.strategy() == LearningStrategy.SPEED && best.route().tics <= config.targetTics()));
+    }
+
+    static void writeDemo(TrainingConfig config, Episode episode, Path path, Route route) throws IOException {
+        if (episode.entrance() == null) Route.demo(path, config.skill(), route, config.level());
+        else episode.entrance().demo(path, config.skill(), route);
+    }
+
+    static int verifyRun(TrainingConfig config, Episode verification, RunTrace run, Path candidate) throws IOException {
         if (run.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Candidate did not complete " + config.level());
-        Episode verification = new Episode(config.wad(), config.skill(), config.episodeTics(), config.level());
         Route.replay(verification, run.route());
         if (verification.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Candidate did not repeat");
+        writeDemo(config, verification, candidate, run.route());
+        int tics = verification.entrance() == null
+                ? DemoVerifier.verify(config.wad(), candidate, config.skill(), config.episodeTics(), run.route(), config.level())
+                : CampaignDemo.play(config.wad(), candidate, config.skill(), config.level(), true, verification.entrance(), run.route());
+        return tics;
+    }
+
+    private static void installBest(TrainingConfig config, String identity, RunTrace run, long attempt, Episode verification) throws IOException {
         Path candidate = config.output().resolve("cand.lmp");
-        Route.demo(candidate, config.skill(), run.route(), config.level());
-        int tics = DemoVerifier.verify(config.wad(), candidate, config.skill(), config.episodeTics(), run.route(), config.level());
-        Route.demo(config.output().resolve("winning.lmp"), config.skill(), run.route(), config.level());
+        int tics = verifyRun(config, verification, run, candidate);
+        writeDemo(config, verification, config.output().resolve("winning.lmp"), run.route());
         Files.deleteIfExists(candidate);
         String result = "VERIFIED " + config.level() + " completion: attempt=" + attempt + ", tics=" + tics + ", gameSeconds=" + tics / 35.0
                 + ", targetReached=" + (tics <= config.targetTics()) + "\n" + run.metrics().description() + "\n" + run.safety().description() + "\n";

@@ -15,6 +15,7 @@ public final class Episode {
     private final int skill;
     private final Level level;
     private final int limit;
+    private final Entrance entrance;
     private int tics;
     private final InteractionMemory interactions = new InteractionMemory();
     private final DoorMemory doors = new DoorMemory();
@@ -26,6 +27,11 @@ public final class Episode {
     public Episode(Path wad, int skill, int limit) throws IOException { this(wad, skill, limit, Level.E1M1); }
 
     public Episode(Path wad, int skill, int limit, Level level) throws IOException {
+        this(wad, skill, limit, level, null);
+    }
+
+    Episode(Path wad, int skill, int limit, Level level, Entrance entrance) throws IOException {
+        this.entrance = entrance;
         this.level = java.util.Objects.requireNonNull(level);
         if (skill < 1 || skill > 5 || limit < 1 || limit > 21000) {
             throw new IllegalArgumentException("Skill must be 1..5; episode tics 1..21000");
@@ -43,6 +49,11 @@ public final class Episode {
     }
 
     public void reset() {
+        if (entrance != null) {
+            entrance.restore();
+            resetMetrics();
+            return;
+        }
         GGame.demorecording = Doomstat.demoplayback = Doomstat.singledemo = false;
         GGame.demoBuffer = null;
         GGame.demoP = 0;
@@ -68,6 +79,10 @@ public final class Episode {
         GGame.gDoLoadLevel();
         HuStuff.huStart();
         StStuff.stStart();
+        resetMetrics();
+    }
+
+    private void resetMetrics() {
         tics = 0; interactions.reset(); mechanisms.reset(); doors.reset();
         movement = new MovementMetrics();
         safety = new SurvivalMetrics(player().health, player().armorpoints);
@@ -87,7 +102,7 @@ public final class Episode {
         safety.record(player().health, player().armorpoints);
         tics++;
         outcome = classify(GGame.gameaction == GGame.ga_completed,
-                player().playerstate == Player.PST_DEAD || player().health <= 0, tics, limit);
+                player().playerstate == Player.PST_DEAD || player().health <= 0, tics + (entrance == null ? 0 : entrance.levelTics()), limit);
         return outcome;
     }
 
@@ -96,6 +111,8 @@ public final class Episode {
         if (dead) return Outcome.DEAD;
         return tics >= limit ? Outcome.TIMEOUT : Outcome.RUNNING;
     }
+
+    Entrance entrance() { return entrance; }
 
     public Player player() { return GGame.players[0]; }
     SurvivalMetrics.Summary safety() { return safety.summary(); }

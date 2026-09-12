@@ -44,14 +44,16 @@ public final class Route {
     }
 
     public static void demo(Path path, int skill, Route end, Level level) throws IOException {
+        demoActions(path, skill, RunTrace.actions(end), level);
+    }
+
+    static void demoActions(Path path, int skill, List<Action> actions, Level level) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         bytes.writeBytes(new byte[] {(byte) GGame.DEMOVERSION, (byte) (skill - 1), (byte) level.episode(), (byte) level.map(),
                 0, 0, 0, 0, 0, 1, 0, 0, 0});
-        for (Route node : steps(end)) {
-            int packed = node.action.packed();
-            for (int i = 0; i < node.duration; i++) {
-                for (int b = 0; b < 4; b++) bytes.write(packed >>> (8 * b));
-            }
+        for (Action action : actions) {
+            int packed = action.packed();
+            for (int b = 0; b < 4; b++) bytes.write(packed >>> (8 * b));
         }
         bytes.write(GGame.DEMOMARKER);
         atomicWrite(path, bytes.toByteArray());

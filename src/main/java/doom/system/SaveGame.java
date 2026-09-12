@@ -74,9 +74,10 @@ public final class SaveGame {
         if (length < 0 || length != in.available() - 8) throw new IOException("Invalid save length");
         byte[] body = in.readNBytes(length);
         int base = mapLump(episode, map);
-        byte[] sectors = WWad.wCacheLumpNum(base + PSetup.ML_SECTORS, ZZone.PU_CACHE);
         byte[] lines = WWad.wCacheLumpNum(base + PSetup.ML_LINEDEFS, ZZone.PU_CACHE);
-        PSaveg.validate(body, sectors.length / 26, lines, seat);
+        // Zone buffers are padded to four bytes; topology uses the actual lump length.
+        PSaveg.validate(body, WWad.wLumpLength(base + PSetup.ML_SECTORS) / 26,
+                Arrays.copyOf(lines, WWad.wLumpLength(base + PSetup.ML_LINEDEFS)), seat);
 
         Doomstat.respawnparm = respawnRequest;
         Doomstat.fastparm = fast;

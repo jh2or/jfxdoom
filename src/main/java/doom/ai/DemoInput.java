@@ -7,6 +7,15 @@ import java.util.*;
 
 /** Bounded reader for ordinary Doom input recordings; never treats the end marker as success. */
 final class DemoInput {
+    static Level startLevel(Path path) throws IOException {
+        try (var input = Files.newInputStream(path)) {
+            byte[] header = input.readNBytes(4);
+            if (header.length != 4 || (header[0] & 255) != GGame.DEMOVERSION) throw new IOException("Invalid demo header");
+            try { return new Level(header[2] & 255, header[3] & 255); }
+            catch (IllegalArgumentException e) { throw new IOException("Invalid demo start map", e); }
+        }
+    }
+
     static List<Action> read(Path path, int skill, int limit) throws IOException {
         return read(path, skill, limit, Level.E1M1);
     }

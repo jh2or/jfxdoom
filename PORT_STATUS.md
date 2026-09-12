@@ -1301,3 +1301,45 @@ Artifacts and comparison: `training/e1m9-stair-fix/`.
 New `.lmp` recordings are ignored by Git. Previously tracked fixtures remain
 versioned; the eight replay cases using new local recordings skip when those
 files are unavailable. Their behavior tests remain runnable without the demos.
+
+
+## Campaign learning and level transition cleanup
+
+Added an AI campaign coordinator with fixed earned level entrances, per-map
+archives, first-completion stopping, resume, and continuous native demo
+verification. Existing speed/survival decision rules remain in use. The initial
+milestone covers E1M1 → E1M2; longer Episode 1 routing uses the same coordinator.
+Multiple entrance alternatives and campaign-wide route optimization are deferred.
+
+Implemented `G_PlayerFinishLevel` and its active-player dispatch in
+`GGame.gDoCompleted`, matching the reference cleanup of keys/powers and visual
+effects while retaining health, armor and equipment. Corrected Java save-envelope
+validation to use actual WAD lump lengths rather than zone-buffer padding when
+reading linedef topology. This fixes restoring E1M2 saves. No reference files or
+save payload format were changed. See `CampaignTest`, `GGameFidelityTest` and
+`SaveGameTest` for carryover, repeated deterministic restores, archive resume,
+invalid endpoints, bounded failure and padded-lump regressions.
+
+Validation: 1,141 tests, 1,131 passed and 10 skipped, no failures. Six fresh
+E1M1 → E1M2 campaigns (speed/survival × three seeds) completed with continuous
+verified demos; six matching pistol-start E1M2 baselines also completed. Results
+and inherited inventories: `training/campaign-first-milestone/REPORT.md`.
+
+
+## Branching campaign milestone: E1M1 → E1M3
+
+Extended the campaign coordinator with configurable start/end maps and a quota
+of distinct verified successes per parent. Each admission is strictly below
+2× the current map's engine par; accepted successes need not be new records.
+All alternatives branch (no global top-three pruning), with immutable parent
+histories, separate archives, resumable rounds, and separate JVM workers.
+`SuccessPool` rejects duplicate input recordings and validates saved demo hashes.
+Native continuous playback now supports campaigns beginning on other maps.
+
+The fresh speed-strategy experiment produced 3 E1M1, 9 E1M2 and 27 E1M3
+qualified demos from 13 entrance states in 793 logged attempts. All 27 final
+campaigns passed an independent native playback audit: 81 map completions,
+all alive and strictly under 2×PAR. Completed-tree resume preserved attempt
+logs, success indexes and all demo bytes. Full validation: 1,145 tests,
+1,135 passed, 10 skipped, no failures. No further engine gameplay rules changed.
+Results, lineage and demos: `training/campaign-tree-e1m1-e1m3/REPORT.md`.

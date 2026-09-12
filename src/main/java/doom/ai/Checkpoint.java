@@ -32,7 +32,12 @@ final class Checkpoint {
             }
         } else update(engine, code);
         MessageDigest wad = MessageDigest.getInstance("SHA-256"); update(wad, config.wad());
-        return config.identity() + "\nwad-sha256=" + HexFormat.of().formatHex(wad.digest())
+        String entrance = "pistol";
+        if (config.entrance() != null) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256"); update(digest, config.entrance());
+            entrance = HexFormat.of().formatHex(digest.digest());
+        }
+        return config.identity() + ";entrance=" + entrance + "\nwad-sha256=" + HexFormat.of().formatHex(wad.digest())
                 + "\nengine-sha256=" + HexFormat.of().formatHex(engine.digest());
     }
 

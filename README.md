@@ -154,7 +154,15 @@ learned run. E1M1 remains the default; select E1M2 with `--map E1M2` and use
 verified E1M1 and E1M2 demos, including a **68.23-second E1M2 completion**.
 Use `--strategy survival` to prioritize route safety over speed, or
 `--evaluate <demo.lmp>` to compare fixed routes under controlled input variations.
-See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
+To learn consecutive levels with earned weapons, ammunition, health and armor:
+
+```sh
+bash gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --from E1M1 --through E1M3 --branches 3 --strategy speed --workers 3 --output training/campaign-tree --attempts 3000 --minutes 10 --rounds 10"
+```
+
+This collects three distinct verified successes below 2×PAR **per parent**, then
+branches from all three earned entrances. E1M1 → E1M3 produces 27 final continuous
+demos when complete. Add `--resume` to continue an incomplete campaign. See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
 
 ## Controls
 
