@@ -20,6 +20,7 @@ public final class Episode {
     private final DoorMemory doors = new DoorMemory();
     private final MechanismMemory mechanisms = new MechanismMemory();
     private Outcome outcome;
+    private SurvivalMetrics safety;
     private MovementMetrics movement = new MovementMetrics();
 
     public Episode(Path wad, int skill, int limit) throws IOException { this(wad, skill, limit, Level.E1M1); }
@@ -69,6 +70,7 @@ public final class Episode {
         StStuff.stStart();
         tics = 0; interactions.reset(); mechanisms.reset(); doors.reset();
         movement = new MovementMetrics();
+        safety = new SurvivalMetrics(player().health, player().armorpoints);
         outcome = Outcome.RUNNING;
     }
 
@@ -82,6 +84,7 @@ public final class Episode {
         if (freshUse) doors.observe(player());
         mechanisms.observe(player().mo.x / 65536.0, player().mo.y / 65536.0);
         movement.record(action, x, y, player().mo.x / 65536.0, player().mo.y / 65536.0);
+        safety.record(player().health, player().armorpoints);
         tics++;
         outcome = classify(GGame.gameaction == GGame.ga_completed,
                 player().playerstate == Player.PST_DEAD || player().health <= 0, tics, limit);
@@ -95,6 +98,7 @@ public final class Episode {
     }
 
     public Player player() { return GGame.players[0]; }
+    SurvivalMetrics.Summary safety() { return safety.summary(); }
     MovementMetrics.Summary metrics() { return movement.summary(); }
     java.util.Set<Integer> interactions() { return interactions.activated(); }
     java.util.Set<Integer> mechanisms() { return mechanisms.observed(); }

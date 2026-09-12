@@ -32,9 +32,13 @@ final class Archive {
     private final IdentityHashMap<Route, Integer> references = new IdentityHashMap<>();
     private final Map<Location, Integer> populations = new HashMap<>();
     private int size;
+    private final LearningStrategy strategy;
+    final LinkedHashMap<Location, Integer> danger = new LinkedHashMap<>();
     long discoveries;
 
-    Archive(int capacity, int nodeCapacity, int cellSize) {
+    Archive(int capacity, int nodeCapacity, int cellSize) { this(capacity, nodeCapacity, cellSize, LearningStrategy.SPEED); }
+    Archive(int capacity, int nodeCapacity, int cellSize, LearningStrategy strategy) {
+        this.strategy = strategy;
         this.capacity = capacity; this.nodeCapacity = nodeCapacity; this.cellSize = cellSize;
     }
 
@@ -142,7 +146,20 @@ final class Archive {
         Entry last = entries.getLast(); last.selected++; return last;
     }
 
-    private double weight(Entry e) {
+    void recordDanger(Cell cell, int loss, boolean died) {
+        if (strategy != LearningStrategy.SURVIVAL || (loss <= 0 && !died)) return;
+        danger.merge(cell.location(), Math.max(1, loss / 5) + (died ? 20 : 0), (a, b) -> Math.min(200, a + b));
+        if (danger.size() > capacity) danger.remove(danger.keySet().iterator().next());
+    }
+
+    double weight(Entry e) {
+        if (strategy == LearningStrategy.SURVIVAL) {
+            double health = Math.max(.1, Math.min(100, e.health) / 100.0);
+            double armor = Math.min(100, (e.cell.armor() % 16) * 25) / 100.0;
+            return (.1 + 4 * health * health + armor)
+                    / ((1 + danger.getOrDefault(e.cell.location(), 0) * .2)
+                    * Math.sqrt((1.0 + e.selected) * (1.0 + visits.getOrDefault(e.cell.location(), 0))));
+        }
         return (1.0 + Math.min(e.health, 100) / 50.0)
                 / Math.sqrt((1.0 + e.selected) * (1.0 + visits.getOrDefault(e.cell.location(), 0)));
     }

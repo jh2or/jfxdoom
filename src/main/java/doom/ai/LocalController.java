@@ -7,33 +7,82 @@ final class LocalController {
     static double difference(double a, double b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
     private final int turnLimit;
+    private final LearningStrategy strategy;
+    private final SurvivalCombat survivalCombat;
+    private final RocketSafety rockets = new RocketSafety();
     private final DurableCombat durableCombat;
     private final BarrelController barrels;
     LocalController() { this(false); }
     LocalController(boolean explore) { this(explore, 2048); }
     /** Faster mouse-style turning remains quantized to ordinary demo inputs. */
-    LocalController(boolean explore, int turnLimit) {
+    LocalController(boolean explore, int turnLimit) { this(explore, turnLimit, LearningStrategy.SPEED); }
+    LocalController(boolean explore, int turnLimit, LearningStrategy strategy) {
         if (turnLimit < 256 || turnLimit > 32512 || (turnLimit & 255) != 0)
             throw new IllegalArgumentException("Turn limit must be positive and demo-quantized");
         this.turnLimit = turnLimit;
+        this.strategy = strategy;
+        pickups = new PickupController(strategy == LearningStrategy.SURVIVAL);
+        survivalCombat = strategy == LearningStrategy.SURVIVAL ? new SurvivalCombat() : null;
         durableCombat = new DurableCombat(explore);
         barrels = explore ? new BarrelController() : null;
     }
-    private final PickupController pickups = new PickupController();
+    private final PickupController pickups;
     private final UseController use = new UseController();
     private doom.play.Mobj combatEnemy;
     private int combatUntil;
-    void reset() { if (barrels != null) barrels.reset(); durableCombat.reset(); use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
+    private int quietSince = -1;
+    private boolean waypointPriority;
+
+    private void observeQuiet(Observation o, int tic) {
+        if (o.enemy() != null || o.threats().stream().anyMatch(e -> e.health > 0)) {
+            quietSince = -1; waypointPriority = false;
+        } else {
+            if (quietSince < 0) quietSince = tic;
+            if (!waypointPriority && tic - quietSince >= 70) {
+                waypointPriority = true;
+                if (survivalCombat != null) survivalCombat.releaseFocus();
+                durableCombat.reset(); combatEnemy = null; combatUntil = 0;
+            }
+        }
+    }
+    void reset() { quietSince = -1; waypointPriority = false; rockets.reset(); if (survivalCombat != null) survivalCombat.reset(); if (barrels != null) barrels.reset(); durableCombat.reset(); use.reset(); pickups.reset(); combatEnemy = null; combatUntil = 0; }
 
     Explorer.Burst towards(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
-        if (barrels != null) {
+        if (strategy == LearningStrategy.SURVIVAL) {
+            observeQuiet(o, tic);
+            o = o.withPreferredWeapon(RocketSafety.preferredWeapon(o));
+        }
+        return protect(o, propose(o, probe, tx, ty, tic, fight), tic);
+    }
+
+    Explorer.Burst protect(Observation o, Explorer.Burst proposed, int tic) {
+        if (strategy == LearningStrategy.SURVIVAL) proposed = CombatSpacing.protect(o, proposed);
+        proposed = rockets.protect(o, proposed, tic);
+        // Covers navigation, recovery, and automatic weapon switches.
+        // Never authorize punching/chainsaw attacks while waiting for a loaded gun to equip.
+        if (!o.inventory().loadedRangedWeapon(o.weapons(), o.preferredWeapon())
+                || !o.inventory().loadedRangedWeapon(o.weapons(), o.inventory().ready())) {
+            Action action = proposed.action();
+            proposed = new Explorer.Burst(new Action(action.forward(), action.side(), action.turn(),
+                    action.buttons() & ~Doomdef.BT_ATTACK), proposed.duration());
+        }
+        return proposed;
+    }
+
+    private Explorer.Burst propose(Observation o, MotionProbe probe, double tx, double ty, int tic, boolean fight) {
+        boolean canEngage = o.inventory().loadedRangedWeapon(o.weapons(), o.preferredWeapon());
+        if (survivalCombat != null) {
+            Action combat = survivalCombat.choose(o, probe, tic);
+            if (combat != null) return new Explorer.Burst(combat, 2);
+        }
+        if (barrels != null && canEngage) {
             Action clear = barrels.choose(o, tx, ty, tic);
             if (clear != null) return new Explorer.Burst(clear, 2);
         }
         var pickup = pickups.choose(o, probe, tx, ty, tic);
         if (pickup != null) { tx = pickup.x / 65536.0; ty = pickup.y / 65536.0; }
         else {
-            Action combat = durableCombat.choose(o, probe, tic);
+            Action combat = strategy == LearningStrategy.SPEED && canEngage ? durableCombat.choose(o, probe, tic) : null;
             if (combat != null) return new Explorer.Burst(combat, 2);
         }
         double distance = Math.hypot(tx - o.x(), ty - o.y());
@@ -68,7 +117,7 @@ final class LocalController {
         int buttons = o.preferredWeapon() != o.inventory().ready() && o.preferredWeapon() != o.inventory().pending()
                 ? Doomdef.BT_CHANGE | (o.preferredWeapon() << Doomdef.BT_WEAPONSHIFT) : 0;
         boolean engaging = false;
-        if (o.enemy() != null) {
+        if (canEngage && o.enemy() != null) {
             double enemyAngle = Math.atan2(o.enemy().y / 65536.0 - o.y(), o.enemy().x / 65536.0 - o.x());
             if (Math.abs(difference(enemyAngle, o.angle())) < .22) buttons |= Doomdef.BT_ATTACK;
             double enemyDistance = Math.hypot(o.enemy().x / 65536.0 - o.x(), o.enemy().y / 65536.0 - o.y());
@@ -88,7 +137,7 @@ final class LocalController {
             // Offset the view from the travel direction to combine vanilla forward/run and strafe thrust.
             double diagonal = Math.atan2(40, 50);
             double facing = desired + (difference(o.angle(), desired) >= 0 ? diagonal : -diagonal);
-            int strafeTurn = fight && o.enemy() != null ? turn : turnTowards(facing, o.angle(), 2);
+            int strafeTurn = fight && canEngage && o.enemy() != null ? turn : turnTowards(facing, o.angle(), 2);
             double travel = difference(desired, o.angle() + strafeTurn * (2 * Math.PI / 65536));
             double c = Math.cos(travel), s = Math.sin(travel);
             double thrust = Math.min(50 / Math.max(.001, Math.abs(c)), 40 / Math.max(.001, Math.abs(s)));

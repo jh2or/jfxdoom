@@ -43,6 +43,33 @@ class TrainerTest {
         assertThrows(java.io.IOException.class, () -> Trainer.main(args(split, "1", false)));
     }
 
+    @Test void survivalResumeRetainsDeterministicLearningAndSafetyColumns() throws Exception {
+        Path split = temp.resolve("survival-split"), continuous = temp.resolve("survival-continuous");
+        for (var call : new Object[][] {{split, "1", false}, {split, "3", true}, {continuous, "4", false}}) {
+            var options = new java.util.ArrayList<>(java.util.List.of(args((Path) call[0], (String) call[1], (boolean) call[2])));
+            options.addAll(java.util.List.of("--strategy", "survival"));
+            Trainer.main(options.toArray(String[]::new));
+        }
+        assertArrayEquals(Files.readAllBytes(continuous.resolve("archive.bin")), Files.readAllBytes(split.resolve("archive.bin")));
+        String header = Files.readAllLines(split.resolve("attempts.csv")).getFirst();
+        assertTrue(header.contains("minimum_health,health_lost,armor_lost,critical_tics,exit_armor"));
+        assertFalse(Files.exists(split.resolve("winning.lmp")));
+    }
+
+    @Test void evaluationUsesFullBudgetForBothStrategiesAndHonorsCancellation() throws Exception {
+        Episode episode = new Episode(WAD, 3, 400);
+        RunTrace shortPath = RunTrace.play(episode, java.util.List.of(Action.IDLE), () -> false);
+        for (LearningStrategy strategy : LearningStrategy.values()) {
+            RouteOptimizer optimizer = new RouteOptimizer(new LearnerRandom(2), strategy);
+            RunTrace result = optimizer.evaluate(episode, shortPath, java.util.List.of(), () -> false);
+            assertEquals(Episode.Outcome.TIMEOUT, result.outcome());
+            assertEquals(400, result.metrics().tics(), "Neither route length nor stalled progress may prune evaluation");
+            RunTrace cancelled = optimizer.evaluate(episode, shortPath, java.util.List.of(), () -> true);
+            assertEquals(Episode.Outcome.RUNNING, cancelled.outcome());
+            assertEquals(0, cancelled.metrics().tics());
+        }
+    }
+
     @Test void wallBudgetSavesWithoutInventingEpisodeSuccess() throws Exception {
         Path output = temp.resolve("budget");
         Trainer.main(new String[] {"--wad", WAD.toString(), "--output", output.toString(), "--minutes", "0.000000001"});

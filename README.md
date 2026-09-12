@@ -152,6 +152,8 @@ runs toward a two-minute target. Use `--improve <demo.lmp>` to improve a previou
 learned run. E1M1 remains the default; select E1M2 with `--map E1M2` and use
 `--target-seconds 150` for its twice-par milestone. The learner has produced
 verified E1M1 and E1M2 demos, including a **68.23-second E1M2 completion**.
+Use `--strategy survival` to prioritize route safety over speed, or
+`--evaluate <demo.lmp>` to compare fixed routes under controlled input variations.
 See [LEARNING.md](LEARNING.md) for demos, commands, metrics and limits.
 
 ## Controls

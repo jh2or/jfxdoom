@@ -6,8 +6,21 @@ import doom.render.*;
 /** Read-only local observations. No line specials, exit coordinates, or global route are exposed. */
 record Observation(double x, double y, double angle, int health, int ammo, int weapons,
                    int localOpening, Mobj enemy, double z, double height, double radius,
-                   double momx, double momy, int preferredWeapon, int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress, java.util.Set<Line> lockedDoors) {
-    Observation { lockedDoors = java.util.Set.copyOf(lockedDoors); }
+                   double momx, double momy, int preferredWeapon, int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress, java.util.Set<Line> lockedDoors, java.util.List<Mobj> threats, double floor, double ceiling) {
+    Observation { lockedDoors = java.util.Set.copyOf(lockedDoors); threats = java.util.List.copyOf(threats); }
+    Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
+                Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon,
+                int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress, java.util.Set<Line> lockedDoors,
+                java.util.List<Mobj> threats) {
+        this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
+                preferredWeapon, keys, inventory, pickups, progress, lockedDoors, threats, z, z + height);
+    }
+    Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
+                Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon,
+                int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress, java.util.Set<Line> lockedDoors) {
+        this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
+                preferredWeapon, keys, inventory, pickups, progress, lockedDoors, enemy == null ? java.util.List.of() : java.util.List.of(enemy));
+    }
     Observation(double x, double y, double angle, int health, int ammo, int weapons, int localOpening,
                 Mobj enemy, double z, double height, double radius, double momx, double momy, int preferredWeapon,
                 int keys, Inventory inventory, java.util.List<Mobj> pickups, int progress) {
@@ -25,7 +38,14 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
         this(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius, momx, momy,
                 preferredWeapon, keys, Inventory.PISTOL_START, java.util.List.of());
     }
-    static Observation read(Episode episode) {
+    Observation withPreferredWeapon(int weapon) {
+        return new Observation(x, y, angle, health, ammo, weapons, localOpening, enemy, z, height, radius,
+                momx, momy, weapon, keys, inventory, pickups, progress, lockedDoors, threats, floor, ceiling);
+    }
+
+    static Observation read(Episode episode) { return read(episode, LearningStrategy.SPEED); }
+
+    static Observation read(Episode episode, LearningStrategy strategy) {
         Player p = episode.player();
         Mobj mo = p.mo;
         int keys = keys(p);
@@ -43,6 +63,7 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
         double x = mo.x / 65536.0, y = mo.y / 65536.0;
         Inventory inventory = Inventory.read(p);
         java.util.List<Mobj> pickups = new java.util.ArrayList<>();
+        java.util.List<Mobj> threats = new java.util.ArrayList<>();
         Mobj enemy = null;
         double nearest = 512;
         for (Thinker t = PTick.thinkercap.next; t != PTick.thinkercap; t = t.next) {
@@ -54,14 +75,17 @@ record Observation(double x, double y, double angle, int health, int ammo, int w
             boolean shotgunner = other.type == Info.MT_SHOTGUY && !p.weaponowned[doom.system.Doomdef.wp_shotgun]
                     && inventory.bullets() > 0 && distance < 192 && Math.abs(other.z - (double) mo.z) <= 24 * 65536;
             double score = distance * (shotgunner ? .5 : 1);
-            if (score < nearest && clearance(x, y, ox, oy, false) > .99) {
+            if (strategy == LearningStrategy.SURVIVAL) score = SurvivalCombat.priorityDistance(other, distance);
+            boolean visible = (strategy == LearningStrategy.SURVIVAL || score < nearest) && clearance(x, y, ox, oy, false) > .99;
+            if (strategy == LearningStrategy.SURVIVAL && visible) threats.add(other);
+            if (score < nearest && visible) {
                 nearest = score; enemy = other;
             }
         }
         int preferred = inventory.preferredWeapon(weapons);
         return new Observation(x, y, Integer.toUnsignedLong(mo.angle) * (Math.PI * 2 / 4294967296.0),
                 p.health, ammo, weapons, opening, enemy, mo.z / 65536.0, mo.height / 65536.0,
-                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred, keys, inventory, java.util.List.copyOf(pickups), episode.progress(), episode.lockedDoors());
+                mo.radius / 65536.0, mo.momx / 65536.0, mo.momy / 65536.0, preferred, keys, inventory, java.util.List.copyOf(pickups), episode.progress(), episode.lockedDoors(), threats, s.floorheight / 65536.0, s.ceilingheight / 65536.0);
     }
 
     static int weapons(Player p) {

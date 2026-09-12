@@ -14,9 +14,11 @@ public final class Trainer {
             System.out.println("Usage: doom.ai.Trainer --wad DOOM.WAD [--map E1M1] [--output training/e1m1] [--resume]\n"
                     + "  --skill 3 --episode-tics 21000 --attempts 1000 --minutes 10 --seed 1\n"
                     + "  --archive-size 12000 --node-limit 250000 --cell-size 128 --target-seconds 120\n"
+                    + "  --strategy speed|survival  Survival ranks safety before time and ignores the time target.\n"
+                    + "  --evaluate route.lmp  Evaluate a frozen route with controlled input perturbations.\n"
                     + "  --seed-demo trial.lmp  Import surviving prefixes of a previous trial.\n"
                     + "  --improve winning.lmp  Begin with a previously successful demo.\n"
-                    + "  --analyze winning.lmp  Measure movement and write trace.csv / analysis.txt.\n"
+                    + "  --analyze winning.lmp  Measure movement/safety and write trace.csv / analysis.txt.\n"
                     + "  --verify winning.lmp   Verify completion instead of training.\n"
                     + "Budgets apply to this invocation. Completed runs are optimized until the target is reached.");
             return;
@@ -26,6 +28,7 @@ public final class Trainer {
             int tics = DemoVerifier.verify(config.wad(), config.verify(), config.skill(), config.episodeTics(), null, config.level());
             System.out.println("VERIFIED " + config.level() + " completion in " + tics + " tics"); return;
         }
+        if (config.evaluate() != null) { StrategyEvaluation.run(config); return; }
         if (config.analyze() != null) { analyze(config); return; }
         if (config.resume() && config.improve() != null) throw new IllegalArgumentException("Use --improve only when starting a new experiment");
         Files.createDirectories(config.output());
@@ -41,16 +44,16 @@ public final class Trainer {
         List<Action> actions = DemoInput.read(c.analyze(), c.skill(), c.episodeTics(), c.level());
         RunTrace run = RunTrace.play(e, actions, () -> false);
         Files.createDirectories(c.output());
-        String summary = "outcome=" + run.outcome() + " " + run.metrics().description() + "\n";
+        String summary = "outcome=" + run.outcome() + " " + run.metrics().description() + "\n" + run.safety().description() + "\n";
         Route.atomicWrite(c.output().resolve("analysis.txt"), summary.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        StringBuilder trace = new StringBuilder("tic,x,y,z,angle,health,forward,side,turn,buttons,displacement,keys,used_line,armor,armor_type,weapons,ready_weapon,bullets,shells,cells\n");
+        StringBuilder trace = new StringBuilder("tic,x,y,z,angle,health,forward,side,turn,buttons,displacement,keys,used_line,armor,armor_type,weapons,ready_weapon,bullets,shells,cells,rockets\n");
         RunTrace.Sample previous = run.samples().getFirst();
         for (RunTrace.Sample p : run.samples()) {
             Action action = p.tic() == 0 ? Action.IDLE : actions.get(p.tic() - 1);
-            trace.append(String.format(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.6f,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%d%n",
+            trace.append(String.format(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.6f,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d%n",
                     p.tic(), p.x(), p.y(), p.z(), p.angle(), p.health(), action.forward(), action.side(), action.turn(), action.buttons(),
                     Math.hypot(p.x() - previous.x(), p.y() - previous.y()), p.keys(), p.usedLine(), p.inventory().armor(), p.inventory().armorType(),
-                    p.weapons(), p.inventory().ready(), p.inventory().bullets(), p.inventory().shells(), p.inventory().cells()));
+                    p.weapons(), p.inventory().ready(), p.inventory().bullets(), p.inventory().shells(), p.inventory().cells(), p.inventory().rockets()));
             previous = p;
         }
         Route.atomicWrite(c.output().resolve("trace.csv"), trace.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -78,10 +81,10 @@ public final class Trainer {
             if (best.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Incumbent did not complete " + config.level());
             installBest(config, identity, best, progress.attempts);
             progress.best = best.route(); Checkpoint.save(checkpoint, identity, progress);
-            if (best.route().tics <= config.targetTics()) { System.out.println("Target already reached and verified"); return; }
+            if (config.strategy() == LearningStrategy.SPEED && best.route().tics <= config.targetTics()) { System.out.println("Target already reached and verified"); return; }
         }
-        Explorer explorer = new Explorer(progress.random);
-        RouteOptimizer optimizer = new RouteOptimizer(progress.random);
+        Explorer explorer = new Explorer(progress.random, true, config.strategy());
+        RouteOptimizer optimizer = new RouteOptimizer(progress.random, config.strategy());
         AtomicBoolean stopping = new AtomicBoolean();
         Thread worker = Thread.currentThread();
         Thread hook = new Thread(() -> {
@@ -105,68 +108,79 @@ public final class Trainer {
         watchdog.setDaemon(true); watchdog.start();
         long startingTics = progress.simulatedTics, lastReport = started;
         Path log = config.output().resolve("attempts.csv");
+        int optimizationCycle = config.strategy() == LearningStrategy.SURVIVAL ? 2 : 8;
         boolean emptyLog = !Files.exists(log) || Files.size(log) == 0;
         try (BufferedWriter csv = Files.newBufferedWriter(log, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            if (emptyLog) csv.write("attempt,phase,outcome,prefix_tics,health,kills,archive_entries,route_nodes,discoveries,seconds,tics,movement_tics,blocked_tics,use_tics,turning_tics,idle_tics,revisits,distance,keys\n");
+            if (emptyLog) csv.write("attempt,phase,outcome,prefix_tics,health,kills,archive_entries,route_nodes,discoveries,seconds,tics,movement_tics,blocked_tics,use_tics,turning_tics,idle_tics,revisits,distance,keys,minimum_health,health_lost,armor_lost,critical_tics,exit_armor\n");
             for (int attempt = 0; attempt < config.attempts() && !stop.getAsBoolean(); attempt++) {
-                boolean optimize = best != null && (progress.archive.size() == 0 || progress.attempts % 8 != 7);
+                boolean optimize = best != null && (progress.archive.size() == 0 || progress.attempts % optimizationCycle != optimizationCycle - 1);
+                Archive.Entry selected = null;
                 Route route; int prefixTics = 0; RunTrace proposal = null;
                 if (optimize) {
                     proposal = optimizer.propose(episode, best, progress.optimizations++, stop);
                     route = proposal.route();
                 } else {
-                    Archive.Entry selected = progress.archive.select(progress.random);
+                    selected = progress.archive.select(progress.random);
                     route = selected == null ? null : selected.route;
-                    if (route != null && route.tics > 700 && progress.attempts % 4 == 0)
+                    if (config.strategy() == LearningStrategy.SPEED && route != null && route.tics > 700 && progress.attempts % 4 == 0)
                         route = PrefixOptimizer.shorten(episode, route, optimizer, progress.attempts / 4, stop);
                     prefixTics = route == null ? 0 : route.tics;
                     episode.reset(); explorer.restart();
                     for (Route node : Route.steps(route)) {
                         for (int i = 0; i < node.duration && !stop.getAsBoolean(); i++) {
                             episode.step(node.action);
-                            if (episode.tics() % 16 == 0) explorer.observe(Observation.read(episode), episode.tics());
+                            if (episode.tics() % 16 == 0) explorer.observe(Observation.read(episode, config.strategy()), episode.tics());
                         }
                         if (stop.getAsBoolean()) break;
                         if (Fingerprint.capture() != node.fingerprint) throw new IllegalStateException("Archive replay diverged at tic " + episode.tics());
                     }
                     explorer.rememberInteractions(episode.interactions());
+                    ProgressWatch watch = new ProgressWatch(Observation.read(episode, config.strategy()), episode.tics());
                     while (!stop.getAsBoolean() && episode.outcome() == Episode.Outcome.RUNNING
-                            && (best == null || episode.tics() < best.route().tics - 1)) {
-                        Explorer.Burst burst = explorer.choose(Observation.read(episode), progress.archive, episode.tics());
+                            && (config.strategy() != LearningStrategy.SURVIVAL || !watch.stalled(episode.tics()))
+                            && (config.strategy() == LearningStrategy.SURVIVAL || best == null || episode.tics() < best.route().tics - 1)) {
+                        Observation before = Observation.read(episode, config.strategy());
+                        Explorer.Burst burst = explorer.choose(before, progress.archive, episode.tics());
                         int count = 0;
                         while (count < burst.duration() && episode.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {
                             episode.step(burst.action()); count++;
                         }
                         if (count > 0) route = new Route(route, burst.action(), count, Fingerprint.capture());
                         explorer.rememberInteractions(episode.interactions());
-                        Observation after = Observation.read(episode);
+                        Observation after = Observation.read(episode, config.strategy());
+                        watch.observe(after, episode.tics());
+                        progress.archive.recordDanger(before.cell(config.cellSize()), before.health() - after.health() + Math.max(0, before.inventory().armor() - after.inventory().armor()), episode.outcome() == Episode.Outcome.DEAD);
                         if (episode.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {
                             Archive.Cell cell = after.cell(config.cellSize());
                             progress.archive.visit(cell); progress.archive.offer(cell, route, after.health());
                         }
                     }
                 }
+                if (selected != null && episode.outcome() == Episode.Outcome.DEAD)
+                    progress.archive.recordDanger(selected.cell, 0, true);
                 progress.simulatedTics += episode.tics(); progress.attempts++;
                 boolean interrupted = stop.getAsBoolean() && episode.outcome() == Episode.Outcome.RUNNING;
-                String outcome = interrupted ? "INTERRUPTED" : episode.outcome() == Episode.Outcome.RUNNING ? "PRUNED" : episode.outcome().name();
+                String outcome = interrupted ? "INTERRUPTED" : episode.outcome() == Episode.Outcome.RUNNING ? (config.strategy() == LearningStrategy.SURVIVAL ? "STALLED" : "PRUNED") : episode.outcome().name();
                 if (interrupted) progress.interrupted++;
                 else if (episode.outcome() == Episode.Outcome.RUNNING) progress.pruned++;
                 if (episode.outcome() == Episode.Outcome.DEAD) progress.deaths++;
                 if (episode.outcome() == Episode.Outcome.TIMEOUT) progress.timeouts++;
                 if (episode.outcome() == Episode.Outcome.COMPLETED) progress.successes++;
-                csv.write(String.format(Locale.ROOT, "%d,%s,%s,%d,%d,%d,%d,%d,%d,%.3f,%s,%d%n", progress.attempts,
+                csv.write(String.format(Locale.ROOT, "%d,%s,%s,%d,%d,%d,%d,%d,%d,%.3f,%s,%d,%s%n", progress.attempts,
                         optimize ? "OPTIMIZE" : "EXPLORE", outcome, prefixTics, episode.player().health, episode.player().killcount,
                         progress.archive.size(), progress.archive.nodes(), progress.archive.discoveries, (System.nanoTime() - started) / 1e9,
-                        episode.metrics().csv(), Observation.keys(episode.player()))); csv.flush();
+                        episode.metrics().csv(), Observation.keys(episode.player()), episode.safety().csv())); csv.flush();
                 if (!interrupted && route != null && (progress.attempts == 1 || progress.attempts % 25 == 0)) {
                     Route.demo(config.output().resolve("latest.lmp"), config.skill(), route, config.level());
                 }
-                if (episode.outcome() == Episode.Outcome.COMPLETED && (best == null || route.tics < best.route().tics)) {
+                if (episode.outcome() == Episode.Outcome.COMPLETED) {
                     RunTrace candidate = proposal != null ? proposal : RunTrace.play(episode, RunTrace.actions(route), () -> false);
-                    installBest(config, identity, candidate, progress.attempts);
-                    best = candidate; progress.best = candidate.route();
-                    Checkpoint.save(checkpoint, identity, progress);
-                    if (best.route().tics <= config.targetTics()) break;
+                    if (config.strategy().better(candidate, best)) {
+                        installBest(config, identity, candidate, progress.attempts);
+                        best = candidate; progress.best = candidate.route();
+                        Checkpoint.save(checkpoint, identity, progress);
+                        if (config.strategy() == LearningStrategy.SPEED && best.route().tics <= config.targetTics()) break;
+                    }
                 }
                 if (progress.attempts % 10 == 0) Checkpoint.save(checkpoint, identity, progress);
                 long now = System.nanoTime();
@@ -197,7 +211,7 @@ public final class Trainer {
             while (i < actions.size() && count < 4 && actions.get(i).equals(action) && episode.outcome() == Episode.Outcome.RUNNING);
             route = new Route(route, action, count, Fingerprint.capture());
             if (episode.outcome() == Episode.Outcome.RUNNING) {
-                Observation o = Observation.read(episode);
+                Observation o = Observation.read(episode, config.strategy());
                 progress.archive.offer(o.cell(config.cellSize()), route, o.health());
             }
         }
@@ -217,7 +231,7 @@ public final class Trainer {
         Route.demo(config.output().resolve("winning.lmp"), config.skill(), run.route(), config.level());
         Files.deleteIfExists(candidate);
         String result = "VERIFIED " + config.level() + " completion: attempt=" + attempt + ", tics=" + tics + ", gameSeconds=" + tics / 35.0
-                + ", targetReached=" + (tics <= config.targetTics()) + "\n" + run.metrics().description() + "\n";
+                + ", targetReached=" + (tics <= config.targetTics()) + "\n" + run.metrics().description() + "\n" + run.safety().description() + "\n";
         Route.atomicWrite(config.output().resolve("result.txt"), (result + identity + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         System.out.print(result);
     }

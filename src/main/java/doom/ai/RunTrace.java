@@ -21,6 +21,13 @@ record RunTrace(Route route, List<Sample> samples, Episode.Outcome outcome, Move
         }
     }
 
+    SurvivalMetrics.Summary safety() {
+        Sample first = samples.getFirst();
+        SurvivalMetrics metrics = new SurvivalMetrics(first.health(), first.inventory().armor());
+        for (int i = 1; i < samples.size(); i++) metrics.record(samples.get(i).health(), samples.get(i).inventory().armor());
+        return metrics.summary();
+    }
+
     static Sample sample(Episode e) {
         var mo = e.player().mo;
         return new Sample(e.tics(), mo.x / 65536.0, mo.y / 65536.0, mo.z / 65536.0,

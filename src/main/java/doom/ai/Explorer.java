@@ -9,7 +9,7 @@ final class Explorer {
     private final LearnerRandom random;
     private final GeometryNavigator geometry = new GeometryNavigator();
     private final boolean geometryMode;
-    private final LocalController controller = new LocalController(true);
+    private final LocalController controller;
     private final int[] avoidUntil = new int[16];
     private final IdentityHashMap<Line, Integer> doors = new IdentityHashMap<>();
     private double heading, lastX, lastY, passageX, passageY;
@@ -25,7 +25,10 @@ final class Explorer {
     private final Set<Line> usedPanels = Collections.newSetFromMap(new IdentityHashMap<>());
 
     Explorer(LearnerRandom random) { this(random, true); }
-    Explorer(LearnerRandom random, boolean geometryMode) { this.random = random; this.geometryMode = geometryMode; }
+    Explorer(LearnerRandom random, boolean geometryMode) { this(random, geometryMode, LearningStrategy.SPEED); }
+    Explorer(LearnerRandom random, boolean geometryMode, LearningStrategy strategy) {
+        this.random = random; this.geometryMode = geometryMode; controller = new LocalController(true, 2048, strategy);
+    }
     void restart() {
         hold = lastTic = stuck = recoveryUntil = 0; previous = Action.IDLE; door = null;
         geometry.reset(); usedPanels.clear(); failures.clear(); passage = false;
@@ -98,7 +101,7 @@ final class Explorer {
             }
             if (tic < recoveryUntil) {
                 double back = probe.distance(o.x() - 24 * Math.cos(o.angle()), o.y() - 24 * Math.sin(o.angle()));
-                result = new Burst(new Action(back > 8 ? -25 : 0, 0, 1024, 0), 2);
+                result = controller.protect(o, new Burst(new Action(back > 8 ? -25 : 0, 0, 1024, 0), 2), tic);
             } else if (waypoint != null) {
                 result = controller.towards(o, probe, waypoint.x(), waypoint.y(), tic, random.nextDouble() < .3);
             } else {

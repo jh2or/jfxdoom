@@ -6,9 +6,19 @@ import java.util.function.BooleanSupplier;
 /** Proposes loop deletion and feedback-controlled shortcuts along an already successful trajectory. */
 final class RouteOptimizer {
     private final LearnerRandom random;
-    RouteOptimizer(LearnerRandom random) { this.random = random; }
+    private final LearningStrategy strategy;
+    RouteOptimizer(LearnerRandom random) { this(random, LearningStrategy.SPEED); }
+    RouteOptimizer(LearnerRandom random, LearningStrategy strategy) { this.random = random; this.strategy = strategy; }
 
     RunTrace propose(Episode episode, RunTrace incumbent, long attempt, BooleanSupplier stop) {
+        if (strategy == LearningStrategy.SURVIVAL) {
+            // Reconsider the approach before the weakest part of the demonstrated route.
+            int weakest = 0;
+            for (int i = 1; i < incumbent.samples().size(); i++)
+                if (incumbent.samples().get(i).health() < incumbent.samples().get(weakest).health()) weakest = i;
+            int start = attempt % 3 == 0 || weakest < 140 ? 0 : random.nextInt(Math.max(1, weakest - 140));
+            return followFrom(episode, incumbent, attempt, start, stop);
+        }
         if (attempt % 3 == 0) return follow(episode, incumbent, attempt / 3, stop);
         if (attempt % 3 == 1 && incumbent.route().tics > 2100) {
             int start = random.nextInt(incumbent.samples().size() - 64);
@@ -73,9 +83,20 @@ final class RouteOptimizer {
     }
 
     RunTrace followFrom(Episode e, RunTrace incumbent, long variant, int start, List<Action> prefix, BooleanSupplier stop) {
+        return followFrom(e, incumbent, variant, start, prefix, stop, false);
+    }
+
+    /** Frozen-route evaluation uses the full episode budget for both strategies. */
+    RunTrace evaluate(Episode e, RunTrace incumbent, List<Action> perturbation, BooleanSupplier stop) {
+        return followFrom(e, incumbent, 1, 0, perturbation, stop, true);
+    }
+
+    private RunTrace followFrom(Episode e, RunTrace incumbent, long variant, int start, List<Action> prefix,
+                               BooleanSupplier stop, boolean evaluation) {
         e.reset();
         int turnLimit = variant >= 192 ? 1 << (12 + (int) (variant / 48) % 3) : 2048;
-        LocalController controller = new LocalController(variant % 4 >= 2, turnLimit);
+        LocalController controller = new LocalController(evaluation || variant % 4 >= 2, turnLimit, strategy);
+        WaypointRecovery recovery = strategy == LearningStrategy.SURVIVAL ? new WaypointRecovery() : null;
         List<RunTrace.Sample> path = incumbent.samples();
         List<RunTrace.Sample> observed = new ArrayList<>(); observed.add(RunTrace.sample(e));
         int cursor = start;
@@ -98,8 +119,8 @@ final class RouteOptimizer {
         boolean fight = (variant % 2 == 1) ^ ((variant / horizons.length) % 2 == 1);
         int lastProgress = e.tics(), lastKills = e.player().killcount;
         doom.play.Mobj lastEnemy = null; int enemyHealth = 0;
-        while (e.outcome() == Episode.Outcome.RUNNING && e.tics() < incumbent.route().tics - 1 && !stop.getAsBoolean()) {
-            Observation o = Observation.read(e);
+        while (e.outcome() == Episode.Outcome.RUNNING && (evaluation || strategy == LearningStrategy.SURVIVAL || e.tics() < incumbent.route().tics - 1) && !stop.getAsBoolean()) {
+            Observation o = Observation.read(e, strategy);
             if (o.enemy() != null) {
                 if (o.enemy() == lastEnemy && o.enemy().health < enemyHealth) lastProgress = e.tics();
                 lastEnemy = o.enemy(); enemyHealth = lastEnemy.health;
@@ -108,7 +129,7 @@ final class RouteOptimizer {
             MotionProbe cautious = new MotionProbe(o, true);
             // Never erase the demonstrated acquisition of a key we do not yet own.
             // Some demonstrated switches are optional. Alternate retaining their interactions and trying to omit them.
-            int frontier = variant % 2 == 1 ? equipmentFrontier(path, cursor, o.keys(), o.weapons(), activated)
+            int frontier = strategy == LearningStrategy.SURVIVAL || variant % 2 == 1 ? equipmentFrontier(path, cursor, o.keys(), o.weapons(), activated)
                     : keyFrontier(path, cursor, o.keys());
             if (variant >= 48 && variant < 144) {
                 for (int i = cursor; i <= frontier; i++) if (!e.mechanisms().containsAll(path.get(i).mechanisms())) { frontier = i; break; }
@@ -148,6 +169,10 @@ final class RouteOptimizer {
                 double dx = ahead.x() - target.x(), dy = ahead.y() - target.y(), length = Math.hypot(dx, dy);
                 if (length > 1) { tx = target.x() + dx * 48 / length; ty = target.y() + dy * 48 / length; }
             }
+            if (recovery != null) {
+                var reconnect = recovery.choose(o, e.tics(), cursor, target);
+                if (reconnect != null) { tx = reconnect.x(); ty = reconnect.y(); probe = cautious; }
+            }
             Explorer.Burst burst = controller.towards(o, probe, tx, ty, e.tics(), fight);
             int count = 0;
             while (count < burst.duration() && e.outcome() == Episode.Outcome.RUNNING && !stop.getAsBoolean()) {
@@ -157,7 +182,7 @@ final class RouteOptimizer {
             if (count > 0) route = new Route(route, burst.action(), count, Fingerprint.capture());
             if (e.player().killcount > lastKills) { lastKills = e.player().killcount; lastProgress = e.tics(); }
             // A failed proposal is distinct from a death/timeout; preserve the incumbent.
-            if (e.tics() - lastProgress > 350) break;
+            if (!evaluation && e.tics() - lastProgress > (strategy == LearningStrategy.SURVIVAL ? 1050 : 350)) break;
         }
         return new RunTrace(route, observed, e.outcome(), e.metrics());
     }

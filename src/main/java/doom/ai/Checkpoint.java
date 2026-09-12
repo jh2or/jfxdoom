@@ -8,14 +8,14 @@ import java.util.zip.*;
 
 /** Versioned, checksummed archive. Common route prefixes are serialized once. */
 final class Checkpoint {
-    private static final int MAGIC = 0x44414935;
+    private static final int MAGIC = 0x44414936;
     static final class Progress {
         final Archive archive;
         final LearnerRandom random;
         long attempts, deaths, timeouts, interrupted, simulatedTics, optimizations, successes, pruned;
         Route best;
         Progress(TrainingConfig config) {
-            archive = new Archive(config.archiveSize(), config.nodeLimit(), config.cellSize());
+            archive = new Archive(config.archiveSize(), config.nodeLimit(), config.cellSize(), config.strategy());
             random = new LearnerRandom(config.seed());
         }
     }
@@ -77,6 +77,8 @@ final class Checkpoint {
                 out.writeInt(c.ammo()); out.writeInt(c.weapons()); out.writeInt(c.opening()); out.writeInt(c.keys()); out.writeInt(c.armor()); out.writeInt(c.shells()); out.writeInt(c.progress());
                 out.writeInt(ids.get(e.route)); out.writeInt(e.health); out.writeLong(e.discovered); out.writeInt(e.selected);
             }
+            out.writeInt(a.danger.size());
+            for (var entry : a.danger.entrySet()) { out.writeInt(entry.getKey().x()); out.writeInt(entry.getKey().y()); out.writeInt(entry.getKey().keys()); out.writeInt(entry.getKey().progress()); out.writeInt(entry.getValue()); }
             out.writeInt(a.visits.size());
             for (var visit : a.visits.entrySet()) { out.writeInt(visit.getKey().x()); out.writeInt(visit.getKey().y()); out.writeInt(visit.getKey().keys()); out.writeInt(visit.getKey().progress()); out.writeInt(visit.getValue()); }
         }
@@ -90,7 +92,7 @@ final class Checkpoint {
     }
 
     static Progress load(Path path, String identity, TrainingConfig config) throws IOException {
-        long maxBytes = 1024L + (config.nodeLimit() + config.episodeTics()) * 20L + config.archiveSize() * 160L;
+        long maxBytes = 1024L + (config.nodeLimit() + config.episodeTics()) * 20L + config.archiveSize() * 192L;
         byte[] body;
         try (DataInputStream input = new DataInputStream(new GZIPInputStream(Files.newInputStream(path)))) {
             int length = input.readInt();
@@ -133,6 +135,13 @@ final class Checkpoint {
                 p.archive.restore(entry);
             }
             if (p.archive.nodes() > config.nodeLimit()) throw new IOException("Archive exceeds shared-prefix limit");
+            int dangers = count(in, config.archiveSize());
+            for (int i = 0; i < dangers; i++) {
+                Archive.Location key = new Archive.Location(in.readInt(), in.readInt(), in.readInt(), in.readInt());
+                int value = in.readInt();
+                if (key.keys() < 0 || key.keys() > 63 || value < 1 || value > 200 || p.archive.danger.put(key, value) != null)
+                    throw new IOException("Invalid danger memory");
+            }
             int visits = count(in, config.archiveSize() * 4);
             for (int i = 0; i < visits; i++) {
                 Archive.Location key = new Archive.Location(in.readInt(), in.readInt(), in.readInt(), in.readInt()); int value = in.readInt();

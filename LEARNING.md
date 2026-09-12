@@ -8,6 +8,155 @@ New `.lmp` files are local artifacts ignored by Git. Existing tracked E1M1–E1M
 fixtures remain versioned; tests using the newer recordings skip when those files
 are absent. The linked demo bundles are available in the generating workspace.
 
+## Survival strategy
+
+`--strategy survival` is an opt-in alternative to the default `speed` strategy.
+It still requires a living player to complete the level. It ranks completed routes
+by minimum-health bands (10 points, capped at 100), critical-health duration
+(seconds below 25), observed health-plus-armor loss (20-point bands), and exit
+health/armor reserves (20-point bands, each capped at 100), then completion time.
+These are safety proxies, not a measured probability of surviving a new situation.
+A healthy timeout never replaces a completed route.
+
+```sh
+bash gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M6 --strategy survival --output training/e1m6-survival --attempts 1000 --minutes 30 --seed 2"
+```
+
+Survival behavior:
+
+- Clear visible threats within 512 map units before advancing. Prioritize nearby
+  melee threats and hitscan enemies, strafe while firing, retreat from close
+  enemies, and prefer locally reachable movement that reduces exposure.
+  Fight attempts end after five seconds without damage to the target or thirty
+  seconds overall, followed by a six-second cooldown. Enemies behind walls are
+  not pursued through the map.
+- Select and use loaded weapons as before, including the shotgun. Outside visible
+  combat, consider health, armor and shells up to 192 units away when reserves
+  are low, subject to line of sight, height, collision and detour checks. Each
+  item has a three-second approach limit; non-key detours share a twelve-second
+  budget per minute. Bonus pickups are only considered within 32 units.
+- Prefer healthy archived states, remember damage/deaths associated with local
+  states and failed continuation starts, and lower their retry weight. This
+  bounded danger memory is saved in checkpoints.
+- Revisit the approach before the weakest point of a winning route. Survival
+  optimization retains observed equipment/switch prerequisites and can accept
+  slower routes; it does not delete waits solely to reduce time. When an archive
+  is available, exploration and optimization alternate.
+- Stop training attempts after thirty seconds without new ground, equipment,
+  health, interaction or combat progress. They appear as `STALLED` in the CSV
+  (included in the checkpoint's `pruned` counter), separately from deaths and
+  timeouts. The default episode limit remains ten minutes. Survival ignores
+  `--target-seconds` and continues until the attempt or wall-clock budget ends.
+
+Use `--improve <winning.lmp>` with survival mode to refine an existing route, or
+`--resume` to continue the same strategy and build. Strategy is part of checkpoint
+identity; the new checkpoint format also stores danger memory. Previous-build
+archives cannot resume, but their demos can still be verified or imported.
+
+`attempts.csv` now includes `minimum_health`, `health_lost`, `armor_lost`,
+`critical_tics`, and `exit_armor` for both strategies. Losses are observed net
+per-tic decreases: a pickup and damage on the same tic can mask part of a loss.
+`--analyze` reports these diagnostics too. All actions remain normal player inputs;
+no health, armor, ammunition, monster or game-rule changes are made.
+
+When only fists or a chainsaw are usable, both modes skip enemy/barrel
+engagements and continue navigation. The final input guard also suppresses melee
+attacks during recovery or while a loaded gun is being equipped. Ammunition must
+belong to an owned ranged weapon. This is separate from stuck-route recovery;
+the [E1M6 timeout diagnosis](training/e1m6-timeout-diagnosis/REPORT.md) found that
+all 395 survival timeouts still had ammunition and detected no enemies during
+their final two minutes.
+
+### Resume waypoint movement after combat
+
+After **two seconds (70 game tics) without a detected enemy**, survival mode
+clears its old combat focus. Ordinary movement can resume sooner; the timer does
+not insert a two-second idle pause. Enemy sightings restart the quiet timer.
+The existing bounded health/armor pickup rules remain in effect.
+
+During route following, two quiet seconds plus two seconds without meaningful
+waypoint progress trigger a geometry-based reconnection to the **current known
+waypoint**. Recovery keeps the route cursor and its key/switch prerequisites.
+Each attempt lasts at most five seconds, with at most three attempts before
+further meaningful progress; later attempts can back away along different checked
+approaches. A new enemy interrupts recovery. All movement remains ordinary input,
+and the no-ammunition rule and rocket guard still apply.
+
+The [E1M6 recovery check](training/e1m6-waypoint-resume/REPORT.md) compares the
+previous and current builds on the 395 earlier timeout cases and 87 earlier
+completion cases. This selected cohort checks recovery and regressions; it is not
+a fresh measurement of the overall 3,000-case completion or death rate.
+
+### Combat distance and rocket safety
+
+Survival mode uses enemy- and weapon-dependent engagement bands (map units):
+
+| Situation | Minimum distance | Upper range |
+|---|---:|---:|
+| Shotgun trooper | 288 | 448 |
+| Other hitscan enemy | 224 | 384 |
+| Other enemy | 160 | 384 |
+| Rocket launcher selected or equipped | 384 | 512 |
+
+The player's shotgun reduces the upper range against non-shotgun-troopers to
+320. Below 40 health, non-rocket minimum distances increase by 64. Retreat
+continues until 48 units beyond the minimum to reduce back-and-forth movement.
+Navigation also respects these minimum distances during combat cooldowns.
+Collision/drop checks constrain retreat, and movement scoring favors reduced
+exposure to hitscan enemies. These are tunable heuristics; cramped rooms can
+prevent the desired spacing. Melee weapons cannot use the same distance policy.
+
+Survival may select a loaded rocket launcher for a visible target 384–512 units
+away when its health is at least 150, or when no other ranged weapon has ammo.
+A final rocket guard applies to both strategies, including automatic pickup
+switches. It checks all three engine auto-aim directions, projectile width,
+nearby bodies/barrels, vertical clearance, walls and moving door sectors. It
+requires a conservative 256-unit clearance measured with Doom's square blast
+metric, suppresses unsafe fire, and requests an available nonexplosive weapon.
+
+The launcher must finish raising and the player must nearly stop before firing.
+The controller rechecks every tic, brakes and holds aim through the uncancellable
+eight-tic windup and early flight, and can redirect a pending launch if a new
+obstruction appears and another clear direction exists. This reduces self-damage;
+it cannot guarantee safety against every moving actor or later chain explosion.
+Imported demo inputs and archived prefixes replay verbatim; guards apply when
+live control resumes. Engine rules and demo playback remain unchanged.
+
+`--analyze` also records rocket ammunition in `trace.csv`. The matched E1M6
+comparison, demo and validation details are in
+[training/combat-distance/REPORT.md](training/combat-distance/REPORT.md).
+
+### Compare strategies without hiding failures
+
+```sh
+bash gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M6 --strategy speed --evaluate training/e1m6-learning-curve/run/winning.lmp --output training/e1m6-eval-speed --attempts 64 --minutes 15 --seed 2"
+bash gradlew train -PtrainArgs="--wad reference-wads/DOOM.WAD --map E1M6 --strategy survival --evaluate training/e1m6-learning-curve/run/winning.lmp --output training/e1m6-eval-survival --attempts 64 --minutes 15 --seed 2"
+```
+
+Evaluation follows the same frozen demonstration as waypoints, using the ordinary
+exploration combat controller for each strategy. It is feedback-controlled route
+following, **not exact demo playback**. No archive updates, pruning, or incumbent
+updates influence later trials. Both strategies run until completion, death or the
+full episode timeout; wall-budget cancellation is explicitly `INTERRUPTED`.
+The same seed assigns matched initial idle delays (0–15 tics) and quantized view
+turns (-1024 to +768). The default is 64 cases; at most 128 distinct cases are
+supported. This is a controlled sensitivity test, not independent random-world
+samples or evidence of generalization to other maps.
+
+Outputs include `evaluation.csv`, a WAD/build/reference manifest and, when any
+trial completes, a replay-verified `winning.lmp`. Use separate empty output
+folders. Report timeouts alongside deaths so that camping cannot look like
+successful completion. The local experiment data and staged comparison are in
+[training/survival-e1m6/REPORT.md](training/survival-e1m6/REPORT.md).
+
+A larger [E1M6 comparison with 3,000 matched cases per mode](training/e1m6-mode-comparison-3000/REPORT.md)
+found 29 regular-mode completions versus 87 survival-mode completions. Survival
+had fewer deaths (2,518 versus 2,828) and more timeouts (395 versus 141); regular
+mode also hit two engine errors. The report includes outcome/time graphs, all
+6,000 records and verified demos. It evaluates frozen controllers on a common
+known route, not learning from scratch.
+
+
 ## All nine Episode 1 maps within twice par
 
 Every map, including secret level **E1M9**, now has a replay-verified completion

@@ -1,14 +1,22 @@
 package doom.ai;
 
 import doom.play.Player;
+import doom.play.Info;
+import doom.play.PPspr;
 import doom.system.Doomdef;
 
 /** Equipment visible to the player; snapshots keep decisions independent of mutable engine globals. */
-record Inventory(int armor, int armorType, int bullets, int shells, int cells, int ready, int pending) {
+record Inventory(int armor, int armorType, int bullets, int shells, int cells, int ready, int pending, int rockets, int rocketWindupTics, boolean rocketReady) {
+    Inventory(int armor, int armorType, int bullets, int shells, int cells, int ready, int pending) {
+        this(armor, armorType, bullets, shells, cells, ready, pending, 0, 0, false);
+    }
     static final Inventory PISTOL_START = new Inventory(0, 0, 50, 0, 0, Doomdef.wp_pistol, Doomdef.wp_nochange);
     static Inventory read(Player p) {
         return new Inventory(p.armorpoints, p.armortype, p.ammo[Doomdef.am_clip], p.ammo[Doomdef.am_shell],
-                p.ammo[Doomdef.am_cell], p.readyweapon, p.pendingweapon);
+                p.ammo[Doomdef.am_cell], p.readyweapon, p.pendingweapon, p.ammo[Doomdef.am_misl],
+                p.readyweapon == Doomdef.wp_missile && p.psprites[PPspr.ps_weapon].state == Info.states[Info.S_MISSILE1]
+                        ? Math.max(1, p.psprites[PPspr.ps_weapon].tics) : 0,
+                p.readyweapon == Doomdef.wp_missile && p.psprites[PPspr.ps_weapon].state == Info.states[Info.S_MISSILE]);
     }
     int preferredWeapon(int weapons) {
         if (owns(weapons, Doomdef.wp_plasma) && cells > 0) return Doomdef.wp_plasma;
@@ -16,6 +24,19 @@ record Inventory(int armor, int armorType, int bullets, int shells, int cells, i
         if (owns(weapons, Doomdef.wp_chaingun) && bullets > 0) return Doomdef.wp_chaingun;
         if (owns(weapons, Doomdef.wp_pistol) && bullets > 0) return Doomdef.wp_pistol;
         return owns(weapons, Doomdef.wp_chainsaw) ? Doomdef.wp_chainsaw : Doomdef.wp_fist;
+    }
+    /** Melee weapons and ammunition for unowned guns cannot authorize an engagement. */
+    boolean loadedRangedWeapon(int weapons, int weapon) {
+        if (!owns(weapons, weapon)) return false;
+        return switch (weapon) {
+            case Doomdef.wp_pistol, Doomdef.wp_chaingun -> bullets > 0;
+            case Doomdef.wp_shotgun -> shells > 0;
+            case Doomdef.wp_supershotgun -> shells >= 2;
+            case Doomdef.wp_plasma -> cells > 0;
+            case Doomdef.wp_bfg -> cells >= 40;
+            case Doomdef.wp_missile -> rockets > 0;
+            default -> false;
+        };
     }
     static boolean owns(int weapons, int weapon) { return (weapons & (1 << weapon)) != 0; }
     int armorBand() { return armor / 25 + 16 * armorType; }
