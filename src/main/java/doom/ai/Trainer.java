@@ -87,7 +87,7 @@ public final class Trainer {
                 DemoInput.read(config.improve(), config.skill(), config.episodeTics(), config.level()), () -> false);
         Route.atomicWrite(config.output().resolve("manifest.txt"), (identity + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         if (best != null) {
-            if (best.outcome() != Episode.Outcome.COMPLETED) throw new IOException("Incumbent did not complete " + config.level());
+            if (best.outcome() != Episode.Outcome.COMPLETED || !config.acceptsCurrentExit()) throw new IOException("Incumbent did not complete " + config.level());
             installBest(config, identity, best, progress.attempts, episode);
             progress.best = best.route(); Checkpoint.save(checkpoint, identity, progress);
             if (pool != null) pool.offer(episode, best, progress.attempts);
@@ -186,7 +186,7 @@ public final class Trainer {
                 if (episode.outcome() == Episode.Outcome.COMPLETED) {
                     RunTrace candidate = proposal != null ? proposal : RunTrace.play(episode, RunTrace.actions(route), () -> false);
                     if (pool != null) pool.offer(episode, candidate, progress.attempts);
-                    if (config.strategy().better(candidate, best)) {
+                    if (config.acceptsCurrentExit() && config.strategy().better(candidate, best)) {
                         installBest(config, identity, candidate, progress.attempts, episode);
                         best = candidate; progress.best = candidate.route();
                         Checkpoint.save(checkpoint, identity, progress);

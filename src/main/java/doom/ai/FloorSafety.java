@@ -37,6 +37,13 @@ final class FloorSafety {
         return length * unsafe / samples;
     }
 
+    // Each path is sampled in at most four-unit intervals. Comparing a direct
+    // segment with two joined segments can differ by one sample near a boundary.
+    // Only an already hazardous route receives this tolerance; dry routes stay dry.
+    static boolean exceedsBudget(double exposed, double budget) {
+        return exposed > budget + (budget > 0 ? 4.01 : .01);
+    }
+
     static boolean crossing(Observation o, double tx, double ty) {
         return hazardous(o.x(), o.y()) || exposure(o.x(), o.y(), tx, ty) > 0;
     }
@@ -49,9 +56,12 @@ final class FloorSafety {
         double x = o.x(), y = o.y(), vx = o.momx(), vy = o.momy(), facing = o.angle();
         double exposed = 0, travelled = 0;
         for (int i = 0; i < burst.duration() + 4; i++) {
-            if (i < burst.duration()) facing += action.turn() * (2 * Math.PI / 65536);
-            vx += (action.forward() * Math.cos(facing) + action.side() * Math.sin(facing)) / 32;
-            vy += (action.forward() * Math.sin(facing) - action.side() * Math.cos(facing)) / 32;
+            // The tail predicts coasting after this burst, not four more input tics.
+            if (i < burst.duration()) {
+                facing += action.turn() * (2 * Math.PI / 65536);
+                vx += (action.forward() * Math.cos(facing) + action.side() * Math.sin(facing)) / 32;
+                vy += (action.forward() * Math.sin(facing) - action.side() * Math.cos(facing)) / 32;
+            }
             exposed += exposure(x, y, x + vx, y + vy);
             travelled += Math.hypot(vx, vy);
             x += vx; y += vy; vx *= .90625; vy *= .90625;

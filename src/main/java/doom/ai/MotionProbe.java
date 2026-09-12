@@ -9,13 +9,19 @@ final class MotionProbe {
     private final List<Line> lines = new ArrayList<>();
     private final double x, y, z, height, radius;
 
-    private final boolean avoidDrops;
+    private final boolean avoidDrops, assumeClosedDoors;
     private final Set<Line> lockedDoors;
 
     MotionProbe(Observation o) { this(o, false); }
 
-    MotionProbe(Observation o, boolean avoidDrops) {
+    MotionProbe(Observation o, boolean avoidDrops) { this(o, avoidDrops, false); }
+
+    /** Graph search may hypothesize a closed door opening; live motion never does. */
+    static MotionProbe planning(Observation o) { return new MotionProbe(o, false, true); }
+
+    private MotionProbe(Observation o, boolean avoidDrops, boolean assumeClosedDoors) {
         this.avoidDrops = avoidDrops;
+        this.assumeClosedDoors = assumeClosedDoors;
         lockedDoors = o.lockedDoors();
         x = o.x(); y = o.y(); z = o.z(); height = o.height(); radius = o.radius();
         for (Line l : PSetup.lines) {
@@ -73,13 +79,20 @@ final class MotionProbe {
                 if (avoidDrops && highFloor - lowFloor > 24 && feet >= highFloor - 24)
                     return length * (i - 1) / steps;
                 floor = Math.max(floor, Math.max(l.frontsector.floorheight, l.backsector.floorheight) / 65536.0);
-                ceiling = Math.min(ceiling, Math.min(l.frontsector.ceilingheight, l.backsector.ceilingheight) / 65536.0);
+                ceiling = Math.min(ceiling, Math.min(ceiling(l.frontsector), ceiling(l.backsector)));
             }
             if (floor - feet > 24 || ceiling - (Double.isFinite(floor) ? floor : feet) < height) return length * (i - 1) / steps;
             // Follow successive stair heights in either direction, including descending under a lower ceiling.
             if (Double.isFinite(floor)) feet = floor;
         }
         return length;
+    }
+
+    private double ceiling(doom.render.Sector sector) {
+        // Match the navigator's existing zero-height-door hypothesis. Step-height
+        // and solid-wall checks above remain unchanged, even during planning.
+        return assumeClosedDoors && sector.ceilingheight == sector.floorheight
+                ? sector.floorheight / 65536. + 128 : sector.ceilingheight / 65536.;
     }
 
     /** Blocked local two-sided passage (door or raised lift), without examining special/exit identifiers. */

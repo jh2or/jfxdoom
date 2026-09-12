@@ -93,6 +93,23 @@ class GeometryNavigatorTest {
         assertTrue(ahead.y() > o.y(), "Changing the destination invalidates the cached route");
     }
 
+    @Test void closedDoorWithASmallThresholdRemainsAPlannableApproach() {
+        Line door = barrier();
+        door.frontsector = PSetup.subsectors[0].sector;
+        door.backsector = new Sector();
+        door.backsector.floorheight = door.backsector.ceilingheight = 8*65536;
+        door.flags = Line.ML_TWOSIDED;
+        var o = MotionProbeTest.at(32,192);
+        var target = new GeometryNavigator.Point(32,480);
+        assertNotNull(new GeometryNavigator().towards(o,0,target,0),
+                "Plan an approach to a closed door even when its threshold is a legal step");
+        assertTrue(new MotionProbe(o).distance(32,320)<128,
+                "Actual movement must still stop at the closed door");
+        door.backsector.floorheight = door.backsector.ceilingheight = 40*65536;
+        assertNull(new GeometryNavigator().towards(o,0,target,0),
+                "A door hypothesis must not authorize climbing a tall riser");
+    }
+
     @Test void aNewLockObservationInvalidatesTheCachedPathImmediately() {
         Line door = barrier(); door.backsector = new Sector();
         GeometryNavigator navigator = new GeometryNavigator();

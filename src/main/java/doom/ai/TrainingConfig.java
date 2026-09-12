@@ -5,7 +5,7 @@ import java.util.*;
 
 public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, int attempts,
                              double minutes, long seed, int archiveSize, int nodeLimit, int cellSize,
-                             boolean resume, Path verify, Path improve, Path analyze, int targetTics, Level level, Path seedDemo, LearningStrategy strategy, Path evaluate, Path entrance, boolean firstCompletion, int successCount) {
+                             boolean resume, Path verify, Path improve, Path analyze, int targetTics, Level level, Path seedDemo, LearningStrategy strategy, Path evaluate, Path entrance, boolean firstCompletion, int successCount, boolean normalExits) {
     public TrainingConfig {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(strategy, "strategy");
@@ -20,6 +20,17 @@ public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, 
                 || archiveSize < 2 || archiveSize > 100000 || nodeLimit < 32 || nodeLimit > 2000000
                 || cellSize < 32 || cellSize > 512 || targetTics < 1 || targetTics > 21000) throw new IllegalArgumentException("Invalid training limits");
     }
+
+    public TrainingConfig(Path wad, Path output, int skill, int episodeTics, int attempts, double minutes,
+                   long seed, int archiveSize, int nodeLimit, int cellSize, boolean resume, Path verify,
+                   Path improve, Path analyze, int targetTics, Level level, Path seedDemo, LearningStrategy strategy,
+                   Path evaluate, Path entrance, boolean firstCompletion, int successCount) {
+        this(wad, output, skill, episodeTics, attempts, minutes, seed, archiveSize, nodeLimit, cellSize,
+                resume, verify, improve, analyze, targetTics, level, seedDemo, strategy, evaluate, entrance, firstCompletion, successCount, false);
+    }
+
+    /** Evaluate an observed exit, never infer an exit location from map action IDs. */
+    boolean acceptsCurrentExit() { return !normalExits || doom.system.GGame.secretexit == 0; }
 
     public TrainingConfig(Path wad, Path output, int skill, int episodeTics, int attempts, double minutes,
                    long seed, int archiveSize, int nodeLimit, int cellSize, boolean resume, Path verify,
@@ -46,12 +57,12 @@ public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, 
     static TrainingConfig parse(String[] args) {
         Map<String, String> options = new HashMap<>();
         Set<String> allowed = Set.of("map", "wad", "output", "skill", "episode-tics", "attempts", "minutes",
-                "seed", "archive-size", "node-limit", "cell-size", "resume", "verify", "improve", "analyze", "seed-demo", "target-seconds", "strategy", "evaluate", "entrance", "first-completion", "successes");
+                "seed", "archive-size", "node-limit", "cell-size", "resume", "verify", "improve", "analyze", "seed-demo", "target-seconds", "strategy", "evaluate", "entrance", "first-completion", "successes", "normal-exits");
         for (int i = 0; i < args.length; i++) {
             if (!args[i].startsWith("--")) throw new IllegalArgumentException("Expected --option: " + args[i]);
             String key = args[i].substring(2);
             if (!allowed.contains(key) || options.containsKey(key)) throw new IllegalArgumentException("Unknown/duplicate option: " + key);
-            if (key.equals("resume") || key.equals("first-completion")) options.put(key, "true");
+            if (key.equals("resume") || key.equals("first-completion") || key.equals("normal-exits")) options.put(key, "true");
             else {
                 if (++i >= args.length) throw new IllegalArgumentException("Missing value: " + key);
                 options.put(key, args[i]);
@@ -70,11 +81,11 @@ public record TrainingConfig(Path wad, Path output, int skill, int episodeTics, 
                 Math.multiplyExact(Integer.parseInt(options.getOrDefault("target-seconds", "120")), 35), level, options.containsKey("seed-demo") ? Path.of(options.get("seed-demo")) : null,
                 LearningStrategy.parse(options.getOrDefault("strategy", "speed")),
                 options.containsKey("evaluate") ? Path.of(options.get("evaluate")) : null,
-                options.containsKey("entrance") ? Path.of(options.get("entrance")) : null, options.containsKey("first-completion"), Integer.parseInt(options.getOrDefault("successes", "0")));
+                options.containsKey("entrance") ? Path.of(options.get("entrance")) : null, options.containsKey("first-completion"), Integer.parseInt(options.getOrDefault("successes", "0")), options.containsKey("normal-exits"));
     }
 
     String identity() {
         return "archive-explorer-v6;" + level + ";skill=" + skill + ";tics=" + episodeTics + ";seed=" + seed
-                + ";cells=" + cellSize + ";entries=" + archiveSize + ";nodes=" + nodeLimit + ";strategy=" + strategy.name().toLowerCase(Locale.ROOT) + ";standard-flags" + (successCount == 0 ? "" : ";successes=" + successCount + ";strict-target=" + targetTics);
+                + ";cells=" + cellSize + ";entries=" + archiveSize + ";nodes=" + nodeLimit + ";strategy=" + strategy.name().toLowerCase(Locale.ROOT) + ";standard-flags" + (normalExits ? ";normal-exits" : "") + (successCount == 0 ? "" : ";successes=" + successCount + ";strict-target=" + targetTics);
     }
 }

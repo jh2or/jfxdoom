@@ -113,17 +113,30 @@ final class Archive {
     }
 
     private void trim() {
+        if (size <= capacity && references.size() <= nodeCapacity) return;
+        Map<Integer, Integer> phases = new HashMap<>();
+        for (List<Entry> group : cells.values()) for (Entry e : group)
+            phases.merge(e.cell.keys(), 1, Integer::sum);
         while (size > capacity || references.size() > nodeCapacity) {
             Entry worst = null;
+            boolean worstLastPhase = true;
             double score = Double.NEGATIVE_INFINITY;
             for (List<Entry> group : cells.values()) for (Entry e : group) {
                 // Keep spatial/key coverage before redundant inventory/facing variants.
                 double candidate = populations.get(e.cell.location()) * 1e9
                         + e.selected * 100.0 + e.route.tics - 8.0 * e.health;
-                if (candidate > score) { score = candidate; worst = e; }
+                // A long, rare key detour must remain available to the next trial.
+                // Prefer removing redundant key states; if all are last representatives,
+                // fall back to the ordinary ranking so both hard budgets still hold.
+                boolean lastPhase = phases.get(e.cell.keys()) == 1;
+                if (worst == null || worstLastPhase && !lastPhase
+                        || worstLastPhase == lastPhase && candidate > score) {
+                    score = candidate; worst = e; worstLastPhase = lastPhase;
+                }
             }
             List<Entry> group = cells.get(worst.cell);
             group.remove(worst); size--; release(worst.route); population(worst, -1);
+            phases.compute(worst.cell.keys(), (key, count) -> count - 1);
             if (group.isEmpty()) cells.remove(worst.cell);
         }
     }

@@ -27,7 +27,7 @@ final class SuccessPool {
 
     boolean offer(Episode episode, RunTrace run, long attempt) throws IOException {
         int tics = run.route() == null ? 0 : run.route().tics + (episode.entrance() == null ? 0 : episode.entrance().levelTics());
-        if (full() || !qualifies(run.outcome(), run.safety().exitHealth(), tics, config.targetTics())) return false;
+        if (full() || !config.acceptsCurrentExit() || !qualifies(run.outcome(), run.safety().exitHealth(), tics, config.targetTics())) return false;
         Path candidate = config.output().resolve("poolcand.lmp");
         try {
             Trainer.writeDemo(config, episode, candidate, run.route());

@@ -12,14 +12,52 @@ are absent. The linked demo bundles are available in the generating workspace.
 
 `doom.ai.CampaignTrainer` starts at `--from` (default E1M1). For **each earned
 entrance**, it learns until it has `--branches` distinct successful recordings
-(default three) **strictly below twice that map's engine par time**. All of those
-successes become separate entrances for the next map. There is no global pruning
-to three routes: E1M1 → E1M3 with three alternatives per parent produces
+(default three) **strictly below twice that map's engine par time**. By default all of those
+successes become separate entrances for the next map. With pruning disabled, E1M1 → E1M3 with three alternatives per parent produces
 **3 E1M1, 9 E1M2, and 27 E1M3 qualifying demos**, across 13 training nodes.
 
 ```sh
 bash gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --from E1M1 --through E1M3 --branches 3 --strategy speed --workers 3 --output training/campaign-tree --attempts 3000 --minutes 10 --rounds 10 --seed 1"
 ```
+
+For a bounded Episode 1 campaign, retain only the healthiest **two across the
+whole frontier** after every three completed maps:
+
+```sh
+bash gradlew campaign -PcampaignArgs="--wad reference-wads/DOOM.WAD --from E1M1 --through E1M8 --normal-exits --branches 3 --prune-every 3 --keep 2 --prune-scope frontier --strategy speed --workers 3 --attempts 3000 --minutes 10 --rounds 10 --seed 1 --output training/episode1-health-pruned"
+```
+
+This trains 1 / 3 / 9 / 2 / 6 / 18 / 2 / 6 entrances on E1M1–E1M8:
+47 nodes, 141 qualifying successes and 18 final continuous demos. Pruning occurs
+after E1M3 and E1M6. The default `--prune-every 0` disables pruning;
+`--prune-scope parent` instead keeps `--keep` successes from each parent's own
+group. Health is the primary comparison. Ties prefer more armor, then fewer
+map tics, then a stable branch ID. The whole frontier must satisfy its original
+success quotas before any pruning occurs; an unfinished parent is never silently
+dropped. End-map successes are all exported because there is no next map to prune.
+
+The normal Episode 1 health-pruned campaign was exercised across 47 earned
+entrances. E1M1–E1M7 met all three-success quotas (123 qualifying demos).
+All six E1M8 entrances completed, but none reached its 60-second target within
+the configured budgets: the best was 70.71 seconds after 156,880 combined E1M8
+attempts. The strict campaign correctly remains incomplete. Six continuous
+E1M1–E1M8 recordings passed native playback auditing; the fastest totals
+1,124.29 game seconds. See the generated
+[run report](training/episode1-campaign-fixed/REPORT.md) for demos, per-map
+results, pruning decisions, and build/checkpoint provenance.
+
+`selection.csv` records every continuation, health-pruned success, final demo,
+and pending decision. `tree.csv` and all source demos retain even pruned
+successes. The pruning policy is part of campaign resume identity, so it cannot
+change mid-search. Each decision is regenerated deterministically from immutable,
+natively verified success data, including verified exit health and armor.
+
+`--normal-exits` rejects an observed secret exit as a qualifying success or
+optimization incumbent. It does not identify exit locations, modify the engine's
+routing, warp maps, or inject inventory. Without this flag the engine's actual
+normal/secret transitions determine campaign progression. A normal Episode 1 run
+finishes at E1M8 and omits optional E1M9. The same `--normal-exits` flag is also
+available to single-map training.
 
 The E1M1/E1M2/E1M3 limits are **60 / 150 / 240 seconds**. Equality does not
 qualify. Demos must complete with a living player and pass native continuous
@@ -42,7 +80,8 @@ all rounds are exhausted, any missing parent quota leaves the campaign
 silently dropped and no missing branch is replaced by a pistol start. The
 coordinator waits for the whole current frontier to qualify before training the
 next one. Round/worker budgets can change on resume; campaign identity,
-branch count, start/end maps, strategy, learner seed, WAD and engine must match.
+branch count, pruning policy, exit policy, start/end maps, strategy, learner seed,
+WAD and engine must match.
 
 `--workers` runs independent training nodes in separate JVMs (the static engine
 must not be shared by concurrent threads). Each worker uses one active processor
@@ -63,13 +102,14 @@ learned suffix; `successes.csv` and `result.txt` include that entrance tic.
 
 Each archive's identity includes its entrance recording hash. Upstream successes
 are immutable once admitted, so downstream searches cannot accidentally inherit
-a different random state or inventory. This implementation grows the full tree;
-it does not optimize a global campaign score or select only the best loadouts.
+a different random state or inventory. The default grows the full tree. Optional health pruning selects which earned
+loadouts continue at explicit boundaries; it does not change a recorded loadout.
 
 Outputs:
 
 - `status.txt`: verified full tree, incomplete quotas, or an execution error.
 - `tree.csv`: every success, its parent, map, attempt, full map time and demo hash.
+- `selection.csv`: continuation/pruning decisions with exit health, armor and time.
 - `nodes/r/`: the root search. `nodes/r-1/` trains from its first success, etc.
 - Each node has `attempts.csv`, `archive.bin`, `trainer.log`, `successes.csv`, and
   `s001.lmp` / `s002.lmp` / `s003.lmp`. Later nodes also have `entrance.lmp` and
@@ -656,6 +696,20 @@ The full suite passed 1,159 tests with 10 skipped. An E1M1 example is
 `training/timed-crossing/demos/E1M1/timed.lmp` (seed 16, 62.34 seconds), with its
 timed crossing near 53 seconds; `before.lmp` contains the matched baseline.
 
+During the full-episode campaign, E1M6 exposed two floor-boundary stalls.
+The short floor predictor now applies thrust only for the commanded burst and
+then predicts coasting. Graph waypoint advancement and smoothing allow one
+four-unit sampling interval of comparison error **only when the planned route
+already includes hazardous floor**. A dry route still requires zero exposure;
+its extra hazardous shortcuts still require the timed-crossing exception.
+This avoids rejecting an existing crossing when the player stops a fraction of
+a unit short of its grid node. Closed doors with legal raised thresholds also
+use the graph's potential-opening hypothesis during stair checks. Live motion
+still tests the actual closed ceiling, and rises above the normal step limit
+remain blocked. This lets the learner approach and use a door before attempting
+to cross it. Regression tests cover the short dry approach,
+the reached-node boundary case, and preservation of the dry detour.
+
 ## Current planning and engine compatibility
 
 The final controller uses **full level geometry, key positions and switch
@@ -670,7 +724,12 @@ human-authored route. A bounded floor-safety classifier reads damaging sector
 types solely to estimate terrain risk, including damaging finale floors.
 
 The archive samples key states before spatial novelty within them, so a rare
-new key is not diluted by hundreds of earlier locations. Switch texture changes
+new key is not diluted by hundreds of earlier locations. When trimming entries
+or shared route nodes, it also retains the last representative of each key state
+before removing redundant earlier states. This prevents long key detours from
+being forgotten before another trial can continue them. Entry and node budgets
+remain hard limits: if every remaining entry is a last representative, ordinary
+pruning still applies. Switch texture changes
 and kill progress distinguish archived states; shortened prefixes must preserve
 observed interactions. The planner receives switch updates during play and replay,
 recognizes both initial switch states, and faces an intended switch instead of

@@ -363,22 +363,30 @@ public final class PDoors {
         // the C dead-store (CLAUDE.md §2: bug-faithful translation).
 
         if (sec.specialdata != null) {
-            door = (VLDoor) sec.specialdata;
             switch (line.special) {
                 case 1:  // ONLY FOR "RAISE" DOORS, NOT "OPEN"s
                 case 26:
                 case 27:
                 case 28:
                 case 117:
-                    if (door.direction == -1) {
-                        door.direction = 1; // go back up
+                    // On the original 32-bit layout, casting plat_t to vldoor_t
+                    // aliases direction with plat.wait (both at byte 28).
+                    // E1M4 can use a manual door while its sector runs a plat.
+                    // Reproduce that C write instead of failing a Java cast.
+                    PPlats.Plat plat = sec.specialdata instanceof PPlats.Plat p ? p : null;
+                    door = plat == null ? (VLDoor) sec.specialdata : null;
+                    int direction = plat == null ? door.direction : plat.wait;
+                    if (direction == -1) {
+                        direction = 1; // go back up
                     } else {
                         if (thing.player == null) {
                             return; // JDC: bad guys never close doors
                         }
 
-                        door.direction = -1; // start going down immediately
+                        direction = -1; // start going down immediately
                     }
+                    if (plat == null) door.direction = direction;
+                    else plat.wait = direction;
                     return;
             }
         }

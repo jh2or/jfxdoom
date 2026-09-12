@@ -11,11 +11,12 @@ import java.util.concurrent.*;
 /** A tree of earned entrances: every parent must produce its own quota of fast successes. */
 public final class CampaignTrainer {
     record Node(String id, Level level, Path entrance, Set<Level> visited) { }
-    record Options(TrainingConfig training, Level from, Level through, int branches, int workers, int rounds) { }
+    record Options(TrainingConfig training, Level from, Level through, int branches, int workers, int rounds,
+                   CampaignPruning.Policy pruning) { }
 
     static Options parse(String[] args) {
         List<String> remaining = new ArrayList<>(); Map<String, String> special = new HashMap<>();
-        Set<String> keys = Set.of("--from", "--through", "--branches", "--workers", "--rounds");
+        Set<String> keys = Set.of("--from", "--through", "--branches", "--workers", "--rounds", "--prune-every", "--keep", "--prune-scope");
         for (int i = 0; i < args.length; i++) {
             if (keys.contains(args[i])) {
                 String key = args[i];
@@ -36,7 +37,14 @@ public final class CampaignTrainer {
                 || c.seedDemo() != null || c.improve() != null || c.analyze() != null || c.evaluate() != null
                 || c.firstCompletion() || c.successCount() != 0)
             throw new IllegalArgumentException("Use --from/--through in the same episode; campaign builds its own entrances and success quotas");
-        return new Options(c, from, through, branches, workers, rounds);
+        CampaignPruning.Scope scope;
+        try { scope = CampaignPruning.Scope.valueOf(special.getOrDefault("--prune-scope", "parent").toUpperCase(Locale.ROOT)); }
+        catch (IllegalArgumentException e) { throw new IllegalArgumentException("prune-scope=parent|frontier", e); }
+        CampaignPruning.Policy pruning = new CampaignPruning.Policy(Integer.parseInt(special.getOrDefault("--prune-every", "0")),
+                Integer.parseInt(special.getOrDefault("--keep", "2")), scope);
+        if (pruning.every() > 0 && scope == CampaignPruning.Scope.PARENT && pruning.keep() >= branches)
+            throw new IllegalArgumentException("Parent pruning must keep fewer than --branches successes");
+        return new Options(c, from, through, branches, workers, rounds, pruning);
     }
 
     public static void main(String[] args) throws Exception {
@@ -44,7 +52,9 @@ public final class CampaignTrainer {
             System.out.println("Usage: doom.ai.CampaignTrainer --wad DOOM.WAD --from E1M1 --through E1M3\n"
                     + "  --branches 3 --strategy speed --workers 3 --output training/campaign [--resume]\n"
                     + "  --attempts 1000 --minutes 10 --rounds 1 --seed 1\n"
-                    + "Each parent collects distinct verified successes strictly below 2xPAR, then ALL successes branch.\n"
+                    + "Each parent collects distinct verified successes strictly below 2xPAR, then successes branch.\n"
+                    + "  --prune-every 3 --keep 2 --prune-scope parent|frontier  Retain healthiest continuations.\n"
+                    + "  --normal-exits  Learn normal exits only (no secret-map detour).\n"
                     + "Attempts/minutes apply per node per round. --rounds repeats unfinished searches, retaining learning.\n"
                     + "  --verify campaign.lmp  Verify continuous playback through --through (does not enforce a par target).");
             return;
@@ -53,6 +63,8 @@ public final class CampaignTrainer {
         if (c.verify() != null) {
             if (!DemoInput.startLevel(c.verify()).equals(options.from())) throw new IOException("Unexpected demo start map");
             int tics = CampaignDemo.play(c.wad(), c.verify(), c.skill(), options.through(), true, null, null);
+            if (c.normalExits() && (doom.system.GGame.players[0].didsecret || doom.system.GGame.secretexit != 0))
+                throw new IOException("Campaign used a secret exit");
             System.out.println("VERIFIED continuous campaign through " + options.through() + "; final map tics=" + tics); return;
         }
         Files.createDirectories(c.output());
@@ -65,7 +77,8 @@ public final class CampaignTrainer {
 
     private static void run(Options o) throws Exception {
         TrainingConfig c = o.training(); Path root = c.output(), manifest = root.resolve("campaign-manifest.txt");
-        String identity = "campaign-tree-v1;from=" + o.from() + ";through=" + o.through() + ";branches=" + o.branches()
+        String identity = "campaign-tree-v2;from=" + o.from() + ";through=" + o.through() + ";branches=" + o.branches()
+                + ";prune-every=" + o.pruning().every() + ";keep=" + o.pruning().keep() + ";scope=" + o.pruning().scope()
                 + ";strict-par-multiplier=2\n" + Checkpoint.identity(c) + "\n";
         if (Files.exists(manifest)) {
             if (!c.resume()) throw new IOException("Campaign output exists; use --resume or another --output");
@@ -77,6 +90,7 @@ public final class CampaignTrainer {
         write(root.resolve("status.txt"), "RUNNING: branching campaign\n");
         List<Node> frontier = List.of(new Node("r", o.from(), null, Set.of()));
         List<String> tree = new ArrayList<>(List.of("id,parent,map,demo,attempt,tics,health,armor,sha256"));
+        List<String> selection = new ArrayList<>(List.of("completed_maps,id,parent,map,health,armor,tics,decision"));
         Set<Process> running = ConcurrentHashMap.newKeySet();
         Thread hook = new Thread(() -> running.forEach(Process::destroy), "campaign-shutdown");
         Runtime.getRuntime().addShutdownHook(hook);
@@ -88,20 +102,39 @@ public final class CampaignTrainer {
                 for (Node node : frontier) jobs.add(executor.submit(() -> { trainNode(o, node, running); return null; }));
                 for (Future<?> job : jobs) job.get();
                 List<Node> next = new ArrayList<>(); boolean incomplete = false;
+                List<CampaignPruning.Candidate> candidates = new ArrayList<>();
+                Map<String,List<SuccessPool.Entry>> pools = new LinkedHashMap<>();
+                for (Node node : frontier) {
+                    List<SuccessPool.Entry> pool = SuccessPool.read(root.resolve("nodes").resolve(node.id()));
+                    pools.put(node.id(), pool);
+                    if (pool.size() < o.branches()) incomplete = true;
+                    if (pool.size() > o.branches()) throw new IOException("Success quota exceeded");
+                    for (int i = 0; i < pool.size(); i++)
+                        candidates.add(new CampaignPruning.Candidate(node.id() + "-" + (i + 1), node.id(), pool.get(i)));
+                }
+                // Decide only on a complete frontier. Missing quotas never benefit from pruning.
+                int completedMaps = frontier.getFirst().visited().size() + 1;
+                Set<String> retained = incomplete ? Set.of() : o.pruning().retain(candidates, completedMaps);
                 for (Node node : frontier) {
                     Path out = root.resolve("nodes").resolve(node.id());
-                    List<SuccessPool.Entry> successes = SuccessPool.read(out);
-                    if (successes.size() < o.branches()) incomplete = true;
-                    if (successes.size() > o.branches()) throw new IOException("Success quota exceeded");
+                    List<SuccessPool.Entry> successes = pools.get(node.id());
                     int index = 0;
                     for (SuccessPool.Entry e : successes) {
                         String id = node.id() + "-" + (++index); Path demo = out.resolve(e.file());
                         if (!SuccessPool.digest(Files.readAllBytes(demo)).equals(e.sha256())) throw new IOException("Changed success demo");
                         int tics = CampaignDemo.play(c.wad(), demo, c.skill(), node.level(), true, null, null);
+                        if (!c.acceptsCurrentExit()) throw new IOException("Success uses an excluded secret exit");
                         if (tics != e.tics() || tics >= node.level().parSeconds() * 70) throw new IOException("Success violates map time target");
+                        if (doom.system.GGame.players[0].health != e.health() || doom.system.GGame.players[0].armorpoints != e.armor())
+                            throw new IOException("Success exit inventory differs from its verified metadata");
                         tree.add(id + "," + node.id() + "," + node.level() + "," + root.relativize(demo) + "," + e.attempt()
                                 + "," + tics + "," + e.health() + "," + e.armor() + "," + e.sha256());
-                        if (node.level().equals(o.through())) {
+                        boolean endpoint = node.level().equals(o.through());
+                        String decision = incomplete ? "pending" : endpoint ? "final" : retained.contains(id) ? "continue" : "pruned-health";
+                        selection.add(completedMaps + "," + id + "," + node.id() + "," + node.level() + "," + e.health()
+                                + "," + e.armor() + "," + tics + "," + decision);
+                        if (incomplete || (!endpoint && !retained.contains(id))) continue;
+                        if (endpoint) {
                             Path finalDemo = root.resolve("demos").resolve(String.format(Locale.ROOT, "c%04d.lmp", ++leaves));
                             Route.atomicWrite(finalDemo, Files.readAllBytes(demo));
                             continue;
@@ -109,6 +142,8 @@ public final class CampaignTrainer {
                         List<Action> history = new ArrayList<>(DemoInput.read(demo, c.skill(), CampaignDemo.MAX_TICS, o.from()));
                         Level level = CampaignDemo.advance(history);
                         Set<Level> visited = new HashSet<>(node.visited()); visited.add(node.level());
+                        if (c.normalExits() && !level.equals(new Level(node.level().episode(), node.level().map() + 1)))
+                            throw new IOException("Unexpected normal campaign transition: " + node.level() + " to " + level);
                         if (visited.contains(level)) throw new IOException("Campaign routing loop at " + level);
                         Path entry = root.resolve("nodes").resolve(id).resolve("entrance.lmp");
                         if (Files.exists(entry)) {
@@ -119,6 +154,7 @@ public final class CampaignTrainer {
                     }
                 }
                 write(root.resolve("tree.csv"), String.join("\n", tree) + "\n");
+                write(root.resolve("selection.csv"), String.join("\n", selection) + "\n");
                 if (incomplete) {
                     write(root.resolve("status.txt"), "INCOMPLETE: a parent has fewer than " + o.branches()
                             + " qualifying successes; use --resume (or more --rounds)\n");
@@ -127,7 +163,8 @@ public final class CampaignTrainer {
                 frontier = next;
             }
             write(root.resolve("status.txt"), "VERIFIED complete campaign tree " + o.from() + " through " + o.through()
-                    + "; branches=" + o.branches() + "; final_demos=" + leaves + "; every map strictly below 2xPAR\n");
+                    + "; branches=" + o.branches() + "; prune-every=" + o.pruning().every() + "; keep=" + o.pruning().keep()
+                    + "; scope=" + o.pruning().scope() + "; final_demos=" + leaves + "; every map strictly below 2xPAR\n");
             System.out.print(Files.readString(root.resolve("status.txt")));
         } catch (Exception e) {
             write(root.resolve("status.txt"), "ERROR: " + e + "\n"); throw e;
@@ -150,6 +187,7 @@ public final class CampaignTrainer {
                     "--node-limit", "" + c.nodeLimit(), "--cell-size", "" + c.cellSize(),
                     "--strategy", c.strategy().name().toLowerCase(Locale.ROOT), "--successes", "" + o.branches(),
                     "--target-seconds", "" + node.level().parSeconds() * 2));
+            if (c.normalExits()) command.add("--normal-exits");
             if (node.entrance() != null) command.addAll(List.of("--entrance", node.entrance().toString()));
             if (Files.exists(out.resolve("archive.bin"))) command.add("--resume");
             System.out.println("BRANCH " + node.id() + " " + node.level() + " round=" + round + " qualified=" + SuccessPool.read(out).size());

@@ -776,4 +776,35 @@ class PDoorsTest {
         assertEquals(PDoors.blazeRaise, d.type);
         assertEquals(PDoors.VDOORSPEED * 4, d.speed);
     }
+    @Test
+    void manualDoorOnActivePlatAliasesWaitAsIn32BitC() {
+        Line line = useDoorWorld(1);
+        PPlats.Plat plat = new PPlats.Plat();
+        plat.wait = 105;
+        plat.count = 73;
+        plat.status = PPlats.waiting;
+        PSetup.sectors[0].specialdata = plat;
+        PDoors.evVerticalDoor(line, playerWithCards());
+        assertEquals(-1, plat.wait);
+        assertEquals(73, plat.count);
+        assertEquals(PPlats.waiting, plat.status);
+        assertSame(plat, PSetup.sectors[0].specialdata);
+        PDoors.evVerticalDoor(line, new Mobj());
+        assertEquals(1, plat.wait);
+        PDoors.evVerticalDoor(line, new Mobj());
+        assertEquals(1, plat.wait);
+    }
+
+    @Test
+    void openOnlyDoorOnActivePlatStillSpawnsDoor() {
+        Line line = useDoorWorld(31);
+        PPlats.Plat plat = new PPlats.Plat();
+        plat.wait = 105;
+        PSetup.sectors[0].specialdata = plat;
+        PDoors.evVerticalDoor(line, playerWithCards());
+        assertEquals(PDoors.open, ((PDoors.VLDoor) PSetup.sectors[0].specialdata).type);
+        assertEquals(105, plat.wait);
+        assertEquals(0, line.special);
+    }
+
 }

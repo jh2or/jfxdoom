@@ -42,6 +42,47 @@ class ArchiveTest {
         assertTrue(roomy.entries().stream().anyMatch(e -> e.cell.x() == 20));
     }
 
+    @Test void nodePressureRetainsTheLastDiscoveredKeyState() {
+        Archive archive = new Archive(4, 4, 128);
+        Route root = new Route(null, Action.IDLE, 1, 1);
+        archive.offer(cell(0), root, 100);
+        archive.offer(cell(1), new Route(root, Action.IDLE, 1, 2), 100);
+        archive.offer(cell(2), new Route(root, Action.IDLE, 1, 3), 100);
+        Route late = root;
+        for (int i = 0; i < 3; i++) late = new Route(late, Action.IDLE, 32, 10 + i);
+        var keys = new Archive.Cell(20, 0, 0, 1, 1, 3, 8, 6);
+        assertTrue(archive.offer(keys, late, 10), "Retain rare key progress before redundant earlier key states");
+        assertTrue(archive.entries().stream().anyMatch(e -> e.cell.keys() == 0));
+        assertTrue(archive.entries().stream().anyMatch(e -> e.cell.keys() == 6));
+        assertTrue(archive.nodes() <= 4);
+        for (int i = 0; i < 20; i++) archive.offer(cell(i + 30), root, 100);
+        assertTrue(archive.entries().stream().anyMatch(e -> e.cell.keys() == 6));
+        assertTrue(archive.size() <= 4 && archive.nodes() <= 4);
+    }
+
+    @Test void entryPressureRetainsRareKeyProgress() {
+        Archive archive = new Archive(2, 100, 128);
+        Route root = new Route(null, Action.IDLE, 1, 1);
+        archive.offer(cell(0), root, 100);
+        var keys = new Archive.Cell(20, 0, 0, 1, 1, 3, 8, 6);
+        archive.offer(keys, new Route(root, Action.IDLE, 32, 2), 10);
+        archive.offer(cell(1), root, 100);
+        assertEquals(2, archive.size());
+        assertTrue(archive.entries().stream().anyMatch(e -> e.cell.keys() == 6));
+    }
+
+    @Test void keyProtectionCannotExceedHardArchiveBudgets() {
+        Archive archive = new Archive(1, 2, 128);
+        Route root = new Route(null, Action.IDLE, 1, 1);
+        archive.offer(cell(0), root, 100);
+        var keys = new Archive.Cell(20, 0, 0, 1, 1, 3, 8, 6);
+        archive.offer(keys, new Route(root, Action.IDLE, 32, 2), 10);
+        assertTrue(archive.size() <= 1 && archive.nodes() <= 2);
+        Route tooLong = new Route(new Route(root, Action.IDLE, 32, 3), Action.IDLE, 32, 4);
+        archive.offer(new Archive.Cell(30, 0, 0, 1, 1, 3, 8, 7), tooLong, 10);
+        assertTrue(archive.size() <= 1 && archive.nodes() <= 2);
+    }
+
     @Test void checkpointRetainsSharedRoutesSelectionCountsAndRandomStream() throws Exception {
         TrainingConfig config = config(10, 100);
         Checkpoint.Progress p = new Checkpoint.Progress(config);

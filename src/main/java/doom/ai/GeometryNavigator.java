@@ -323,7 +323,7 @@ final class GeometryNavigator {
             double budget = FloorSafety.exposure(o.x(), o.y(), x(current), y(current))
                     + FloorSafety.exposure(x(current), y(current), x(following), y(following));
             if (d > 256 || probe.distance(x(following), y(following)) < d - .01
-                    || FloorSafety.exposure(o.x(), o.y(), x(following), y(following)) > budget + .01) break;
+                    || FloorSafety.exceedsBudget(FloorSafety.exposure(o.x(), o.y(), x(following), y(following)), budget)) break;
             cursor++;
         }
         int selected = route.get(cursor);
@@ -334,7 +334,7 @@ final class GeometryNavigator {
             budget += FloorSafety.exposure(previousX, previousY, x(i), y(i));
             previousX = x(i); previousY = y(i);
             TimedCrossing.Plan shortcut = null;
-            if (FloorSafety.exposure(o.x(), o.y(), x(i), y(i)) > budget + .01) {
+            if (FloorSafety.exceedsBudget(FloorSafety.exposure(o.x(), o.y(), x(i), y(i)), budget)) {
                 shortcut = TimedCrossing.plan(o, probe, x(i), y(i), PTick.leveltime);
                 if (shortcut == null) continue;
             }
@@ -360,7 +360,7 @@ final class GeometryNavigator {
         Observation virtual = new Observation(x(from), y(from), 0, 100, 50, 3, 8, null,
                 floor[from], 56, 16, 0, 0, 1, 0);
         double length = Math.hypot(x(to) - x(from), y(to) - y(from));
-        return new MotionProbe(virtual).distance(x(to), y(to)) >= length - .01;
+        return MotionProbe.planning(virtual).distance(x(to), y(to)) >= length - .01;
     }
 
     Line interactionTarget() { return target != null && target.id instanceof Line line ? line : null; }

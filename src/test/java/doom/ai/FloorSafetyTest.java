@@ -71,6 +71,16 @@ class FloorSafetyTest {
         double nextVelocity = o.momx()+guarded.action().forward()/32.;
         assertTrue(nextVelocity<o.momx());
     }
+    @Test void permitsShortDryApproachWithoutInventingInputDuringTheCoastingTail() {
+        // A single walk tic plus four coast tics stays short of x=96.
+        // Extending acceleration into those coast tics falsely predicts nukage
+        // entry and repeatedly returns zero movement from rest (E1M6 stall).
+        var shortStep = new Explorer.Burst(new Action(25,0,0,0),1);
+        assertEquals(shortStep,FloorSafety.protect(at(88,48,0),shortStep,false,94,48));
+        var longStep = new Explorer.Burst(shortStep.action(),8);
+        assertEquals(0,FloorSafety.protect(at(88,48,0),longStep,false,94,48).action().forward());
+    }
+
     @Test void permitsAPlannedCrossingAndMovementOutOfAHazard() {
         var burst = new Explorer.Burst(new Action(50,0,0,0),2);
         assertEquals(burst,FloorSafety.protect(at(80,48,0),burst,true,224,48));
@@ -120,6 +130,24 @@ class FloorSafetyTest {
         assertNotNull(next);
         assertTrue(next.x()>o.x());
     }
+    @Test void samplingRoundingDoesNotBlockAnAlreadyPlannedHazardCrossing() throws Exception {
+        PSetup.nodes[0].y = 300*65536; // Every route must cross the toxic strip.
+        PSetup.nodes[1].x = 88*65536; // Hazard starts at the next grid center.
+        var o = at(87.8,56,0); // Arrived within a fraction of a grid waypoint.
+        var navigator = new GeometryNavigator();
+        navigator.observe(o);
+        // Exercise an existing graph edge, independently of alternative seed nodes.
+        var node = GeometryNavigator.class.getDeclaredMethod("node",double.class,double.class);
+        node.setAccessible(true);
+        var route = GeometryNavigator.class.getDeclaredField("route"); route.setAccessible(true);
+        route.set(navigator,List.of((Integer)node.invoke(navigator,88.,56.),(Integer)node.invoke(navigator,104.,56.)));
+        var waypoint = GeometryNavigator.class.getDeclaredMethod("waypoint",Observation.class);
+        waypoint.setAccessible(true);
+        var next = (GeometryNavigator.Point)waypoint.invoke(navigator,o);
+        assertNotNull(next);
+        assertTrue(next.x()>96,"Advance across the planned hazard instead of returning the reached node: " + next);
+    }
+
     @Test void aDamagingFinalAreaCanStillBeAnExplorationGoal() {
         dry.special = toxic.special = 11;
         assertNotNull(new GeometryNavigator().choose(at(32,32,0),0,Set.of(),Set.of()));
