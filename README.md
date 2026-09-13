@@ -47,6 +47,8 @@ skip). Two resolution knobs sit in the primary section:
     (default).
   - *JavaFX 3D (experimental)* — GPU scene-graph renderer, see
     below.
+  - *Isometric (experimental)* — fixed orthographic view with a visible player
+    sprite, open ceilings, and foreground wall cutaways.
   - *Side-by-side (software | 3D)* / *Stacked (software / 3D)* —
     both renderers at once in two equal panes, driven by the
     same game tic.
@@ -101,6 +103,7 @@ Port-specific flags (no C counterpart):
 
 ```
 -fx3d               use the experimental JavaFX scene-graph renderer
+-iso                use the experimental isometric JavaFX renderer
 -sbs                side-by-side mode (software pane left, 3D pane right)
 -sbsv               stacked mode (software pane top, 3D pane bottom)
 ```
@@ -136,6 +139,60 @@ lighting difference is immediately visible. Design and status
 notes live in [`3D_OVERHAUL.md`](3D_OVERHAUL.md),
 [`3D_SIDEBYSIDE_PLAN.md`](3D_SIDEBYSIDE_PLAN.md) and
 [`3D_OVERHAUL_STATUS.md`](3D_OVERHAUL_STATUS.md).
+
+## Isometric view
+
+Select **Isometric (experimental)** in the Launchpad, or run:
+
+```
+./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -iso"
+```
+
+This renders the same Doom simulation through a fixed orthographic camera,
+45 degrees around the map and about 35 degrees above the floor. The camera
+follows the player's position and elevation; turning changes the player's facing.
+The viewport spans 640 map units horizontally, independent of display resolution.
+Original movement, turning, strafing, firing, and use controls remain unchanged.
+A gold ground arrow marks the player's position and facing; the first-person
+weapon overlay is omitted. There are no RPG mechanics or navigation changes.
+
+Ceilings are omitted. Walls covering the player switch to short, capped barriers;
+upper fragments and obstructing fence fragments can disappear. Their collision,
+shooting obstruction, and monster sight remain intact. Closed door cutaways retain
+a low barrier until the door rises. Exposed adjacent rooms, enemies, and secrets
+are visible: there is no fog of war. Narrow passages and unusually tall geometry
+can still produce abrupt cutaway boundaries.
+
+Existing sprites stay upright and are consequently foreshortened from above.
+Transparency ordering remains approximate for intersecting sprites and fences.
+The existing JavaFX renderer's lighting/filtering/effect differences also apply.
+Camera rotation, interactive zoom, and isometric comparison panes are not included.
+
+A JavaFX SCENE3D-capable pipeline is required. Unsupported pipelines fall back to
+software Doom. The container's `.devcontainer/run-doom.sh` explicitly selects the
+2D software pipeline; for Mesa/llvmpipe 3D in a container with display `:1`, use:
+
+```
+DISPLAY=:1 JAVA_TOOL_OPTIONS="-Dprism.order=es2 -Dprism.forceGPU=true" \
+  ./gradlew run --args="-iwad reference-wads/DOOM.WAD -warp 1 1 -iso"
+```
+
+Implementation phases and acceptance criteria are in
+[`ISOMETRIC_RENDERER_PLAN.md`](ISOMETRIC_RENDERER_PLAN.md). The opt-in integration
+check renders real WAD screenshots, compares 210 demo tics with/without isometric
+rendering, completes an E1M1 route with existing movement/use commands and
+monsters disabled, and exercises camera framing, moving doors, save/load, and UI
+screens:
+
+```
+DISPLAY=:1 JAVA_TOOL_OPTIONS="-Dprism.order=es2 -Dprism.forceGPU=true" \
+  ./gradlew test --tests '*Fx3IsoIntegrationTest' -Diso.probe=1
+```
+
+Run this integration check separately from other JavaFX startup probes. It skips
+when disabled, when the WAD is missing, or when SCENE3D is unavailable. Screenshots
+and fixture metadata are written to `build/probe/isometric/<WAD filename>/`.
+Use `-Ddoom.wad=/path/to/doom2.wad` to exercise Doom II instead.
 
 ## Controls
 

@@ -130,3 +130,112 @@ software renderer remains the default. `doom.render` and `doom.play` were
 never modified. Known accepted deviations: no per-pixel distance light
 diminishing, bilinear texel softness, approximated fuzz/invulnerability,
 no extralight (muzzle flash brightening).
+
+
+## Isometric mode (`feat/isometric-renderer`)
+
+Implemented as an opt-in presentation of the existing JavaFX renderer. Select
+**Isometric (experimental)** or pass `-iso`. Implementation plan:
+[`ISOMETRIC_RENDERER_PLAN.md`](ISOMETRIC_RENDERER_PLAN.md).
+
+### Implemented
+
+- Fixed 45-degree azimuth / 35.264-degree elevation orthographic projection,
+  640-map-unit viewport width, actor-position/elevation tracking, and resolution
+  independent framing. JavaFX 21's parallel projection uses a viewport-sized
+  depth range irrespective of farClip; only depth is compressed to accommodate
+  the map range. The X/Y projection remains true orthographic.
+- Ceiling and sky-cylinder omission; original floor polygons/materials, moving
+  sectors, switches, and animated textures are shared with the perspective view.
+- Per-seg opaque wall surfaces retain their identity and have prebuilt full/short
+  variants. Foreground intersection with a protected player region chooses the
+  variant. Retained barriers are at most 24 units above their front floor, with
+  thin caps; high upper fragments disappear. Closed door surfaces retain a sill
+  while they cover the opening. Selected masked fragments are hidden.
+- Twelve-unit cutaway hysteresis persists across dynamic mesh rebuilds, keyed by
+  seg and surface kind. A new level, player replacement, or position discontinuity
+  clears the selection history. Camera motion does not rebuild level meshes.
+- Visible player sprite and gold facing marker; no first-person weapon pass,
+  including in wipe capture. Sprites stay upright to preserve floor contact, with
+  camera-direction-based frame selection and elevation-aware transparency order.
+- Existing keyboard controls, simulation, AI, collision, shooting, save format,
+  and demo commands retained. No changes to `doom.play` or `doom.render`.
+- Existing perspective/software/comparison rendering paths retained. UI continues
+  through the shared shell. Isometric mode uses the existing SCENE3D fallback.
+
+### Verification
+
+- `./gradlew test`: **1,007 passed, 11 skipped, 0 failed**. The skips are disabled
+  diagnostics/integration probes; no missing-WAD skip occurred in this run. The
+  isometric integration probe passed separately for both WADs.
+- Seven headless tests cover projection signs/foreshortening, depth invariance,
+  sprite frame boundaries, foreground/background/raised-floor cutaways, hysteresis,
+  and retained door geometry.
+- `Fx3IsoIntegrationTest` runs separately with `-Diso.probe=1` and a supported 3D
+  pipeline. It has been exercised with the local Doom and Doom II WADs. Each run
+  compares player/actor state, sectors, and gameplay RNG for 210 demo tics with
+  and without isometric rendering. This proves equality for those sampled runs,
+  not universal vanilla compatibility.
+- An E1M1 fixed route completes via the normal exit using the existing keyboard
+  command builder (turn/forward/use, monsters disabled). It does not relocate the
+  actor, enable noclip, or directly activate doors or the exit. Combat/actor
+  activity is covered separately by the recorded demos.
+- The integration check also exercises actual shell CLI selection, viewport
+  centering/resizing, player inclusion, no weapon overlay, door motion, cutaway
+  state across rebuilt geometry, perspective reset, level changes, save/load,
+  death, fresh-level respawn, HUD, automap, menus, reduced viewport, damage tint,
+  and intermission/wipes. Screenshots were visually inspected at representative
+  corridor, walkway, exit-room, and busy-map positions.
+- Reproducible screenshots, WAD SHA-256 identities, traversal result, and benchmark
+  files: `build/probe/isometric/<WAD filename>/`. These are generated artifacts,
+  not source-controlled WAD art. Commands are in `README.md`.
+- Save/load coverage exposed an existing padded-LINEDEFS validation issue on maps
+  with odd linedef counts (including E1M2). `SaveGame.load` now trims its topology
+  input to the actual lump length. A dedicated save regression test covers this;
+  the serialized format and map fingerprint are unchanged.
+
+### Limits and remaining platform coverage
+
+- Ceiling removal exposes nearby rooms, secrets, and actors; no exploration mask
+  is applied. Rendering does not grant actors new sight or movement abilities.
+- Cutaways operate on complete seg surfaces. Long or unusual walls may disappear
+  abruptly; very close barriers can still cover the player's feet. Caps use a
+  narrow strip of the existing wall material rather than new authored art.
+- Upright Doom artwork is foreshortened. Existing alpha/depth approximations remain
+  for intersecting sprites/fences; existing JavaFX lighting and effect differences
+  also remain. This is an experimental view, not a new art pipeline.
+- Camera rotation, interactive zoom, and isometric comparison panes remain deferred.
+- Validation uses Linux JavaFX ES2 in the container. Windows D3D and interactive
+  fullscreen behavior on physical monitors have not been exercised here. The
+  checks above do not substitute for broad arbitrary-PWAD testing.
+- Performance samples distinguish cold scene/material upload from warmed frames.
+  They include synchronous screenshot readback, so they are not an FPS guarantee.
+  Isometric wall variants increase scene-node count and allocations relative to
+  the batched perspective renderer. Measurements are summarized below.
+
+
+### Performance sample (2026-09-13)
+
+Linux container, JDK 21.0.8, JavaFX 21.0.4 ES2, display `:1`,
+`-Dprism.forceGPU=true`; viewport 640x400. Each sample follows a cold frame and
+10 warmup frames with 70 simulation/update/synchronous-snapshot frames. Times
+include snapshot readback where indicated, but exclude PNG encoding. Heap
+allocation includes simulation, scene updates, and snapshot image creation.
+
+| Map | View | Update median (ms) | Snapshot median / p95 (ms) | Nodes | Heap MB/frame |
+| --- | --- | ---: | ---: | ---: | ---: |
+| E1M1 | perspective | 0.20 | 4.25 / 22.32 | 269 | 1.63 |
+| E1M1 | iso | 0.20 | 3.90 / 22.57 | 1250 | 2.68 |
+| E1M6 | perspective | 0.33 | 5.39 / 61.58 | 641 | 2.34 |
+| E1M6 | iso | 0.47 | 6.06 / 38.54 | 3303 | 4.93 |
+| MAP01 | perspective | 0.10 | 4.80 / 8.07 | 218 | 1.06 |
+| MAP01 | iso | 0.08 | 3.87 / 9.42 | 827 | 1.05 |
+| MAP16 | perspective | 0.17 | 4.36 / 16.93 | 445 | 1.19 |
+| MAP16 | iso | 0.15 | 5.13 / 12.74 | 2079 | 1.22 |
+
+Cold scene/material initialization and first rasterization took approximately
+1.1–2.4 seconds in these samples, including the existing perspective renderer.
+E1M6 showed occasional readback/frame-time spikes in both modes; this short
+synchronous test does not establish stable real-time FPS. The isometric CPU update
+medians remained below 0.5 ms. No additional production culling was introduced
+based on these samples; allocation and node growth remain the main scaling risks.

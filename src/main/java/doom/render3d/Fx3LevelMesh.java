@@ -89,10 +89,48 @@ public final class Fx3LevelMesh {
     // and must render after the world, distance-sorted together with
     // sprites (JavaFX has no alpha test; render order = scene-graph
     // order). Each masked node's userData is its map-space midpoint
-    // {x, y} for the per-frame sort.
-    public record Built(Group world, List<MeshView> masked) {}
+    // {x, y, z} for the per-frame sort.
+    public record Built(Group world, List<MeshView> masked, List<CutWall> cutWalls) {}
+
+    enum SurfaceKind { SOLID, UPPER, LOWER, MASKED }
+
+    /** One independently cuttable surface; geometry is immutable between sector rebuilds. */
+    public static final class CutWall {
+        final MeshView intact;
+        final MeshView shortened;
+        final Seg seg;
+        final SurfaceKind kind;
+        final double bottom, top;
+        boolean cut;
+
+        CutWall(MeshView intact, MeshView shortened, Seg seg, SurfaceKind kind, double bottom, double top) {
+            this.intact = intact;
+            this.shortened = shortened;
+            this.seg = seg;
+            this.kind = kind;
+            this.bottom = bottom;
+            this.top = top;
+            if (shortened != null) shortened.setVisible(false);
+        }
+
+        void update(double px, double py, double pz, double height, Map<Seg, Integer> selections) {
+            int bit = 1 << kind.ordinal();
+            int previous = selections.getOrDefault(seg, 0);
+            cut = Fx3IsoVisibility.obstructs(
+                    seg.v1.x / 65536.0, seg.v1.y / 65536.0,
+                    seg.v2.x / 65536.0, seg.v2.y / 65536.0, bottom, top,
+                    px, py, pz, height, (previous & bit) != 0);
+            selections.put(seg, cut ? previous | bit : previous & ~bit);
+            intact.setVisible(!cut);
+            if (shortened != null) shortened.setVisible(cut);
+        }
+    }
 
     public static Built build(boolean[] dynamicSectors, boolean dynamicPass) {
+        return build(dynamicSectors, dynamicPass, false);
+    }
+
+    public static Built build(boolean[] dynamicSectors, boolean dynamicPass, boolean isometric) {
         if (polysFor != PSetup.sectors) {
             polys = Fx3SubsectorPolys.buildAll();
             polysFor = PSetup.sectors;
@@ -104,6 +142,7 @@ public final class Fx3LevelMesh {
 
         Map<Long, Batch> batches = new HashMap<>();
         List<MeshView> masked = new ArrayList<>();
+        List<CutWall> cutWalls = new ArrayList<>();
 
         // Floors and ceilings.
         for (int i = 0; i < PSetup.numsubsectors; i++) {
@@ -120,7 +159,7 @@ public final class Fx3LevelMesh {
                                 sec.floorpic, lightnum),
                         poly, floor, true);
             }
-            if (sec.ceilingpic != RSky.skyflatnum) {
+            if (!isometric && sec.ceilingpic != RSky.skyflatnum) {
                 addFlat(batch(batches, Fx3Textures.KIND_FLAT,
                                 sec.ceilingpic, lightnum),
                         poly, ceil, false);
@@ -164,7 +203,7 @@ public final class Fx3LevelMesh {
                     double zTexTop = pegBottom
                             ? ffloor + Fx3Textures.textureHeight(tex)
                             : fceil;
-                    addWall(batch(batches, Fx3Textures.KIND_WALL, tex, lightnum),
+                    emitWall(batches, cutWalls, isometric, seg, SurfaceKind.SOLID, ffloor, lightnum,
                             tex, x1, y1, x2, y2, ffloor, fceil,
                             u0, zTexTop, rowofs);
                 }
@@ -184,7 +223,7 @@ public final class Fx3LevelMesh {
                     double zTexTop = pegTop
                             ? fceil
                             : bceil + Fx3Textures.textureHeight(tex);
-                    addWall(batch(batches, Fx3Textures.KIND_WALL, tex, lightnum),
+                    emitWall(batches, cutWalls, isometric, seg, SurfaceKind.UPPER, ffloor, lightnum,
                             tex, x1, y1, x2, y2, bceil, fceil,
                             u0, zTexTop, rowofs);
                 }
@@ -195,7 +234,7 @@ public final class Fx3LevelMesh {
                 int tex = side.bottomtexture;
                 if (tex > 0) {
                     double zTexTop = pegBottom ? fceil : bfloor;
-                    addWall(batch(batches, Fx3Textures.KIND_WALL, tex, lightnum),
+                    emitWall(batches, cutWalls, isometric, seg, SurfaceKind.LOWER, ffloor, lightnum,
                             tex, x1, y1, x2, y2, ffloor, bfloor,
                             u0, zTexTop, rowofs);
                 }
@@ -221,8 +260,9 @@ public final class Fx3LevelMesh {
                                 u0, zTexTop);
                         MeshView mv = mb.toMeshView();
                         mv.setUserData(new double[] {
-                                (x1 + x2) / 2, (y1 + y2) / 2 });
+                                (x1 + x2) / 2, (y1 + y2) / 2, (zbot + ztop) / 2 });
                         masked.add(mv);
+                        if (isometric) cutWalls.add(new CutWall(mv, null, seg, SurfaceKind.MASKED, zbot, ztop));
                     }
                 }
             }
@@ -232,7 +272,45 @@ public final class Fx3LevelMesh {
         for (Batch b : batches.values()) {
             group.getChildren().add(b.toMeshView());
         }
-        return new Built(group, masked);
+        for (CutWall wall : cutWalls) {
+            if (wall.shortened != null) group.getChildren().addAll(wall.intact, wall.shortened);
+        }
+        return new Built(group, masked, cutWalls);
+    }
+
+    private static void emitWall(Map<Long, Batch> batches, List<CutWall> cutWalls,
+                                 boolean isometric, Seg seg, SurfaceKind kind, double floor, int light,
+                                 int tex, double x1, double y1, double x2, double y2,
+                                 double bottom, double top, double u0, double texTop, double row) {
+        if (!isometric) {
+            addWall(batch(batches, Fx3Textures.KIND_WALL, tex, light),
+                    tex, x1, y1, x2, y2, bottom, top, u0, texTop, row);
+            return;
+        }
+        if (top <= bottom) return;
+        int ln = Math.max(0, Math.min(15, light));
+        Batch full = new Batch(Fx3Textures.KIND_WALL, tex, ln);
+        addWall(full, tex, x1, y1, x2, y2, bottom, top, u0, texTop, row);
+        Batch low = new Batch(Fx3Textures.KIND_WALL, tex, ln);
+        double cutTop = Fx3IsoVisibility.retainedTop(floor, bottom, top);
+        addWall(low, tex, x1, y1, x2, y2, bottom, cutTop, u0, texTop, row);
+        // A thin cap gives the retained barrier thickness and a readable top edge.
+        // Reuse wall material; cap UVs cover a small, fixed part of that material.
+        double len = Math.hypot(x2-x1, y2-y1);
+        if (cutTop > bottom && len > 1e-6) {
+            double nx = -(y2-y1) / len, ny = (x2-x1) / len;
+            int a = low.point(x1, cutTop, y1, 0, 0);
+            int b = low.point(x2, cutTop, y2, 1, 0);
+            int c = low.point(x2+nx*2, cutTop, y2+ny*2, 1, 0.03f);
+            int d = low.point(x1+nx*2, cutTop, y1+ny*2, 0, 0.03f);
+            low.tri(a,b,c); low.tri(a,c,d);
+        }
+        MeshView intact = full.toMeshView();
+        MeshView shortened = low.toMeshView();
+        // Single-sided map boundaries otherwise have no exterior face from above.
+        if (seg.backsector == null) intact.setCullFace(CullFace.NONE);
+        shortened.setCullFace(CullFace.NONE);
+        cutWalls.add(new CutWall(intact, shortened, seg, kind, bottom, top));
     }
 
     // Masked quad: vertical run is a single texture pass (V within

@@ -53,19 +53,24 @@ public final class Fx3Sprites {
 
     // One entry per visible sprite this frame, with its map-space
     // position for the renderer's back-to-front sort.
-    public record Entry(Node node, double mx, double my) {}
+    public record Entry(Node node, double mx, double my, double mz) {}
 
     // Sync the pool to the live mobj set and return this frame's
     // sprite entries. camYawDeg is the camera's Rotate angle so the
     // quads face the view plane.
     public List<Entry> update(Player viewPlayer,
                               double camX, double camY, double camYawDeg) {
+        return update(viewPlayer, camX, camY, camYawDeg, false);
+    }
+
+    public List<Entry> update(Player viewPlayer,
+                              double camX, double camY, double camYawDeg, boolean isometric) {
         List<Entry> out = new ArrayList<>();
         int stamp = ++frameStamp;
 
         for (int i = 0; i < PSetup.numsectors; i++) {
             for (Mobj m = PSetup.sectors[i].thinglist; m != null; m = m.snext) {
-                if (viewPlayer != null && m == viewPlayer.mo) continue;
+                if (!isometric && viewPlayer != null && m == viewPlayer.mo) continue;
                 if (m.sprite < 0 || m.sprite >= RThings.numsprites) continue;
                 Spritedef sprdef = RThings.sprites[m.sprite];
                 int frame = m.frame & Mobj.FF_FRAMEMASK;
@@ -84,7 +89,8 @@ public final class Fx3Sprites {
                     double deg = Math.toDegrees(
                             Math.atan2(my - camY, mx - camX));
                     int ang = (int) ((deg / 360.0) * 4294967296.0);
-                    int rot = (ang - m.angle + (Tables.ANG45 / 2) * 9) >>> 29;
+                    int rot = isometric ? Fx3IsoCamera.rotation(m.angle)
+                            : (ang - m.angle + (Tables.ANG45 / 2) * 9) >>> 29;
                     lump = sprframe.lump[rot];
                     flip = sprframe.flip[rot] != 0;
                 } else {
@@ -117,7 +123,7 @@ public final class Fx3Sprites {
                 sn.place(mx, -(m.z / 65536.0) - raise, my, camYawDeg);
                 sn.view.setOpacity(
                         (m.flags & Mobj.MF_SHADOW) != 0 ? 0.35 : 1.0);
-                out.add(new Entry(sn.view, mx, my));
+                out.add(new Entry(sn.view, mx, my, m.z / 65536.0 + raise + sn.centerHeight));
             }
         }
 
@@ -147,6 +153,7 @@ public final class Fx3Sprites {
         // How far (map units) the art hangs below the feet; > 0
         // means a grounded thing needs raising (see update()).
         double sinkBelowFeet;
+        double centerHeight;
 
         SpriteNode() {
             mesh = new TriangleMesh();
@@ -176,6 +183,7 @@ public final class Fx3Sprites {
             float yTop = (float) -(RData.spritetopoffset[lump] / 65536.0);
             float yBot = yTop + Fx3Textures.spriteHeight(lump);
             sinkBelowFeet = yBot;
+            centerHeight = -(yTop + yBot) / 2;
             mesh.getPoints().setAll(
                     xl, yTop, 0,
                     xr, yTop, 0,

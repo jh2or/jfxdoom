@@ -53,6 +53,18 @@ public final class Fx3Renderer {
     // branches on it.
     public static boolean active;
 
+    // Selected at session boot, before subScene() is created.
+    public static boolean isometric;
+    private static final javafx.scene.transform.Affine isoTransform = new javafx.scene.transform.Affine();
+    private static javafx.scene.shape.MeshView playerMarker;
+    private static double anchorX, anchorY, anchorZ;
+    private static doom.play.Mobj anchoredPlayer;
+    // Diagnostic counter, also used to guard against camera-triggered rebuilds.
+    static long meshBuildCount;
+    // Keep hysteresis across dynamic mesh rebuilds; keys are stable for one level.
+    private static final java.util.Map<doom.render.Seg, Integer> cutSelections =
+            new java.util.IdentityHashMap<>();
+
     // Side-by-side mode (3D_SIDEBYSIDE_PLAN.md): the software
     // renderer runs too, each frame, into VVideo.viewBuffer for its
     // own pane. The 3D renderer must not touch that buffer, and the
@@ -103,8 +115,19 @@ public final class Fx3Renderer {
             camera.getTransforms().addAll(camTranslate, camYaw);
 
             subScene = new SubScene(root, 1, 1, true, SceneAntialiasing.DISABLED);
-            subScene.setCamera(camera);
-            subScene.setFill(Color.BLACK);
+            if (isometric) {
+                javafx.scene.ParallelCamera parallel = new javafx.scene.ParallelCamera();
+                parallel.setNearClip(0.1);
+                parallel.setFarClip(1000000);
+                subScene.setCamera(parallel);
+                levelHolder.getTransforms().setAll(isoTransform);
+                subScene.widthProperty().addListener((o, a, b) -> updateIsoTransform());
+                subScene.heightProperty().addListener((o, a, b) -> updateIsoTransform());
+                subScene.setFill(Color.rgb(20, 22, 25));
+            } else {
+                subScene.setCamera(camera);
+            }
+            if (!isometric) subScene.setFill(Color.BLACK);
             subScene.setMouseTransparent(true);
         }
         return subScene;
@@ -114,6 +137,11 @@ public final class Fx3Renderer {
     // Launchpad so the next boot starts clean.
     public static void reset() {
         active = false;
+        isometric = false;
+        anchoredPlayer = null;
+        playerMarker = null;
+        meshBuildCount = 0;
+        cutSelections.clear();
         sideBySide = false;
         subScene = null;
         levelHolder = null;
@@ -164,17 +192,19 @@ public final class Fx3Renderer {
         }
 
         if (full) {
-            staticBuilt = Fx3LevelMesh.build(dynamicSectors, false);
-            dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true);
+            staticBuilt = Fx3LevelMesh.build(dynamicSectors, false, isometric);
+            dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true, isometric);
             if (sortedGroup == null) sortedGroup = new Group();
-            levelHolder.getChildren().setAll(sky.node,
+            meshBuildCount += 2;
+            levelHolder.getChildren().setAll(isometric ? marker() : sky.node,
                     staticBuilt.world(), dynamicBuilt.world(), sortedGroup);
             dynamicHash = computeDynamicHash();
         } else {
             long dh = computeDynamicHash();
             if (dh != dynamicHash) {
                 dynamicHash = dh;
-                dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true);
+                dynamicBuilt = Fx3LevelMesh.build(dynamicSectors, true, isometric);
+                meshBuildCount++;
                 levelHolder.getChildren().set(2, dynamicBuilt.world());
             }
         }
@@ -192,7 +222,7 @@ public final class Fx3Renderer {
         camTranslate.setX(fxX);
         camTranslate.setY(fxY);
         camTranslate.setZ(fxZ);
-        sky.update(fxX, fxY, fxZ);
+        if (!isometric) sky.update(fxX, fxY, fxZ);
 
         // BAM angle → degrees. JavaFX Rotate about Y maps the
         // camera's +Z forward to (sin θ, 0, cos θ); Doom's angle a
@@ -202,11 +232,33 @@ public final class Fx3Renderer {
                 * (360.0 / 4294967296.0);
         double yawDeg = 90.0 - angleDeg;
         camYaw.setAngle(yawDeg);
+        if (isometric) {
+            yawDeg = Fx3IsoCamera.YAW;
+            double z = player.mo.z / 65536.0;
+            boolean discontinuity = anchoredPlayer != player.mo
+                    || Math.hypot(camX-anchorX, camYmap-anchorY) > 128
+                    || Math.abs(z + 28 - anchorZ) > 128;
+            anchorX = camX;
+            anchorY = camYmap;
+            anchorZ = z + 28;
+            anchoredPlayer = player.mo;
+            updateIsoTransform();
+            if (discontinuity) cutSelections.clear();
+            for (var wall : staticBuilt.cutWalls())
+                wall.update(camX, camYmap, z, player.mo.height / 65536.0, cutSelections);
+            for (var wall : dynamicBuilt.cutWalls())
+                wall.update(camX, camYmap, z, player.mo.height / 65536.0, cutSelections);
+            playerMarker.setTranslateX(camX);
+            playerMarker.setTranslateY(-player.mo.floorz / 65536.0 - 0.25);
+            playerMarker.setTranslateZ(camYmap);
+            playerMarker.setRotationAxis(javafx.scene.transform.Rotate.Y_AXIS);
+            playerMarker.setRotate(90 - angleDeg);
+        }
 
         // Sprites + masked walls: gather, sort back-to-front from
         // the camera, and re-set the render-order group.
         List<Fx3Sprites.Entry> sprEntries =
-                sprites.update(player, camX, camYmap, yawDeg);
+                sprites.update(player, camX, camYmap, yawDeg, isometric);
         List<javafx.scene.Node> sorted = new ArrayList<>(
                 sprEntries.size() + staticBuilt.masked().size()
                         + dynamicBuilt.masked().size());
@@ -214,16 +266,19 @@ public final class Fx3Renderer {
         for (var mv : staticBuilt.masked()) {
             double[] mid = (double[]) mv.getUserData();
             sorted.add(mv);
-            keys.add(new double[] { dist2(mid[0], mid[1], camX, camYmap) });
+            keys.add(new double[] { isometric ? Fx3IsoCamera.depth(mid[0], mid[1], mid[2])
+                    : dist2(mid[0], mid[1], camX, camYmap) });
         }
         for (var mv : dynamicBuilt.masked()) {
             double[] mid = (double[]) mv.getUserData();
             sorted.add(mv);
-            keys.add(new double[] { dist2(mid[0], mid[1], camX, camYmap) });
+            keys.add(new double[] { isometric ? Fx3IsoCamera.depth(mid[0], mid[1], mid[2])
+                    : dist2(mid[0], mid[1], camX, camYmap) });
         }
         for (Fx3Sprites.Entry e : sprEntries) {
             sorted.add(e.node());
-            keys.add(new double[] { dist2(e.mx(), e.my(), camX, camYmap) });
+            keys.add(new double[] { isometric ? Fx3IsoCamera.depth(e.mx(), e.my(), e.mz())
+                    : dist2(e.mx(), e.my(), camX, camYmap) });
         }
         Integer[] order = new Integer[sorted.size()];
         for (int i = 0; i < order.length; i++) order[i] = i;
@@ -248,6 +303,11 @@ public final class Fx3Renderer {
         // between passes are background, pixels that agree were
         // drawn. The shell tests `pass1[i]==0 && pass2[i]==1` for
         // transparency and reads the color from pass2.
+        if (isometric) {
+            weaponPass1 = null;
+            weaponPass2 = null;
+            return;
+        }
         byte[] real = doom.ui.VVideo.viewBuffer;
         if (real != null) {
             if (weaponPass1 == null || weaponPass1.length != real.length) {
@@ -330,6 +390,38 @@ public final class Fx3Renderer {
         }
     }
 
+    private static void updateIsoTransform() {
+        if (subScene == null) return;
+        double scale = Fx3IsoCamera.scale(subScene.getWidth());
+        double a = Fx3IsoCamera.A * scale, b = Fx3IsoCamera.B * scale;
+        double c = Fx3IsoCamera.C * scale;
+        // JavaFX 21 ParallelCamera uses a fixed +/- half-viewport depth volume
+        // (computeProjectionTransform), independent of nearClip/farClip. Compress
+        // only depth to fit the full signed 16.16 map range; preserve depth order.
+        double depthScale = Math.max(subScene.getWidth(), subScene.getHeight()) / 262144.0;
+        double d = Fx3IsoCamera.D * depthScale;
+        // Input coordinates are JavaFX (map x, -map z, map y).
+        // Move the world into the parallel camera's pixel-sized viewing volume.
+        isoTransform.setToTransform(
+                a, 0, -a, subScene.getWidth()/2 - scale*Fx3IsoCamera.right(anchorX, anchorY),
+                -b, c, -b, subScene.getHeight()/2 - scale*Fx3IsoCamera.down(anchorX, anchorY, anchorZ),
+                d, d, d, -depthScale*Fx3IsoCamera.depth(anchorX, anchorY, anchorZ));
+    }
+
+    private static javafx.scene.shape.MeshView marker() {
+        if (playerMarker == null) {
+            javafx.scene.shape.TriangleMesh mesh = new javafx.scene.shape.TriangleMesh();
+            mesh.getTexCoords().setAll(0, 0);
+            // A small hollow arrow pointing +Z, rotated to the player's facing.
+            mesh.getPoints().setAll(-12,0,-8, 0,0,16, 12,0,-8, 0,0,-2);
+            mesh.getFaces().setAll(0,0,1,0,3,0, 1,0,2,0,3,0);
+            playerMarker = new javafx.scene.shape.MeshView(mesh);
+            playerMarker.setCullFace(javafx.scene.shape.CullFace.NONE);
+            playerMarker.setMaterial(new javafx.scene.paint.PhongMaterial(Color.GOLD));
+        }
+        return playerMarker;
+    }
+
     private static double dist2(double x, double y, double cx, double cy) {
         double dx = x - cx, dy = y - cy;
         return dx * dx + dy * dy;
@@ -358,7 +450,8 @@ public final class Fx3Renderer {
                 scrollerSides.add(PSetup.sides[line.sidenum[0]]);
             }
         }
-        sky = new Fx3Sky();
+        sky = isometric ? null : new Fx3Sky();
+        anchoredPlayer = null;
         sideTexHash = computeSideTexHash();
         builtFor = PSetup.sectors;
     }

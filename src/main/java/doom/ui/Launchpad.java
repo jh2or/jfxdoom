@@ -71,6 +71,7 @@ public final class Launchpad {
     public enum RendererMode {
         SOFTWARE("Software (faithful)"),
         FX3D("JavaFX 3D (experimental)"),
+        ISOMETRIC("Isometric (experimental)"),
         SBS_H("Side-by-side (software | 3D)"),
         SBS_V("Stacked (software / 3D)");
 
@@ -227,11 +228,11 @@ public final class Launchpad {
         // The internal render scale only matters when the software
         // renderer draws a world view (software + side-by-side
         // modes); pure 3D draws at display resolution with the
-        // weapon overlay pinned internally, so only that entry greys
+        // weapon overlay pinned internally, so those entries grey
         // the row out.
         Label renderScaleLabel = new Label("Internal Render Resolution:");
         var pure3d = Bindings.createBooleanBinding(
-                () -> rendererBox.getValue() == RendererMode.FX3D,
+                () -> rendererBox.getValue().usesFx3() && !rendererBox.getValue().sideBySide(),
                 rendererBox.valueProperty());
         renderScaleLabel.disableProperty().bind(pure3d);
         renderScaleBox.disableProperty().bind(pure3d);

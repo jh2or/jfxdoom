@@ -146,7 +146,7 @@ public final class JfxDoomApp extends Application {
 
         if (launchArgs.length > 0) {
             // CLI-driven boot — skip the Launchpad entirely. The
-            // -fx3d / -sbs / -sbsv flags select the experimental
+            // -fx3d / -iso / -sbs / -sbsv flags select the experimental
             // scene-graph renderer resp. the side-by-side modes
             // (3D_OVERHAUL.md, 3D_SIDEBYSIDE_PLAN.md); the engine's
             // arg parser ignores flags it doesn't know.
@@ -154,6 +154,7 @@ public final class JfxDoomApp extends Application {
             Launchpad.RendererMode mode = Launchpad.RendererMode.SOFTWARE;
             for (String a : launchArgs) {
                 if ("-fx3d".equals(a)) mode = Launchpad.RendererMode.FX3D;
+                else if ("-iso".equals(a)) mode = Launchpad.RendererMode.ISOMETRIC;
                 else if ("-sbs".equals(a))  mode = Launchpad.RendererMode.SBS_H;
                 else if ("-sbsv".equals(a)) mode = Launchpad.RendererMode.SBS_V;
             }
@@ -202,13 +203,13 @@ public final class JfxDoomApp extends Application {
                     + "pipeline — falling back to the software renderer.");
             mode = Launchpad.RendererMode.SOFTWARE;
         }
-        // In pure 3D mode the world draws at display resolution and
+        // In perspective/isometric mode the world draws at display resolution and
         // the render buffer only carries the weapon overlay — pinned
         // to 2× so the (greyed-out) Launchpad scale truly has no
         // effect. Side-by-side honours the user's choice: it applies
         // to the software pane (and, incidentally, the 3D pane's
         // weapon overlay).
-        if (mode == Launchpad.RendererMode.FX3D) {
+        if (mode.usesFx3() && !mode.sideBySide()) {
             renderMul = 2;
         }
         boolean fx3 = mode.usesFx3();
@@ -255,6 +256,7 @@ public final class JfxDoomApp extends Application {
         javafx.scene.SubScene fx3Sub = null;
         javafx.scene.shape.Rectangle fx3TintR = null;
         doom.render3d.Fx3Renderer.reset();
+        doom.render3d.Fx3Renderer.isometric = mode == Launchpad.RendererMode.ISOMETRIC;
         if (fx3) {
             fx3Sub = doom.render3d.Fx3Renderer.subScene();
             fx3Sub.setManaged(false);
