@@ -1002,3 +1002,15 @@ platform, and renderer differences are not evidence of vanilla equivalence.
 - Compatibility: previous Java saves and vanilla `.dsg` files cannot be loaded; previous Java files contain no map metadata and cannot safely be migrated automatically. The original section codec and its documented vanilla omissions (including fire flicker thinkers and target/tracer references) remain unchanged. The shared `respawnparm` field and its CLI/demo initialization behavior are integrated.
 - Verification: `bash gradlew test --max-workers=2` passes with the local Doom WAD. Five new real-WAD tests cover cross-level restoration and identical re-save, repeated same-level moving ceilings, loading from a title/demo screen, malformed/truncated/semantic rejection without mutation, and the file API/long descriptions. Tests explicitly skip if no Doom WAD is installed.
 - Manual check: save in E1M1 after changing health/ammo and opening a door, start E1M2 or end the game to the title screen, then load the slot. Confirm E1M1, position, inventory and the moving world resume; repeat the load and continue playing. Truncate a *copy* of a save, place it in a spare slot, and confirm loading reports failure while the active game remains playable.
+
+
+### Isometric integration save/load fix (2026-09-13)
+
+- `SaveGame.load` trims cached LINEDEFS topology to `WWad.wLumpLength` before
+  validation. Zone allocations round up to four bytes; an odd number of 14-byte
+  linedefs otherwise produces two trailing padding bytes that validation treats
+  as another record. This fixes E1M2 restoration without changing the save format,
+  map fingerprint, or simulation behavior.
+- Covered by `SaveGameTest.restoresMapWithOddLinedefCountAndPaddedZoneBuffer` and
+  the isometric integration save/load check. Renderer implementation and validation
+  are tracked in `3D_OVERHAUL_STATUS.md`.

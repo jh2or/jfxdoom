@@ -75,7 +75,11 @@ public final class SaveGame {
         byte[] body = in.readNBytes(length);
         int base = mapLump(episode, map);
         byte[] sectors = WWad.wCacheLumpNum(base + PSetup.ML_SECTORS, ZZone.PU_CACHE);
-        byte[] lines = WWad.wCacheLumpNum(base + PSetup.ML_LINEDEFS, ZZone.PU_CACHE);
+        // Zone buffers are padded to four bytes. LINEDEFS records are 14 bytes,
+        // so an odd record count has trailing padding that is not another line.
+        int lineLump = base + PSetup.ML_LINEDEFS;
+        byte[] lines = Arrays.copyOf(WWad.wCacheLumpNum(lineLump, ZZone.PU_CACHE),
+                WWad.wLumpLength(lineLump));
         PSaveg.validate(body, sectors.length / 26, lines, seat);
 
         Doomstat.respawnparm = respawnRequest;

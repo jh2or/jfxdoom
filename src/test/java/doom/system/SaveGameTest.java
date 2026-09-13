@@ -68,6 +68,19 @@ class SaveGameTest {
         assertDoesNotThrow(DMain::dDoomLoop);
     }
 
+    @Test void restoresMapWithOddLinedefCountAndPaddedZoneBuffer() throws IOException {
+        GGame.gInitNew(Doomstat.sk_medium, 1, 2);
+        GGame.gDoLoadLevel();
+        int lump = WWad.wGetNumForName("E1M2") + PSetup.ML_LINEDEFS;
+        assumeTrue(WWad.wLumpLength(lump) % 4 != 0, "Fixture must exercise zone padding");
+        byte[] saved = SaveGame.save();
+        GGame.gInitNew(Doomstat.sk_medium, 1, 1);
+        GGame.gDoLoadLevel();
+        SaveGame.load(saved);
+        assertEquals(2, Doomstat.gamemap);
+        assertArrayEquals(saved, SaveGame.save());
+    }
+
     @Test void sameLevelReloadRecreatesBaseAndDoesNotDuplicateMovers() throws IOException {
         PCeilng.Ceiling ceiling = new PCeilng.Ceiling();
         ceiling.sector = PSetup.sectors[0];
